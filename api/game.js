@@ -1,28 +1,16 @@
 // In-memory game state
-let gameRooms = {};
-let globalLeaderboard = [];
+const gameRooms = {};
+const globalLeaderboard = [];
 
-// Helper to generate room codes
+// Helper functions
 function generateRoomCode() {
     return 'GAME_' + Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-// Helper to get current timestamp
 function now() {
     return Date.now();
 }
 
-// Clean up old rooms (older than 1 hour)
-function cleanupOldRooms() {
-    const oneHourAgo = now() - 60 * 60 * 1000;
-    for (const roomId in gameRooms) {
-        if (gameRooms[roomId].createdAt < oneHourAgo) {
-            delete gameRooms[roomId];
-        }
-    }
-}
-
-// Helper: Get prompts for category
 function getPromptsForCategory(category) {
     const prompts = {
         tech: [
@@ -65,13 +53,11 @@ function getPromptsForCategory(category) {
     return prompts[category] || prompts.general;
 }
 
-// Helper: Pick winner (simple random for now)
 function pickWinner(submissions) {
     const randomIndex = Math.floor(Math.random() * submissions.length);
     return submissions[randomIndex].id;
 }
 
-// Helper: Update leaderboard
 function updateLeaderboard(playerName, score) {
     const existing = globalLeaderboard.find(p => p.name === playerName);
     if (existing) {
@@ -88,7 +74,7 @@ function updateLeaderboard(playerName, score) {
 }
 
 // Main handler
-module.exports = async function handler(req, res) {
+export default function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -99,20 +85,10 @@ module.exports = async function handler(req, res) {
     }
 
     const { action } = req.query;
-    
-    // Parse body for POST requests
-    let body = {};
-    if (req.method === 'POST' && req.body) {
-        body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    }
-
-    cleanupOldRooms();
+    const body = req.body || {};
 
     try {
         switch (action) {
-            // =====================
-            // ROOM MANAGEMENT
-            // =====================
             case 'createRoom': {
                 const { hostName, category, maxPlayers = 10 } = body;
                 if (!hostName) {
@@ -157,7 +133,7 @@ module.exports = async function handler(req, res) {
                 
                 const room = gameRooms[roomId];
                 if (!room) {
-                    return res.status(404).json({ error: 'Room not found' });
+                    return res.status(404).json({ error: 'Room not found. It may have expired.' });
                 }
                 
                 if (room.status !== 'waiting') {
@@ -169,17 +145,15 @@ module.exports = async function handler(req, res) {
                 }
                 
                 const existingPlayer = room.players.find(p => p.name === playerName);
-                if (existingPlayer) {
-                    return res.status(200).json({ success: true, room });
+                if (!existingPlayer) {
+                    room.players.push({
+                        name: playerName,
+                        score: 0,
+                        isHost: false,
+                        joinedAt: now()
+                    });
+                    room.updatedAt = now();
                 }
-                
-                room.players.push({
-                    name: playerName,
-                    score: 0,
-                    isHost: false,
-                    joinedAt: now()
-                });
-                room.updatedAt = now();
                 
                 return res.status(200).json({ success: true, room });
             }
@@ -212,9 +186,6 @@ module.exports = async function handler(req, res) {
                 return res.status(200).json({ success: true, rooms: publicRooms });
             }
 
-            // =====================
-            // GAME ACTIONS
-            // =====================
             case 'startGame': {
                 const { roomId, hostName } = body;
                 const room = gameRooms[roomId];
@@ -296,16 +267,7 @@ module.exports = async function handler(req, res) {
                 room.bets = [];
                 room.updatedAt = now();
                 
-                const anonymizedSubmissions = room.submissions.map((s, i) => ({
-                    id: s.id,
-                    punchline: s.punchline
-                }));
-                
-                return res.status(200).json({ 
-                    success: true, 
-                    room,
-                    submissions: anonymizedSubmissions 
-                });
+                return res.status(200).json({ success: true, room });
             }
 
             case 'placeBet': {
@@ -369,7 +331,7 @@ module.exports = async function handler(req, res) {
                 const player = room.players.find(p => p.name === winningSubmission.playerName);
                 if (player) {
                     player.score += 100;
-                    roundResult.scores[player.name] = (roundResult.scores[player.name] || 0) + 100;
+                    roundResult.scores[player.name] = 100;
                 }
                 
                 room.bets.forEach(bet => {
@@ -386,11 +348,7 @@ module.exports = async function handler(req, res) {
                 room.status = 'roundResults';
                 room.updatedAt = now();
                 
-                return res.status(200).json({ 
-                    success: true, 
-                    room,
-                    roundResult 
-                });
+                return res.status(200).json({ success: true, room, roundResult });
             }
 
             case 'nextRound': {
@@ -407,15 +365,12 @@ module.exports = async function handler(req, res) {
                 
                 if (room.currentRound >= room.totalRounds) {
                     room.status = 'finished';
-                    
-                    room.players.forEach(p => {
-                        updateLeaderboard(p.name, p.score);
-                    });
+                    room.players.forEach(p => updateLeaderboard(p.name, p.score));
                     
                     return res.status(200).json({ 
                         success: true, 
                         room,
-                        finalStandings: room.players.sort((a, b) => b.score - a.score),
+                        finalStandings: [...room.players].sort((a, b) => b.score - a.score),
                         leaderboard: globalLeaderboard.slice(0, 10)
                     });
                 }
@@ -426,21 +381,13 @@ module.exports = async function handler(req, res) {
                 room.bets = [];
                 
                 const prompts = getPromptsForCategory(room.category);
-                const usedPrompts = room.roundResults.map(r => r.prompt).filter(Boolean);
-                const availablePrompts = prompts.filter(p => !usedPrompts.includes(p));
-                room.jokePrompt = availablePrompts.length > 0 
-                    ? availablePrompts[Math.floor(Math.random() * availablePrompts.length)]
-                    : prompts[Math.floor(Math.random() * prompts.length)];
-                
+                room.jokePrompt = prompts[Math.floor(Math.random() * prompts.length)];
                 room.roundStartedAt = now();
                 room.updatedAt = now();
                 
                 return res.status(200).json({ success: true, room });
             }
 
-            // =====================
-            // LEADERBOARD
-            // =====================
             case 'getLeaderboard': {
                 return res.status(200).json({ 
                     success: true, 
@@ -455,4 +402,4 @@ module.exports = async function handler(req, res) {
         console.error('API Error:', error);
         return res.status(500).json({ error: error.message });
     }
-};
+}
