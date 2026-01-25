@@ -1,6 +1,4 @@
-// In-memory game state (for Vercel serverless, consider using Vercel KV or Upstash Redis for persistence)
-// For now, we'll use a simple in-memory store that resets on cold starts
-
+// In-memory game state
 let gameRooms = {};
 let globalLeaderboard = [];
 
@@ -24,7 +22,73 @@ function cleanupOldRooms() {
     }
 }
 
-export default function handler(req, res) {
+// Helper: Get prompts for category
+function getPromptsForCategory(category) {
+    const prompts = {
+        tech: [
+            "An AI, a blockchain, and a smart contract walk into a bar...",
+            "Why did the developer quit? Because...",
+            "The bug wasn't a bug, it was...",
+            "ChatGPT and Claude got into an argument about...",
+            "The validator rejected the transaction because...",
+            "My code worked on the first try, which means...",
+            "The senior dev looked at my PR and said...",
+            "I asked AI to fix my code and it replied...",
+            "The blockchain was congested because...",
+            "Web3 will change the world when..."
+        ],
+        crypto: [
+            "WAGMI until...",
+            "The real utility of this NFT is...",
+            "I bought the dip, but then...",
+            "Wen moon? More like...",
+            "The whitepaper promised..., but delivered...",
+            "My portfolio is down 90% because...",
+            "The rug pull happened when...",
+            "Diamond hands means...",
+            "I'm not selling because...",
+            "The best time to buy was..."
+        ],
+        general: [
+            "The meeting could have been an email, but instead...",
+            "My New Year's resolution lasted until...",
+            "The WiFi password is...",
+            "I'm not procrastinating, I'm...",
+            "Life hack: instead of being productive...",
+            "The secret to success is...",
+            "My therapist said I need to...",
+            "The gym membership was worth it because...",
+            "I told my boss I was late because...",
+            "Dating apps taught me that..."
+        ]
+    };
+    return prompts[category] || prompts.general;
+}
+
+// Helper: Pick winner (simple random for now)
+function pickWinner(submissions) {
+    const randomIndex = Math.floor(Math.random() * submissions.length);
+    return submissions[randomIndex].id;
+}
+
+// Helper: Update leaderboard
+function updateLeaderboard(playerName, score) {
+    const existing = globalLeaderboard.find(p => p.name === playerName);
+    if (existing) {
+        existing.totalScore += score;
+        existing.gamesPlayed++;
+    } else {
+        globalLeaderboard.push({
+            name: playerName,
+            totalScore: score,
+            gamesPlayed: 1
+        });
+    }
+    globalLeaderboard.sort((a, b) => b.totalScore - a.totalScore);
+}
+
+// Main handler
+module.exports = async function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -35,7 +99,12 @@ export default function handler(req, res) {
     }
 
     const { action } = req.query;
-    const body = req.body || {};
+    
+    // Parse body for POST requests
+    let body = {};
+    if (req.method === 'POST' && req.body) {
+        body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    }
 
     cleanupOldRooms();
 
@@ -62,7 +131,7 @@ export default function handler(req, res) {
                         isHost: true,
                         joinedAt: now()
                     }],
-                    status: 'waiting', // waiting, submitting, betting, judging, results
+                    status: 'waiting',
                     currentRound: 0,
                     totalRounds: 3,
                     jokePrompt: '',
@@ -73,7 +142,7 @@ export default function handler(req, res) {
                     updatedAt: now()
                 };
                 
-                return res.json({ 
+                return res.status(200).json({ 
                     success: true, 
                     roomId, 
                     room: gameRooms[roomId] 
@@ -99,10 +168,9 @@ export default function handler(req, res) {
                     return res.status(400).json({ error: 'Room is full' });
                 }
                 
-                // Check if player already in room
                 const existingPlayer = room.players.find(p => p.name === playerName);
                 if (existingPlayer) {
-                    return res.json({ success: true, room });
+                    return res.status(200).json({ success: true, room });
                 }
                 
                 room.players.push({
@@ -113,11 +181,11 @@ export default function handler(req, res) {
                 });
                 room.updatedAt = now();
                 
-                return res.json({ success: true, room });
+                return res.status(200).json({ success: true, room });
             }
 
             case 'getRoom': {
-                const { roomId } = req.query;
+                const roomId = req.query.roomId;
                 if (!roomId) {
                     return res.status(400).json({ error: 'roomId required' });
                 }
@@ -127,7 +195,7 @@ export default function handler(req, res) {
                     return res.status(404).json({ error: 'Room not found' });
                 }
                 
-                return res.json({ success: true, room });
+                return res.status(200).json({ success: true, room });
             }
 
             case 'listRooms': {
@@ -141,7 +209,7 @@ export default function handler(req, res) {
                         maxPlayers: r.maxPlayers
                     }));
                 
-                return res.json({ success: true, rooms: publicRooms });
+                return res.status(200).json({ success: true, rooms: publicRooms });
             }
 
             // =====================
@@ -169,12 +237,11 @@ export default function handler(req, res) {
                 room.bets = [];
                 room.updatedAt = now();
                 
-                // Generate joke prompt (this would come from GenLayer in production)
                 const prompts = getPromptsForCategory(room.category);
                 room.jokePrompt = prompts[Math.floor(Math.random() * prompts.length)];
                 room.roundStartedAt = now();
                 
-                return res.json({ success: true, room });
+                return res.status(200).json({ success: true, room });
             }
 
             case 'submitPunchline': {
@@ -189,7 +256,6 @@ export default function handler(req, res) {
                     return res.status(400).json({ error: 'Not in submission phase' });
                 }
                 
-                // Check if already submitted
                 const existing = room.submissions.find(s => s.playerName === playerName);
                 if (existing) {
                     return res.status(400).json({ error: 'Already submitted' });
@@ -203,7 +269,7 @@ export default function handler(req, res) {
                 });
                 room.updatedAt = now();
                 
-                return res.json({ 
+                return res.status(200).json({ 
                     success: true, 
                     submissionCount: room.submissions.length,
                     totalPlayers: room.players.length 
@@ -230,14 +296,12 @@ export default function handler(req, res) {
                 room.bets = [];
                 room.updatedAt = now();
                 
-                // Return anonymized submissions
                 const anonymizedSubmissions = room.submissions.map((s, i) => ({
                     id: s.id,
                     punchline: s.punchline
-                    // playerName hidden during betting
                 }));
                 
-                return res.json({ 
+                return res.status(200).json({ 
                     success: true, 
                     room,
                     submissions: anonymizedSubmissions 
@@ -256,7 +320,6 @@ export default function handler(req, res) {
                     return res.status(400).json({ error: 'Not in betting phase' });
                 }
                 
-                // Check if already bet
                 const existing = room.bets.find(b => b.playerName === playerName);
                 if (existing) {
                     return res.status(400).json({ error: 'Already placed bet' });
@@ -270,7 +333,7 @@ export default function handler(req, res) {
                 });
                 room.updatedAt = now();
                 
-                return res.json({ 
+                return res.status(200).json({ 
                     success: true, 
                     betCount: room.bets.length,
                     totalPlayers: room.players.length 
@@ -292,12 +355,9 @@ export default function handler(req, res) {
                 room.status = 'judging';
                 room.updatedAt = now();
                 
-                // Simulate AI judging (in production, this calls GenLayer)
-                // For now, pick random winner weighted by submission length (funnier = longer?)
                 const winnerId = pickWinner(room.submissions);
                 const winningSubmission = room.submissions.find(s => s.id === winnerId);
                 
-                // Calculate scores
                 const roundResult = {
                     round: room.currentRound,
                     winnerId,
@@ -306,14 +366,12 @@ export default function handler(req, res) {
                     scores: {}
                 };
                 
-                // Author bonus
                 const player = room.players.find(p => p.name === winningSubmission.playerName);
                 if (player) {
-                    player.score += 100; // Author bonus
+                    player.score += 100;
                     roundResult.scores[player.name] = (roundResult.scores[player.name] || 0) + 100;
                 }
                 
-                // Correct prediction bonus
                 room.bets.forEach(bet => {
                     if (bet.submissionId === winnerId) {
                         const betPlayer = room.players.find(p => p.name === bet.playerName);
@@ -328,7 +386,7 @@ export default function handler(req, res) {
                 room.status = 'roundResults';
                 room.updatedAt = now();
                 
-                return res.json({ 
+                return res.status(200).json({ 
                     success: true, 
                     room,
                     roundResult 
@@ -348,15 +406,13 @@ export default function handler(req, res) {
                 }
                 
                 if (room.currentRound >= room.totalRounds) {
-                    // Game over
                     room.status = 'finished';
                     
-                    // Update global leaderboard
                     room.players.forEach(p => {
                         updateLeaderboard(p.name, p.score);
                     });
                     
-                    return res.json({ 
+                    return res.status(200).json({ 
                         success: true, 
                         room,
                         finalStandings: room.players.sort((a, b) => b.score - a.score),
@@ -364,7 +420,6 @@ export default function handler(req, res) {
                     });
                 }
                 
-                // Start next round
                 room.currentRound++;
                 room.status = 'submitting';
                 room.submissions = [];
@@ -380,78 +435,24 @@ export default function handler(req, res) {
                 room.roundStartedAt = now();
                 room.updatedAt = now();
                 
-                return res.json({ success: true, room });
+                return res.status(200).json({ success: true, room });
             }
 
             // =====================
             // LEADERBOARD
             // =====================
             case 'getLeaderboard': {
-                return res.json({ 
+                return res.status(200).json({ 
                     success: true, 
                     leaderboard: globalLeaderboard.slice(0, 20) 
                 });
             }
 
             default:
-                return res.status(400).json({ error: 'Unknown action' });
+                return res.status(400).json({ error: 'Unknown action: ' + action });
         }
     } catch (error) {
         console.error('API Error:', error);
         return res.status(500).json({ error: error.message });
     }
-}
-
-// Helper: Get prompts for category
-function getPromptsForCategory(category) {
-    const prompts = {
-        tech: [
-            "An AI, a blockchain, and a smart contract walk into a bar...",
-            "Why did the developer quit? Because...",
-            "The bug wasn't a bug, it was...",
-            "ChatGPT and Claude got into an argument about...",
-            "The validator rejected the transaction because...",
-            "My code worked on the first try, which means..."
-        ],
-        crypto: [
-            "WAGMI until...",
-            "The real utility of this NFT is...",
-            "I bought the dip, but then...",
-            "Wen moon? More like...",
-            "The whitepaper promised..., but delivered...",
-            "My portfolio is down 90% because..."
-        ],
-        general: [
-            "The meeting could have been an email, but instead...",
-            "My New Year's resolution lasted until...",
-            "The WiFi password is...",
-            "I'm not procrastinating, I'm...",
-            "Life hack: instead of being productive...",
-            "The secret to success is..."
-        ]
-    };
-    return prompts[category] || prompts.general;
-}
-
-// Helper: Pick winner (simple random for now, GenLayer AI in production)
-function pickWinner(submissions) {
-    // Random selection (would be AI judging via GenLayer)
-    const randomIndex = Math.floor(Math.random() * submissions.length);
-    return submissions[randomIndex].id;
-}
-
-// Helper: Update leaderboard
-function updateLeaderboard(playerName, score) {
-    const existing = globalLeaderboard.find(p => p.name === playerName);
-    if (existing) {
-        existing.totalScore += score;
-        existing.gamesPlayed++;
-    } else {
-        globalLeaderboard.push({
-            name: playerName,
-            totalScore: score,
-            gamesPlayed: 1
-        });
-    }
-    globalLeaderboard.sort((a, b) => b.totalScore - a.totalScore);
-}
+};
