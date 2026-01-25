@@ -1,0 +1,37 @@
+{
+  "name": "oracle-of-wit",
+  "version": "1.0.0",
+  "description": "A multiplayer AI humor prediction game - GenLayer Intelligent Contract",
+  "main": "index.js",
+  "scripts": {
+    "deploy:simulator": "ts-node deploy.ts simulator",
+    "deploy:testnet": "ts-node deploy.ts testnet",
+    "test": "python test_oracle_of_wit.py",
+    "studio": "genlayer up && open http://localhost:8080",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "genlayer",
+    "intelligent-contract",
+    "blockchain",
+    "ai",
+    "game",
+    "multiplayer",
+    "llm",
+    "optimistic-democracy"
+  ],
+  "author": "GenLayer Contest Submission",
+  "license": "MIT",
+  "dependencies": {
+    "genlayer-js": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
