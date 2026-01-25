@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oracle of Wit - GenLayer Community Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+        * { font-family: 'Space Grotesk', sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .gradient-text { background: linear-gradient(135deg, #f59e0b, #ec4899, #6366f1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .oracle-eye { background: radial-gradient(circle at 30% 30%, #a855f7, #6366f1, #1e1b4b); box-shadow: 0 0 60px rgba(168, 85, 247, 0.5); }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.5); } 50% { box-shadow: 0 0 60px rgba(139, 92, 246, 0.9); } }
+        .animate-glow { animation: pulse-glow 2s ease-in-out infinite; }
+        .btn { transition: all 0.2s; cursor: pointer; }
+        .btn:hover:not(:disabled) { transform: scale(1.02); filter: brightness(1.1); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .card-selected { background: rgba(139, 92, 246, 0.3) !important; border: 2px solid #a855f7 !important; box-shadow: 0 0 20px rgba(139, 92, 246, 0.3); }
+        .spinner { border: 3px solid rgba(255,255,255,0.1); border-top-color: #a855f7; border-radius: 50%; animation: spin 1s linear infinite; width: 24px; height: 24px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .player-card { transition: all 0.3s; }
+        .player-card:hover { transform: translateY(-2px); }
+        .confetti { position: fixed; width: 10px; height: 10px; pointer-events: none; z-index: 1000; }
+        @keyframes confetti-fall { 0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-900 text-white overflow-x-hidden">
+    <!-- Background -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+        <div class="absolute top-1/4 -left-20 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse"></div>
+        <div class="absolute bottom-1/4 -right-20 w-96 h-96 bg-pink-600/20 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s;"></div>
+    </div>
+
+    <div id="app"></div>
+
+    <script>
+    // =================================================================
+    // CONFIGURATION
+    // =================================================================
+    const API_URL = window.location.hostname === 'localhost' 
+        ? 'http://localhost:3000/api/game'
+        : '/api/game';
+    
+    const POLL_INTERVAL = 2000; // Poll every 2 seconds for updates
+
+    // =================================================================
+    // STATE
+    // =================================================================
+    let state = {
+        screen: 'welcome', // welcome, lobby, waiting, submitting, betting, judging, roundResults, results
+        playerName: localStorage.getItem('playerName') || '',
+        roomId: null,
+        room: null,
+        isHost: false,
+        selectedSubmission: null,
+        betAmount: 50,
+        hasSubmitted: false,
+        hasBet: false,
+        error: null,
+        loading: false,
+        leaderboard: [],
+        publicRooms: []
+    };
+
+    let pollInterval = null;
+
+    // =================================================================
+    // API CALLS
+    // =================================================================
+    async function api(action, data = {}) {
+        state.loading = true;
+        state.error = null;
+        render();
+        
+        try {
+            const url = `${API_URL}?action=${action}`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (!response.ok || result.error) {
+                throw new Error(result.error || 'API Error');
+            }
+            
+            state.loading = false;
+            return result;
+        } catch (e) {
+            state.loading = false;
+            state.error = e.message;
+            render();
+            throw e;
+        }
+    }
+
+    async function fetchRoom() {
+        if (!state.roomId) return;
+        
+        try {
+            const url = `${API_URL}?action=getRoom&roomId=${state.roomId}`;
+            const response = await fetch(url);
+            const result = await response.json();
+            
+            if (result.success && result.room) {
+                const oldStatus = state.room?.status;
+                state.room = result.room;
+                
+                // Update screen based on room status
+                if (state.room.status !== oldStatus) {
+                    state.screen = state.room.status === 'roundResults' ? 'roundResults' : state.room.status;
+                    if (state.room.status === 'submitting') {
+                        state.hasSubmitted = false;
+                    }
+                    if (state.room.status === 'betting') {
+                        state.hasBet = false;
+                        state.selectedSubmission = null;
+                    }
+                }
+                render();
+            }
+        } catch (e) {
+            console.error('Poll error:', e);
+        }
+    }
+
+    async function fetchLeaderboard() {
+        try {
+            const url = `${API_URL}?action=getLeaderboard`;
+            const response = await fetch(url);
+            const result = await response.json();
+            if (result.success) {
+                state.leaderboard = result.leaderboard;
+            }
+        } catch (e) {
+            console.error('Leaderboard error:', e);
+        }
+    }
+
+    async function fetchPublicRooms() {
+        try {
+            const url = `${API_URL}?action=listRooms`;
+            const response = await fetch(url);
+            const result = await response.json();
+            if (result.success) {
+                state.publicRooms = result.rooms;
+                render();
+            }
+        } catch (e) {
+            console.error('Rooms error:', e);
+        }
+    }
+
+    function startPolling() {
+        stopPolling();
+        pollInterval = setInterval(fetchRoom, POLL_INTERVAL);
+    }
+
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+    }
+
+    // =================================================================
+    // ACTIONS
+    // =================================================================
+    async function createRoom(category) {
+        const result = await api('createRoom', {
+            hostName: state.playerName,
+            category: category
+        });
+        
+        state.roomId = result.roomId;
+        state.room = result.room;
+        state.isHost = true;
+        state.screen = 'waiting';
+        localStorage.setItem('playerName', state.playerName);
+        startPolling();
+        render();
+    }
+
+    async function joinRoom(roomId) {
+        const result = await api('joinRoom', {
+            roomId: roomId,
+            playerName: state.playerName
+        });
+        
+        state.roomId = roomId;
+        state.room = result.room;
+        state.isHost = state.room.host === state.playerName;
+        state.screen = 'waiting';
+        localStorage.setItem('playerName', state.playerName);
+        startPolling();
+        render();
+    }
+
+    async function startGame() {
+        const result = await api('startGame', {
+            roomId: state.roomId,
+            hostName: state.playerName
+        });
+        
+        state.room = result.room;
+        state.screen = 'submitting';
+        state.hasSubmitted = false;
+        render();
+    }
+
+    async function submitPunchline(punchline) {
+        await api('submitPunchline', {
+            roomId: state.roomId,
+            playerName: state.playerName,
+            punchline: punchline
+        });
+        
+        state.hasSubmitted = true;
+        render();
+    }
+
+    async function startBetting() {
+        const result = await api('startBetting', {
+            roomId: state.roomId,
+            hostName: state.playerName
+        });
+        
+        state.room = result.room;
+        state.screen = 'betting';
+        state.hasBet = false;
+        state.selectedSubmission = null;
+        render();
+    }
+
+    async function placeBet() {
+        if (!state.selectedSubmission) {
+            state.error = 'Please select a submission';
+            render();
+            return;
+        }
+        
+        await api('placeBet', {
+            roomId: state.roomId,
+            playerName: state.playerName,
+            submissionId: state.selectedSubmission,
+            amount: state.betAmount
+        });
+        
+        state.hasBet = true;
+        render();
+    }
+
+    async function judgeRound() {
+        const result = await api('judgeRound', {
+            roomId: state.roomId,
+            hostName: state.playerName
+        });
+        
+        state.room = result.room;
+        state.screen = 'roundResults';
+        render();
+    }
+
+    async function nextRound() {
+        const result = await api('nextRound', {
+            roomId: state.roomId,
+            hostName: state.playerName
+        });
+        
+        state.room = result.room;
+        
+        if (result.room.status === 'finished') {
+            state.screen = 'results';
+            state.leaderboard = result.leaderboard || [];
+            stopPolling();
+            createConfetti();
+        } else {
+            state.screen = 'submitting';
+            state.hasSubmitted = false;
+        }
+        render();
+    }
+
+    function leaveRoom() {
+        stopPolling();
+        state.roomId = null;
+        state.room = null;
+        state.isHost = false;
+        state.screen = 'lobby';
+        render();
+    }
+
+    function goToLobby() {
+        if (!state.playerName.trim()) {
+            state.error = 'Please enter your name';
+            render();
+            return;
+        }
+        state.screen = 'lobby';
+        localStorage.setItem('playerName', state.playerName);
+        fetchPublicRooms();
+        fetchLeaderboard();
+        render();
+    }
+
+    // =================================================================
+    // RENDER
+    // =================================================================
+    function render() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+            ${renderHeader()}
+            <main class="px-4 py-6 max-w-4xl mx-auto">
+                ${state.error ? renderError() : ''}
+                ${renderScreen()}
+            </main>
+        `;
+    }
+
+    function renderHeader() {
+        return `
+            <header class="py-4 px-4 border-b border-white/10">
+                <div class="max-w-4xl mx-auto flex justify-between items-center">
+                    <div class="flex items-center gap-3">
+                        <span class="text-3xl animate-float">🎭</span>
+                        <div>
+                            <h1 class="text-xl font-bold gradient-text">Oracle of Wit</h1>
+                            <p class="text-xs text-gray-400">GenLayer Community Game</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        ${state.playerName ? `
+                            <span class="text-sm text-gray-400">Playing as:</span>
+                            <span class="px-3 py-1 bg-purple-600/30 rounded-full text-sm font-medium">${state.playerName}</span>
+                        ` : ''}
+                        ${state.roomId ? `
+                            <span class="px-3 py-1 bg-slate-700 rounded-full text-xs font-mono">${state.roomId}</span>
+                        ` : ''}
+                    </div>
+                </div>
+            </header>
+        `;
+    }
+
+    function renderError() {
+        return `
+            <div class="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300">
+                ⚠️ ${state.error}
+                <button onclick="state.error=null; render();" class="ml-4 text-white underline">Dismiss</button>
+            </div>
+        `;
+    }
+
+    function renderScreen() {
+        switch (state.screen) {
+            case 'welcome': return renderWelcome();
+            case 'lobby': return renderLobby();
+            case 'waiting': return renderWaiting();
+            case 'submitting': return renderSubmitting();
+            case 'betting': return renderBetting();
+            case 'judging': return renderJudging();
+            case 'roundResults': return renderRoundResults();
+            case 'results':
+            case 'finished': return renderFinalResults();
+            default: return renderWelcome();
+        }
+    }
+
+    function renderWelcome() {
+        return `
+            <div class="text-center py-12">
+                <div class="w-24 h-24 oracle-eye rounded-full flex items-center justify-center mx-auto mb-6 animate-float">
+                    <span class="text-5xl">👁️</span>
+                </div>
+                <h2 class="text-4xl font-bold mb-4">Welcome to <span class="gradient-text">Oracle of Wit</span></h2>
+                <p class="text-gray-400 mb-8 max-w-md mx-auto">
+                    The multiplayer AI humor game powered by GenLayer's Intelligent Contracts and Optimistic Democracy.
+                </p>
+                
+                <div class="glass rounded-xl p-6 max-w-md mx-auto">
+                    <label class="text-sm text-gray-400 block mb-2 text-left">Your Discord/Display Name:</label>
+                    <input type="text" id="player-name" placeholder="Enter your name..." 
+                        value="${state.playerName}"
+                        onchange="state.playerName = this.value"
+                        class="w-full px-4 py-3 bg-slate-800 rounded-lg text-white mb-4 border border-slate-700 focus:border-purple-500 focus:outline-none text-lg">
+                    
+                    <button onclick="goToLobby()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
+                        🎮 Enter Game Lobby
+                    </button>
+                </div>
+                
+                <div class="mt-8 text-sm text-gray-500">
+                    <p>🔗 Powered by GenLayer on Base Sepolia</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderLobby() {
+        return `
+            <div class="space-y-6">
+                <div class="text-center">
+                    <h2 class="text-3xl font-bold mb-2">🎪 Game Lobby</h2>
+                    <p class="text-gray-400">Create a room or join an existing game</p>
+                </div>
+                
+                <!-- Create Room -->
+                <div class="glass rounded-xl p-6">
+                    <h3 class="text-xl font-bold mb-4">🎯 Create New Game</h3>
+                    <p class="text-gray-400 text-sm mb-4">Choose a joke category:</p>
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <button onclick="createRoom('tech')" class="btn p-4 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-xl">
+                            <span class="text-2xl block mb-1">🤖</span>
+                            <span class="text-sm font-medium">Tech & AI</span>
+                        </button>
+                        <button onclick="createRoom('crypto')" class="btn p-4 bg-gradient-to-br from-yellow-600 to-orange-600 rounded-xl">
+                            <span class="text-2xl block mb-1">💎</span>
+                            <span class="text-sm font-medium">Crypto</span>
+                        </button>
+                        <button onclick="createRoom('general')" class="btn p-4 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl">
+                            <span class="text-2xl block mb-1">😂</span>
+                            <span class="text-sm font-medium">General</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Join Room -->
+                <div class="glass rounded-xl p-6">
+                    <h3 class="text-xl font-bold mb-4">🚪 Join Existing Game</h3>
+                    <div class="flex gap-3">
+                        <input type="text" id="room-code" placeholder="Enter room code (e.g. GAME_ABC123)" 
+                            class="flex-1 px-4 py-3 bg-slate-800 rounded-lg border border-slate-700 focus:border-purple-500 focus:outline-none">
+                        <button onclick="joinRoom(document.getElementById('room-code').value.toUpperCase())" 
+                            class="btn px-6 py-3 bg-green-600 rounded-lg font-bold">
+                            Join
+                        </button>
+                    </div>
+                    
+                    ${state.publicRooms.length > 0 ? `
+                        <div class="mt-4">
+                            <p class="text-sm text-gray-400 mb-2">Open rooms:</p>
+                            <div class="space-y-2">
+                                ${state.publicRooms.map(room => `
+                                    <div class="flex justify-between items-center p-3 bg-slate-800 rounded-lg">
+                                        <div>
+                                            <span class="font-mono text-purple-400">${room.id}</span>
+                                            <span class="text-gray-400 text-sm ml-2">by ${room.host}</span>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-sm text-gray-400">${room.players}/${room.maxPlayers} players</span>
+                                            <button onclick="joinRoom('${room.id}')" class="btn px-4 py-1 bg-purple-600 rounded text-sm">
+                                                Join
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <!-- Leaderboard -->
+                ${state.leaderboard.length > 0 ? `
+                    <div class="glass rounded-xl p-6">
+                        <h3 class="text-xl font-bold mb-4">🏆 Leaderboard</h3>
+                        <div class="space-y-2">
+                            ${state.leaderboard.slice(0, 10).map((p, i) => `
+                                <div class="flex justify-between items-center p-3 ${i < 3 ? 'bg-yellow-500/10' : 'bg-slate-800/50'} rounded-lg">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-lg">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
+                                        <span class="font-medium">${p.name}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-yellow-400 font-bold">${p.totalScore} XP</span>
+                                        <span class="text-gray-400 text-sm ml-2">(${p.gamesPlayed} games)</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function renderWaiting() {
+        if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+        
+        const r = state.room;
+        return `
+            <div class="glass rounded-xl p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold">${r.id}</h2>
+                        <span class="text-yellow-400 text-sm">⏳ Waiting for players...</span>
+                    </div>
+                    <button onclick="leaveRoom()" class="text-gray-400 hover:text-white">✕ Leave</button>
+                </div>
+                
+                <div class="mb-2 text-sm text-gray-400">
+                    Share this code with friends: <span class="font-mono text-purple-400 select-all">${r.id}</span>
+                </div>
+                
+                <div class="mb-6">
+                    <h3 class="font-bold mb-3">👥 Players (${r.players.length})</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        ${r.players.map((p, i) => `
+                            <div class="player-card flex items-center gap-3 p-3 bg-slate-800 rounded-lg ${p.name === state.playerName ? 'ring-2 ring-purple-500' : ''}">
+                                <span>${p.isHost ? '👑' : '🎭'}</span>
+                                <span class="flex-1 truncate">${p.name}</span>
+                                ${p.name === state.playerName ? '<span class="text-xs bg-purple-500 px-2 py-0.5 rounded">YOU</span>' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                
+                ${state.isHost ? `
+                    <button onclick="startGame()" ${r.players.length < 2 ? 'disabled' : ''} 
+                        class="btn w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl font-bold text-lg">
+                        ${r.players.length < 2 ? 'Need at least 2 players' : '🚀 Start Game!'}
+                    </button>
+                    <p class="text-center text-xs text-gray-500 mt-2">AI will generate the joke prompt</p>
+                ` : `
+                    <p class="text-center text-gray-400 py-4">Waiting for host to start the game...</p>
+                `}
+            </div>
+        `;
+    }
+
+    function renderSubmitting() {
+        if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+        
+        const r = state.room;
+        const submitted = r.submissions?.length || 0;
+        
+        return `
+            <div class="space-y-4">
+                <div class="glass rounded-xl p-4 flex justify-between items-center">
+                    <span class="text-blue-400 font-bold">✍️ Round ${r.currentRound}/${r.totalRounds} - SUBMIT</span>
+                    <span class="text-sm text-gray-400">${submitted}/${r.players.length} submitted</span>
+                </div>
+                
+                <div class="glass rounded-xl p-6 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30">
+                    <p class="text-sm text-purple-300 mb-2">🤖 AI-Generated Prompt:</p>
+                    <p class="text-xl font-medium italic">"${r.jokePrompt}"</p>
+                </div>
+                
+                ${!state.hasSubmitted ? `
+                    <div class="glass rounded-xl p-6">
+                        <textarea id="punchline-input" maxlength="200" placeholder="Write your funniest punchline..."
+                            class="w-full h-32 px-4 py-3 bg-slate-800 rounded-xl resize-none border border-slate-700 focus:border-purple-500 focus:outline-none text-lg"></textarea>
+                        <div class="flex justify-between items-center mt-3">
+                            <span class="text-sm text-gray-400">Be creative! 🎭</span>
+                            <button onclick="submitPunchline(document.getElementById('punchline-input').value)" 
+                                class="btn px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl font-bold">
+                                📤 Submit
+                            </button>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="glass rounded-xl p-6 text-center">
+                        <div class="text-4xl mb-2">✅</div>
+                        <p class="text-green-400 font-bold">Submitted!</p>
+                        <p class="text-gray-400 text-sm mt-2">Waiting for others... (${submitted}/${r.players.length})</p>
+                    </div>
+                `}
+                
+                ${state.isHost && submitted >= 2 ? `
+                    <button onclick="startBetting()" class="btn w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold">
+                        Start Betting Phase →
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function renderBetting() {
+        if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+        
+        const r = state.room;
+        const bets = r.bets?.length || 0;
+        
+        // Get anonymized submissions
+        const submissions = r.submissions.map(s => ({ id: s.id, punchline: s.punchline }));
+        
+        return `
+            <div class="space-y-4">
+                <div class="glass rounded-xl p-4 flex justify-between items-center">
+                    <span class="text-purple-400 font-bold">🎯 Round ${r.currentRound}/${r.totalRounds} - BET</span>
+                    <span class="text-sm text-gray-400">${bets}/${r.players.length} bet</span>
+                </div>
+                
+                <div class="glass rounded-xl p-3">
+                    <p class="text-sm text-gray-400">Prompt: "${r.jokePrompt}"</p>
+                </div>
+                
+                <p class="text-center text-gray-300">Which punchline will the AI judge as funniest?</p>
+                
+                <div class="space-y-3">
+                    ${submissions.map(sub => `
+                        <div onclick="state.selectedSubmission = ${sub.id}; render();" 
+                            class="glass rounded-xl p-4 cursor-pointer transition-all hover:bg-white/10 ${state.selectedSubmission === sub.id ? 'card-selected' : ''}">
+                            <div class="flex items-start gap-4">
+                                <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold ${state.selectedSubmission === sub.id ? 'bg-purple-500' : 'bg-slate-700'}">
+                                    #${sub.id}
+                                </div>
+                                <p class="flex-1 text-lg">${sub.punchline}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                ${!state.hasBet ? `
+                    <div class="glass rounded-xl p-6">
+                        <div class="flex items-center gap-4 mb-4">
+                            <span class="text-gray-400">Bet amount:</span>
+                            <input type="range" min="10" max="100" value="${state.betAmount}" 
+                                oninput="state.betAmount = parseInt(this.value); render();"
+                                class="flex-1">
+                            <span class="text-xl font-bold text-yellow-400">${state.betAmount} XP</span>
+                        </div>
+                        <button onclick="placeBet()" ${!state.selectedSubmission ? 'disabled' : ''}
+                            class="btn w-full py-3 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl font-bold">
+                            🎲 Place Bet
+                        </button>
+                    </div>
+                ` : `
+                    <div class="glass rounded-xl p-6 text-center">
+                        <div class="text-4xl mb-2">🎲</div>
+                        <p class="text-purple-400 font-bold">Bet placed!</p>
+                        <p class="text-gray-400 text-sm mt-2">Waiting for others... (${bets}/${r.players.length})</p>
+                    </div>
+                `}
+                
+                ${state.isHost && bets >= 2 ? `
+                    <button onclick="judgeRound()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
+                        🔮 Let the Oracle Judge!
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function renderJudging() {
+        return `
+            <div class="glass rounded-2xl p-8 text-center">
+                <div class="w-24 h-24 oracle-eye rounded-full flex items-center justify-center mx-auto mb-6 animate-glow">
+                    <span class="text-5xl">👁️</span>
+                </div>
+                <h2 class="text-2xl font-bold mb-4">The Oracle Deliberates...</h2>
+                <p class="text-gray-400 mb-6">AI validators reaching consensus via Optimistic Democracy</p>
+                <div class="flex justify-center gap-2">
+                    ${[0,1,2,3,4].map(i => `<div class="w-3 h-3 bg-purple-500 rounded-full animate-pulse" style="animation-delay: ${i * 0.15}s"></div>`).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderRoundResults() {
+        if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+        
+        const r = state.room;
+        const lastResult = r.roundResults[r.roundResults.length - 1];
+        
+        if (!lastResult) return renderJudging();
+        
+        return `
+            <div class="space-y-6">
+                <div class="glass rounded-xl p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center">
+                    <div class="text-5xl mb-4">👑</div>
+                    <p class="text-yellow-400 text-sm mb-2">Round ${lastResult.round} Winner!</p>
+                    <p class="text-2xl font-bold mb-2">"${lastResult.winningPunchline}"</p>
+                    <p class="text-gray-400">by <span class="text-white font-medium">${lastResult.winnerName}</span></p>
+                </div>
+                
+                <div class="glass rounded-xl p-6">
+                    <h3 class="font-bold mb-4">📊 Current Standings</h3>
+                    <div class="space-y-2">
+                        ${[...r.players].sort((a, b) => b.score - a.score).map((p, i) => `
+                            <div class="flex justify-between items-center p-3 ${p.name === state.playerName ? 'bg-purple-500/20 ring-1 ring-purple-500' : 'bg-slate-800'} rounded-lg">
+                                <div class="flex items-center gap-3">
+                                    <span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
+                                    <span>${p.name}</span>
+                                </div>
+                                <span class="text-yellow-400 font-bold">${p.score} XP</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                
+                ${state.isHost ? `
+                    <button onclick="nextRound()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
+                        ${r.currentRound >= r.totalRounds ? '🏆 See Final Results' : '➡️ Next Round'}
+                    </button>
+                ` : `
+                    <p class="text-center text-gray-400">Waiting for host to continue...</p>
+                `}
+            </div>
+        `;
+    }
+
+    function renderFinalResults() {
+        if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+        
+        const r = state.room;
+        const standings = [...r.players].sort((a, b) => b.score - a.score);
+        const winner = standings[0];
+        const playerRank = standings.findIndex(p => p.name === state.playerName) + 1;
+        
+        return `
+            <div class="space-y-6">
+                <div class="text-center py-8">
+                    <div class="text-6xl mb-4">🏆</div>
+                    <h2 class="text-3xl font-bold mb-2">Game Over!</h2>
+                    <p class="text-gray-400">After ${r.totalRounds} rounds of wit</p>
+                </div>
+                
+                <div class="glass rounded-xl p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center">
+                    <p class="text-yellow-400 text-sm mb-2">🎉 Champion of Wit!</p>
+                    <p class="text-3xl font-bold">${winner.name}</p>
+                    <p class="text-2xl text-yellow-400 mt-2">${winner.score} XP</p>
+                </div>
+                
+                <div class="glass rounded-xl p-6">
+                    <h3 class="font-bold mb-4">🏅 Final Standings</h3>
+                    <div class="space-y-2">
+                        ${standings.map((p, i) => `
+                            <div class="flex justify-between items-center p-3 ${p.name === state.playerName ? 'bg-purple-500/20 ring-1 ring-purple-500' : i < 3 ? 'bg-yellow-500/10' : 'bg-slate-800'} rounded-lg">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-lg">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
+                                    <span class="font-medium">${p.name}</span>
+                                    ${p.name === state.playerName ? '<span class="text-xs bg-purple-500 px-2 py-0.5 rounded">YOU</span>' : ''}
+                                </div>
+                                <span class="text-yellow-400 font-bold">${p.score} XP</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                
+                ${playerRank === 1 ? `
+                    <p class="text-center text-2xl">🎉 Congratulations! You won! 🎉</p>
+                ` : `
+                    <p class="text-center text-gray-400">You finished #${playerRank} - Great game!</p>
+                `}
+                
+                <button onclick="leaveRoom()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
+                    🎮 Play Again
+                </button>
+            </div>
+        `;
+    }
+
+    // =================================================================
+    // HELPERS
+    // =================================================================
+    function createConfetti() {
+        const colors = ['#f59e0b', '#ec4899', '#6366f1', '#10b981', '#ef4444'];
+        for (let i = 0; i < 50; i++) {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = Math.random() * 100 + 'vw';
+            confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+            confetti.style.animation = `confetti-fall ${2 + Math.random() * 2}s linear forwards`;
+            confetti.style.animationDelay = Math.random() * 0.5 + 's';
+            document.body.appendChild(confetti);
+            setTimeout(() => confetti.remove(), 4000);
+        }
+    }
+
+    // =================================================================
+    // INIT
+    // =================================================================
+    render();
+    </script>
+</body>
+</html>
