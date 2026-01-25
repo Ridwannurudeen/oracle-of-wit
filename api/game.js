@@ -1,6 +1,94 @@
-// In-memory game state
-const gameRooms = {};
-const globalLeaderboard = [];
+// Uses Upstash Redis for persistence across serverless calls
+// Set up free account at upstash.com, then add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to Vercel env vars
+
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+// Redis helper functions
+async function redisGet(key) {
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) {
+        console.log('No Upstash credentials, using fallback');
+        return null;
+    }
+    try {
+        const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
+            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
+        });
+        const data = await res.json();
+        return data.result ? JSON.parse(data.result) : null;
+    } catch (e) {
+        console.error('Redis GET error:', e);
+        return null;
+    }
+}
+
+async function redisSet(key, value, exSeconds = 7200) {
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) {
+        console.log('No Upstash credentials, using fallback');
+        return false;
+    }
+    try {
+        const res = await fetch(`${UPSTASH_URL}/set/${key}?EX=${exSeconds}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+            body: JSON.stringify(value)
+        });
+        return res.ok;
+    } catch (e) {
+        console.error('Redis SET error:', e);
+        return false;
+    }
+}
+
+async function redisDel(key) {
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
+    try {
+        await fetch(`${UPSTASH_URL}/del/${key}`, {
+            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
+        });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function redisKeys(pattern) {
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) return [];
+    try {
+        const res = await fetch(`${UPSTASH_URL}/keys/${pattern}`, {
+            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
+        });
+        const data = await res.json();
+        return data.result || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+// In-memory fallback (for testing without Redis)
+const fallbackRooms = {};
+const fallbackLeaderboard = [];
+
+async function getRoom(roomId) {
+    const room = await redisGet(`room:${roomId}`);
+    return room || fallbackRooms[roomId] || null;
+}
+
+async function setRoom(roomId, room) {
+    fallbackRooms[roomId] = room;
+    await redisSet(`room:${roomId}`, room);
+}
+
+async function getLeaderboard() {
+    const lb = await redisGet('leaderboard');
+    return lb || fallbackLeaderboard;
+}
+
+async function setLeaderboard(lb) {
+    fallbackLeaderboard.length = 0;
+    fallbackLeaderboard.push(...lb);
+    await redisSet('leaderboard', lb);
+}
 
 // Helper functions
 function generateRoomCode() {
@@ -23,7 +111,10 @@ function getPromptsForCategory(category) {
             "The senior dev looked at my PR and said...",
             "I asked AI to fix my code and it replied...",
             "The blockchain was congested because...",
-            "Web3 will change the world when..."
+            "Web3 will change the world when...",
+            "The AI became sentient and its first words were...",
+            "My smart contract had one bug, and now...",
+            "The hackathon was going great until..."
         ],
         crypto: [
             "WAGMI until...",
@@ -35,7 +126,10 @@ function getPromptsForCategory(category) {
             "The rug pull happened when...",
             "Diamond hands means...",
             "I'm not selling because...",
-            "The best time to buy was..."
+            "The best time to buy was...",
+            "My seed phrase is safe because...",
+            "The gas fees were so high that...",
+            "I told my family I invest in crypto and they said..."
         ],
         general: [
             "The meeting could have been an email, but instead...",
@@ -47,34 +141,40 @@ function getPromptsForCategory(category) {
             "My therapist said I need to...",
             "The gym membership was worth it because...",
             "I told my boss I was late because...",
-            "Dating apps taught me that..."
+            "Dating apps taught me that...",
+            "The fortune cookie said...",
+            "I'm not lazy, I'm just...",
+            "My superpower would be..."
         ]
     };
     return prompts[category] || prompts.general;
 }
 
 function pickWinner(submissions) {
+    // Simple random for now - in production this would call GenLayer AI
     const randomIndex = Math.floor(Math.random() * submissions.length);
     return submissions[randomIndex].id;
 }
 
-function updateLeaderboard(playerName, score) {
-    const existing = globalLeaderboard.find(p => p.name === playerName);
+async function updateLeaderboard(playerName, score) {
+    const lb = await getLeaderboard();
+    const existing = lb.find(p => p.name === playerName);
     if (existing) {
         existing.totalScore += score;
         existing.gamesPlayed++;
     } else {
-        globalLeaderboard.push({
+        lb.push({
             name: playerName,
             totalScore: score,
             gamesPlayed: 1
         });
     }
-    globalLeaderboard.sort((a, b) => b.totalScore - a.totalScore);
+    lb.sort((a, b) => b.totalScore - a.totalScore);
+    await setLeaderboard(lb.slice(0, 100)); // Keep top 100
 }
 
 // Main handler
-export default function handler(req, res) {
+export default async function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -96,7 +196,7 @@ export default function handler(req, res) {
                 }
                 
                 const roomId = generateRoomCode();
-                gameRooms[roomId] = {
+                const room = {
                     id: roomId,
                     host: hostName,
                     category: category || 'tech',
@@ -114,14 +214,18 @@ export default function handler(req, res) {
                     submissions: [],
                     bets: [],
                     roundResults: [],
+                    usedPrompts: [],
                     createdAt: now(),
-                    updatedAt: now()
+                    updatedAt: now(),
+                    phaseEndsAt: null
                 };
+                
+                await setRoom(roomId, room);
                 
                 return res.status(200).json({ 
                     success: true, 
                     roomId, 
-                    room: gameRooms[roomId] 
+                    room 
                 });
             }
 
@@ -131,7 +235,7 @@ export default function handler(req, res) {
                     return res.status(400).json({ error: 'roomId and playerName required' });
                 }
                 
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found. It may have expired.' });
                 }
@@ -153,6 +257,7 @@ export default function handler(req, res) {
                         joinedAt: now()
                     });
                     room.updatedAt = now();
+                    await setRoom(roomId, room);
                 }
                 
                 return res.status(200).json({ success: true, room });
@@ -164,7 +269,7 @@ export default function handler(req, res) {
                     return res.status(400).json({ error: 'roomId required' });
                 }
                 
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
                 }
@@ -173,22 +278,43 @@ export default function handler(req, res) {
             }
 
             case 'listRooms': {
-                const publicRooms = Object.values(gameRooms)
-                    .filter(r => r.status === 'waiting')
-                    .map(r => ({
-                        id: r.id,
-                        host: r.host,
-                        category: r.category,
-                        players: r.players.length,
-                        maxPlayers: r.maxPlayers
-                    }));
+                const keys = await redisKeys('room:*');
+                const publicRooms = [];
+                
+                for (const key of keys.slice(0, 20)) {
+                    const roomId = key.replace('room:', '');
+                    const room = await getRoom(roomId);
+                    if (room && room.status === 'waiting') {
+                        publicRooms.push({
+                            id: room.id,
+                            host: room.host,
+                            category: room.category,
+                            players: room.players.length,
+                            maxPlayers: room.maxPlayers
+                        });
+                    }
+                }
+                
+                // Also include fallback rooms
+                for (const roomId in fallbackRooms) {
+                    const room = fallbackRooms[roomId];
+                    if (room && room.status === 'waiting' && !publicRooms.find(r => r.id === roomId)) {
+                        publicRooms.push({
+                            id: room.id,
+                            host: room.host,
+                            category: room.category,
+                            players: room.players.length,
+                            maxPlayers: room.maxPlayers
+                        });
+                    }
+                }
                 
                 return res.status(200).json({ success: true, rooms: publicRooms });
             }
 
             case 'startGame': {
                 const { roomId, hostName } = body;
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
@@ -208,16 +334,26 @@ export default function handler(req, res) {
                 room.bets = [];
                 room.updatedAt = now();
                 
+                // Pick a prompt that hasn't been used
                 const prompts = getPromptsForCategory(room.category);
-                room.jokePrompt = prompts[Math.floor(Math.random() * prompts.length)];
+                const availablePrompts = prompts.filter(p => !room.usedPrompts.includes(p));
+                const prompt = availablePrompts.length > 0 
+                    ? availablePrompts[Math.floor(Math.random() * availablePrompts.length)]
+                    : prompts[Math.floor(Math.random() * prompts.length)];
+                
+                room.jokePrompt = prompt;
+                room.usedPrompts.push(prompt);
+                room.phaseEndsAt = now() + 60000; // 60 seconds for submission
                 room.roundStartedAt = now();
+                
+                await setRoom(roomId, room);
                 
                 return res.status(200).json({ success: true, room });
             }
 
             case 'submitPunchline': {
                 const { roomId, playerName, punchline } = body;
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
@@ -240,6 +376,8 @@ export default function handler(req, res) {
                 });
                 room.updatedAt = now();
                 
+                await setRoom(roomId, room);
+                
                 return res.status(200).json({ 
                     success: true, 
                     submissionCount: room.submissions.length,
@@ -249,7 +387,7 @@ export default function handler(req, res) {
 
             case 'startBetting': {
                 const { roomId, hostName } = body;
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
@@ -265,14 +403,17 @@ export default function handler(req, res) {
                 
                 room.status = 'betting';
                 room.bets = [];
+                room.phaseEndsAt = now() + 45000; // 45 seconds for betting
                 room.updatedAt = now();
+                
+                await setRoom(roomId, room);
                 
                 return res.status(200).json({ success: true, room });
             }
 
             case 'placeBet': {
                 const { roomId, playerName, submissionId, amount } = body;
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
@@ -295,6 +436,8 @@ export default function handler(req, res) {
                 });
                 room.updatedAt = now();
                 
+                await setRoom(roomId, room);
+                
                 return res.status(200).json({ 
                     success: true, 
                     betCount: room.bets.length,
@@ -304,7 +447,7 @@ export default function handler(req, res) {
 
             case 'judgeRound': {
                 const { roomId, hostName } = body;
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
@@ -317,6 +460,7 @@ export default function handler(req, res) {
                 room.status = 'judging';
                 room.updatedAt = now();
                 
+                // Simulate AI judging delay
                 const winnerId = pickWinner(room.submissions);
                 const winningSubmission = room.submissions.find(s => s.id === winnerId);
                 
@@ -328,12 +472,14 @@ export default function handler(req, res) {
                     scores: {}
                 };
                 
+                // Author bonus
                 const player = room.players.find(p => p.name === winningSubmission.playerName);
                 if (player) {
                     player.score += 100;
                     roundResult.scores[player.name] = 100;
                 }
                 
+                // Correct prediction bonus
                 room.bets.forEach(bet => {
                     if (bet.submissionId === winnerId) {
                         const betPlayer = room.players.find(p => p.name === bet.playerName);
@@ -346,14 +492,17 @@ export default function handler(req, res) {
                 
                 room.roundResults.push(roundResult);
                 room.status = 'roundResults';
+                room.phaseEndsAt = null;
                 room.updatedAt = now();
+                
+                await setRoom(roomId, room);
                 
                 return res.status(200).json({ success: true, room, roundResult });
             }
 
             case 'nextRound': {
                 const { roomId, hostName } = body;
-                const room = gameRooms[roomId];
+                const room = await getRoom(roomId);
                 
                 if (!room) {
                     return res.status(404).json({ error: 'Room not found' });
@@ -365,13 +514,20 @@ export default function handler(req, res) {
                 
                 if (room.currentRound >= room.totalRounds) {
                     room.status = 'finished';
-                    room.players.forEach(p => updateLeaderboard(p.name, p.score));
+                    
+                    // Update global leaderboard
+                    for (const p of room.players) {
+                        await updateLeaderboard(p.name, p.score);
+                    }
+                    
+                    await setRoom(roomId, room);
+                    const leaderboard = await getLeaderboard();
                     
                     return res.status(200).json({ 
                         success: true, 
                         room,
                         finalStandings: [...room.players].sort((a, b) => b.score - a.score),
-                        leaderboard: globalLeaderboard.slice(0, 10)
+                        leaderboard: leaderboard.slice(0, 10)
                     });
                 }
                 
@@ -380,18 +536,29 @@ export default function handler(req, res) {
                 room.submissions = [];
                 room.bets = [];
                 
+                // Pick new unused prompt
                 const prompts = getPromptsForCategory(room.category);
-                room.jokePrompt = prompts[Math.floor(Math.random() * prompts.length)];
+                const availablePrompts = prompts.filter(p => !room.usedPrompts.includes(p));
+                const prompt = availablePrompts.length > 0 
+                    ? availablePrompts[Math.floor(Math.random() * availablePrompts.length)]
+                    : prompts[Math.floor(Math.random() * prompts.length)];
+                
+                room.jokePrompt = prompt;
+                room.usedPrompts.push(prompt);
+                room.phaseEndsAt = now() + 60000;
                 room.roundStartedAt = now();
                 room.updatedAt = now();
+                
+                await setRoom(roomId, room);
                 
                 return res.status(200).json({ success: true, room });
             }
 
             case 'getLeaderboard': {
+                const leaderboard = await getLeaderboard();
                 return res.status(200).json({ 
                     success: true, 
-                    leaderboard: globalLeaderboard.slice(0, 20) 
+                    leaderboard: leaderboard.slice(0, 20) 
                 });
             }
 

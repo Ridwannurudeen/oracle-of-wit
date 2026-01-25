@@ -15,6 +15,10 @@
         .animate-float { animation: float 3s ease-in-out infinite; }
         @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.5); } 50% { box-shadow: 0 0 60px rgba(139, 92, 246, 0.9); } }
         .animate-glow { animation: pulse-glow 2s ease-in-out infinite; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        .animate-shake { animation: shake 0.5s ease-in-out; }
+        @keyframes countdown-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+        .countdown-critical { animation: countdown-pulse 0.5s ease-in-out infinite; color: #ef4444 !important; }
         .btn { transition: all 0.2s; cursor: pointer; }
         .btn:hover:not(:disabled) { transform: scale(1.02); filter: brightness(1.1); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -25,6 +29,7 @@
         .player-card:hover { transform: translateY(-2px); }
         .confetti { position: fixed; width: 10px; height: 10px; pointer-events: none; z-index: 1000; }
         @keyframes confetti-fall { 0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+        .timer-bar { transition: width 1s linear; }
     </style>
 </head>
 <body class="min-h-screen bg-slate-900 text-white overflow-x-hidden">
@@ -44,13 +49,58 @@
         ? 'http://localhost:3000/api/game'
         : '/api/game';
     
-    const POLL_INTERVAL = 2000; // Poll every 2 seconds for updates
+    const POLL_INTERVAL = 2000;
+    const SETTINGS = {
+        submissionTime: 60,
+        bettingTime: 45,
+        soundEnabled: true
+    };
+
+    // =================================================================
+    // SOUND SYSTEM
+    // =================================================================
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    const SOUNDS = {
+        click: { freq: 600, duration: 0.1, type: 'sine' },
+        submit: { freq: 800, duration: 0.15, type: 'sine' },
+        bet: { freq: 500, duration: 0.2, type: 'triangle' },
+        win: { freq: [523, 659, 784], duration: 0.3, type: 'sine' },
+        lose: { freq: 200, duration: 0.4, type: 'sawtooth' },
+        tick: { freq: 1000, duration: 0.05, type: 'square' },
+        roundStart: { freq: [440, 554, 659], duration: 0.2, type: 'sine' },
+        gameOver: { freq: [659, 554, 440], duration: 0.3, type: 'sine' },
+        countdown: { freq: 880, duration: 0.1, type: 'sine' },
+        confetti: { freq: [523, 659, 784, 1047], duration: 0.4, type: 'sine' }
+    };
+
+    function playSound(soundName) {
+        if (!SETTINGS.soundEnabled) return;
+        const sound = SOUNDS[soundName];
+        if (!sound) return;
+        
+        try {
+            const frequencies = Array.isArray(sound.freq) ? sound.freq : [sound.freq];
+            frequencies.forEach((freq, i) => {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                oscillator.frequency.value = freq;
+                oscillator.type = sound.type;
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + sound.duration);
+                oscillator.start(audioContext.currentTime + i * 0.1);
+                oscillator.stop(audioContext.currentTime + sound.duration + i * 0.1);
+            });
+        } catch(e) { console.log('Sound error:', e); }
+    }
 
     // =================================================================
     // STATE
     // =================================================================
     let state = {
-        screen: 'welcome', // welcome, lobby, waiting, submitting, betting, judging, roundResults, results
+        screen: 'welcome',
         playerName: localStorage.getItem('playerName') || '',
         roomId: null,
         room: null,
@@ -62,10 +112,50 @@
         error: null,
         loading: false,
         leaderboard: [],
-        publicRooms: []
+        publicRooms: [],
+        timeLeft: 0,
+        soundEnabled: true
     };
 
     let pollInterval = null;
+    let timerInterval = null;
+
+    // =================================================================
+    // TIMER SYSTEM
+    // =================================================================
+    function startTimer(seconds, onTick, onComplete) {
+        stopTimer();
+        state.timeLeft = seconds;
+        
+        timerInterval = setInterval(() => {
+            state.timeLeft--;
+            
+            if (state.timeLeft <= 10 && state.timeLeft > 0) {
+                playSound('tick');
+            }
+            
+            if (state.timeLeft <= 0) {
+                stopTimer();
+                if (onComplete) onComplete();
+            } else {
+                if (onTick) onTick(state.timeLeft);
+            }
+            render();
+        }, 1000);
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
+
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
 
     // =================================================================
     // API CALLS
@@ -111,21 +201,45 @@
                 const oldStatus = state.room?.status;
                 state.room = result.room;
                 
-                // Update screen based on room status
+                // Handle phase changes
                 if (state.room.status !== oldStatus) {
-                    state.screen = state.room.status === 'roundResults' ? 'roundResults' : state.room.status;
-                    if (state.room.status === 'submitting') {
-                        state.hasSubmitted = false;
-                    }
-                    if (state.room.status === 'betting') {
-                        state.hasBet = false;
-                        state.selectedSubmission = null;
+                    handlePhaseChange(oldStatus, state.room.status);
+                }
+                
+                // Calculate time left from server phaseEndsAt
+                if (state.room.phaseEndsAt) {
+                    const serverTimeLeft = Math.max(0, Math.floor((state.room.phaseEndsAt - Date.now()) / 1000));
+                    if (Math.abs(serverTimeLeft - state.timeLeft) > 5) {
+                        state.timeLeft = serverTimeLeft;
                     }
                 }
+                
                 render();
             }
         } catch (e) {
             console.error('Poll error:', e);
+        }
+    }
+
+    function handlePhaseChange(oldStatus, newStatus) {
+        state.screen = newStatus === 'roundResults' ? 'roundResults' : newStatus;
+        
+        if (newStatus === 'submitting') {
+            playSound('roundStart');
+            state.hasSubmitted = false;
+            startTimer(SETTINGS.submissionTime, null, null);
+        } else if (newStatus === 'betting') {
+            playSound('click');
+            state.hasBet = false;
+            state.selectedSubmission = null;
+            startTimer(SETTINGS.bettingTime, null, null);
+        } else if (newStatus === 'roundResults') {
+            stopTimer();
+            playSound('win');
+        } else if (newStatus === 'finished') {
+            stopTimer();
+            playSound('confetti');
+            createConfetti();
         }
     }
 
@@ -172,6 +286,7 @@
     // ACTIONS
     // =================================================================
     async function createRoom(category) {
+        playSound('click');
         const result = await api('createRoom', {
             hostName: state.playerName,
             category: category
@@ -187,6 +302,7 @@
     }
 
     async function joinRoom(roomId) {
+        playSound('click');
         const result = await api('joinRoom', {
             roomId: roomId,
             playerName: state.playerName
@@ -202,6 +318,7 @@
     }
 
     async function startGame() {
+        playSound('roundStart');
         const result = await api('startGame', {
             roomId: state.roomId,
             hostName: state.playerName
@@ -210,10 +327,12 @@
         state.room = result.room;
         state.screen = 'submitting';
         state.hasSubmitted = false;
+        startTimer(SETTINGS.submissionTime, null, null);
         render();
     }
 
     async function submitPunchline(punchline) {
+        playSound('submit');
         await api('submitPunchline', {
             roomId: state.roomId,
             playerName: state.playerName,
@@ -225,6 +344,7 @@
     }
 
     async function startBetting() {
+        playSound('click');
         const result = await api('startBetting', {
             roomId: state.roomId,
             hostName: state.playerName
@@ -234,6 +354,7 @@
         state.screen = 'betting';
         state.hasBet = false;
         state.selectedSubmission = null;
+        startTimer(SETTINGS.bettingTime, null, null);
         render();
     }
 
@@ -244,6 +365,7 @@
             return;
         }
         
+        playSound('bet');
         await api('placeBet', {
             roomId: state.roomId,
             playerName: state.playerName,
@@ -256,6 +378,7 @@
     }
 
     async function judgeRound() {
+        playSound('click');
         const result = await api('judgeRound', {
             roomId: state.roomId,
             hostName: state.playerName
@@ -263,10 +386,13 @@
         
         state.room = result.room;
         state.screen = 'roundResults';
+        stopTimer();
+        playSound('win');
         render();
     }
 
     async function nextRound() {
+        playSound('click');
         const result = await api('nextRound', {
             roomId: state.roomId,
             hostName: state.playerName
@@ -278,16 +404,22 @@
             state.screen = 'results';
             state.leaderboard = result.leaderboard || [];
             stopPolling();
+            stopTimer();
+            playSound('confetti');
             createConfetti();
         } else {
             state.screen = 'submitting';
             state.hasSubmitted = false;
+            playSound('roundStart');
+            startTimer(SETTINGS.submissionTime, null, null);
         }
         render();
     }
 
     function leaveRoom() {
+        playSound('click');
         stopPolling();
+        stopTimer();
         state.roomId = null;
         state.room = null;
         state.isHost = false;
@@ -301,10 +433,17 @@
             render();
             return;
         }
+        playSound('click');
         state.screen = 'lobby';
         localStorage.setItem('playerName', state.playerName);
         fetchPublicRooms();
         fetchLeaderboard();
+        render();
+    }
+
+    function toggleSound() {
+        state.soundEnabled = !state.soundEnabled;
+        SETTINGS.soundEnabled = state.soundEnabled;
         render();
     }
 
@@ -334,8 +473,10 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
+                        <button onclick="toggleSound()" class="p-2 rounded-lg hover:bg-white/10">
+                            ${state.soundEnabled ? '🔊' : '🔇'}
+                        </button>
                         ${state.playerName ? `
-                            <span class="text-sm text-gray-400">Playing as:</span>
                             <span class="px-3 py-1 bg-purple-600/30 rounded-full text-sm font-medium">${state.playerName}</span>
                         ` : ''}
                         ${state.roomId ? `
@@ -349,9 +490,27 @@
 
     function renderError() {
         return `
-            <div class="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300">
+            <div class="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300 animate-shake">
                 ⚠️ ${state.error}
                 <button onclick="state.error=null; render();" class="ml-4 text-white underline">Dismiss</button>
+            </div>
+        `;
+    }
+
+    function renderTimer() {
+        if (state.timeLeft <= 0) return '';
+        const isLow = state.timeLeft <= 10;
+        const percentage = (state.timeLeft / (state.screen === 'submitting' ? SETTINGS.submissionTime : SETTINGS.bettingTime)) * 100;
+        
+        return `
+            <div class="glass rounded-xl p-4 mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-gray-400">⏱️ Time Remaining</span>
+                    <span class="text-2xl font-bold ${isLow ? 'countdown-critical text-red-500' : 'text-white'}">${formatTime(state.timeLeft)}</span>
+                </div>
+                <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div class="h-full timer-bar ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}" style="width: ${percentage}%"></div>
+                </div>
             </div>
         `;
     }
@@ -387,6 +546,7 @@
                     <input type="text" id="player-name" placeholder="Enter your name..." 
                         value="${state.playerName}"
                         onchange="state.playerName = this.value"
+                        onkeypress="if(event.key==='Enter')goToLobby()"
                         class="w-full px-4 py-3 bg-slate-800 rounded-lg text-white mb-4 border border-slate-700 focus:border-purple-500 focus:outline-none text-lg">
                     
                     <button onclick="goToLobby()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
@@ -434,6 +594,7 @@
                     <h3 class="text-xl font-bold mb-4">🚪 Join Existing Game</h3>
                     <div class="flex gap-3">
                         <input type="text" id="room-code" placeholder="Enter room code (e.g. GAME_ABC123)" 
+                            onkeypress="if(event.key==='Enter')joinRoom(document.getElementById('room-code').value.toUpperCase())"
                             class="flex-1 px-4 py-3 bg-slate-800 rounded-lg border border-slate-700 focus:border-purple-500 focus:outline-none">
                         <button onclick="joinRoom(document.getElementById('room-code').value.toUpperCase())" 
                             class="btn px-6 py-3 bg-green-600 rounded-lg font-bold">
@@ -452,7 +613,7 @@
                                             <span class="text-gray-400 text-sm ml-2">by ${room.host}</span>
                                         </div>
                                         <div class="flex items-center gap-3">
-                                            <span class="text-sm text-gray-400">${room.players}/${room.maxPlayers} players</span>
+                                            <span class="text-sm text-gray-400">${room.players}/${room.maxPlayers}</span>
                                             <button onclick="joinRoom('${room.id}')" class="btn px-4 py-1 bg-purple-600 rounded text-sm">
                                                 Join
                                             </button>
@@ -502,8 +663,9 @@
                     <button onclick="leaveRoom()" class="text-gray-400 hover:text-white">✕ Leave</button>
                 </div>
                 
-                <div class="mb-2 text-sm text-gray-400">
-                    Share this code with friends: <span class="font-mono text-purple-400 select-all">${r.id}</span>
+                <div class="mb-4 p-3 bg-slate-800 rounded-lg">
+                    <p class="text-sm text-gray-400">Share this code with friends:</p>
+                    <p class="font-mono text-2xl text-purple-400 select-all">${r.id}</p>
                 </div>
                 
                 <div class="mb-6">
@@ -522,11 +684,13 @@
                 ${state.isHost ? `
                     <button onclick="startGame()" ${r.players.length < 2 ? 'disabled' : ''} 
                         class="btn w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl font-bold text-lg">
-                        ${r.players.length < 2 ? 'Need at least 2 players' : '🚀 Start Game!'}
+                        ${r.players.length < 2 ? '⏳ Need at least 2 players' : '🚀 Start Game!'}
                     </button>
-                    <p class="text-center text-xs text-gray-500 mt-2">AI will generate the joke prompt</p>
                 ` : `
-                    <p class="text-center text-gray-400 py-4">Waiting for host to start the game...</p>
+                    <div class="text-center py-4 text-gray-400">
+                        <div class="spinner mx-auto mb-2"></div>
+                        Waiting for host to start the game...
+                    </div>
                 `}
             </div>
         `;
@@ -540,8 +704,10 @@
         
         return `
             <div class="space-y-4">
+                ${renderTimer()}
+                
                 <div class="glass rounded-xl p-4 flex justify-between items-center">
-                    <span class="text-blue-400 font-bold">✍️ Round ${r.currentRound}/${r.totalRounds} - SUBMIT</span>
+                    <span class="text-blue-400 font-bold">✍️ Round ${r.currentRound}/${r.totalRounds}</span>
                     <span class="text-sm text-gray-400">${submitted}/${r.players.length} submitted</span>
                 </div>
                 
@@ -555,7 +721,7 @@
                         <textarea id="punchline-input" maxlength="200" placeholder="Write your funniest punchline..."
                             class="w-full h-32 px-4 py-3 bg-slate-800 rounded-xl resize-none border border-slate-700 focus:border-purple-500 focus:outline-none text-lg"></textarea>
                         <div class="flex justify-between items-center mt-3">
-                            <span class="text-sm text-gray-400">Be creative! 🎭</span>
+                            <span class="text-sm text-gray-400">Max 200 characters</span>
                             <button onclick="submitPunchline(document.getElementById('punchline-input').value)" 
                                 class="btn px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl font-bold">
                                 📤 Submit
@@ -564,15 +730,15 @@
                     </div>
                 ` : `
                     <div class="glass rounded-xl p-6 text-center">
-                        <div class="text-4xl mb-2">✅</div>
-                        <p class="text-green-400 font-bold">Submitted!</p>
-                        <p class="text-gray-400 text-sm mt-2">Waiting for others... (${submitted}/${r.players.length})</p>
+                        <div class="text-5xl mb-3">✅</div>
+                        <p class="text-green-400 font-bold text-xl">Submitted!</p>
+                        <p class="text-gray-400 mt-2">Waiting for others... (${submitted}/${r.players.length})</p>
                     </div>
                 `}
                 
                 ${state.isHost && submitted >= 2 ? `
-                    <button onclick="startBetting()" class="btn w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold">
-                        Start Betting Phase →
+                    <button onclick="startBetting()" class="btn w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold">
+                        🎯 Start Betting Phase →
                     </button>
                 ` : ''}
             </div>
@@ -584,14 +750,14 @@
         
         const r = state.room;
         const bets = r.bets?.length || 0;
-        
-        // Get anonymized submissions
         const submissions = r.submissions.map(s => ({ id: s.id, punchline: s.punchline }));
         
         return `
             <div class="space-y-4">
+                ${renderTimer()}
+                
                 <div class="glass rounded-xl p-4 flex justify-between items-center">
-                    <span class="text-purple-400 font-bold">🎯 Round ${r.currentRound}/${r.totalRounds} - BET</span>
+                    <span class="text-purple-400 font-bold">🎯 Round ${r.currentRound}/${r.totalRounds} - BETTING</span>
                     <span class="text-sm text-gray-400">${bets}/${r.players.length} bet</span>
                 </div>
                 
@@ -599,14 +765,14 @@
                     <p class="text-sm text-gray-400">Prompt: "${r.jokePrompt}"</p>
                 </div>
                 
-                <p class="text-center text-gray-300">Which punchline will the AI judge as funniest?</p>
+                <p class="text-center text-gray-300 text-lg">🔮 Which punchline will the AI judge as funniest?</p>
                 
                 <div class="space-y-3">
                     ${submissions.map(sub => `
-                        <div onclick="state.selectedSubmission = ${sub.id}; render();" 
+                        <div onclick="state.selectedSubmission = ${sub.id}; playSound('click'); render();" 
                             class="glass rounded-xl p-4 cursor-pointer transition-all hover:bg-white/10 ${state.selectedSubmission === sub.id ? 'card-selected' : ''}">
                             <div class="flex items-start gap-4">
-                                <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold ${state.selectedSubmission === sub.id ? 'bg-purple-500' : 'bg-slate-700'}">
+                                <div class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${state.selectedSubmission === sub.id ? 'bg-purple-500' : 'bg-slate-700'}">
                                     #${sub.id}
                                 </div>
                                 <p class="flex-1 text-lg">${sub.punchline}</p>
@@ -621,19 +787,19 @@
                             <span class="text-gray-400">Bet amount:</span>
                             <input type="range" min="10" max="100" value="${state.betAmount}" 
                                 oninput="state.betAmount = parseInt(this.value); render();"
-                                class="flex-1">
-                            <span class="text-xl font-bold text-yellow-400">${state.betAmount} XP</span>
+                                class="flex-1 accent-purple-500">
+                            <span class="text-2xl font-bold text-yellow-400">${state.betAmount} XP</span>
                         </div>
                         <button onclick="placeBet()" ${!state.selectedSubmission ? 'disabled' : ''}
-                            class="btn w-full py-3 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl font-bold">
+                            class="btn w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl font-bold text-lg">
                             🎲 Place Bet
                         </button>
                     </div>
                 ` : `
                     <div class="glass rounded-xl p-6 text-center">
-                        <div class="text-4xl mb-2">🎲</div>
-                        <p class="text-purple-400 font-bold">Bet placed!</p>
-                        <p class="text-gray-400 text-sm mt-2">Waiting for others... (${bets}/${r.players.length})</p>
+                        <div class="text-5xl mb-3">🎲</div>
+                        <p class="text-purple-400 font-bold text-xl">Bet placed!</p>
+                        <p class="text-gray-400 mt-2">Waiting for others... (${bets}/${r.players.length})</p>
                     </div>
                 `}
                 
@@ -672,10 +838,10 @@
         return `
             <div class="space-y-6">
                 <div class="glass rounded-xl p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center">
-                    <div class="text-5xl mb-4">👑</div>
+                    <div class="text-6xl mb-4">👑</div>
                     <p class="text-yellow-400 text-sm mb-2">Round ${lastResult.round} Winner!</p>
-                    <p class="text-2xl font-bold mb-2">"${lastResult.winningPunchline}"</p>
-                    <p class="text-gray-400">by <span class="text-white font-medium">${lastResult.winnerName}</span></p>
+                    <p class="text-2xl font-bold mb-3">"${lastResult.winningPunchline}"</p>
+                    <p class="text-gray-400">by <span class="text-white font-medium text-lg">${lastResult.winnerName}</span></p>
                 </div>
                 
                 <div class="glass rounded-xl p-6">
@@ -684,7 +850,7 @@
                         ${[...r.players].sort((a, b) => b.score - a.score).map((p, i) => `
                             <div class="flex justify-between items-center p-3 ${p.name === state.playerName ? 'bg-purple-500/20 ring-1 ring-purple-500' : 'bg-slate-800'} rounded-lg">
                                 <div class="flex items-center gap-3">
-                                    <span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
+                                    <span class="text-lg">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
                                     <span>${p.name}</span>
                                 </div>
                                 <span class="text-yellow-400 font-bold">${p.score} XP</span>
@@ -698,7 +864,10 @@
                         ${r.currentRound >= r.totalRounds ? '🏆 See Final Results' : '➡️ Next Round'}
                     </button>
                 ` : `
-                    <p class="text-center text-gray-400">Waiting for host to continue...</p>
+                    <div class="text-center py-4 text-gray-400">
+                        <div class="spinner mx-auto mb-2"></div>
+                        Waiting for host to continue...
+                    </div>
                 `}
             </div>
         `;
@@ -715,15 +884,15 @@
         return `
             <div class="space-y-6">
                 <div class="text-center py-8">
-                    <div class="text-6xl mb-4">🏆</div>
-                    <h2 class="text-3xl font-bold mb-2">Game Over!</h2>
+                    <div class="text-7xl mb-4">🏆</div>
+                    <h2 class="text-4xl font-bold mb-2">Game Over!</h2>
                     <p class="text-gray-400">After ${r.totalRounds} rounds of wit</p>
                 </div>
                 
                 <div class="glass rounded-xl p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center">
                     <p class="text-yellow-400 text-sm mb-2">🎉 Champion of Wit!</p>
-                    <p class="text-3xl font-bold">${winner.name}</p>
-                    <p class="text-2xl text-yellow-400 mt-2">${winner.score} XP</p>
+                    <p class="text-4xl font-bold">${winner.name}</p>
+                    <p class="text-3xl text-yellow-400 mt-2">${winner.score} XP</p>
                 </div>
                 
                 <div class="glass rounded-xl p-6">
@@ -732,20 +901,20 @@
                         ${standings.map((p, i) => `
                             <div class="flex justify-between items-center p-3 ${p.name === state.playerName ? 'bg-purple-500/20 ring-1 ring-purple-500' : i < 3 ? 'bg-yellow-500/10' : 'bg-slate-800'} rounded-lg">
                                 <div class="flex items-center gap-3">
-                                    <span class="text-lg">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
+                                    <span class="text-xl">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span>
                                     <span class="font-medium">${p.name}</span>
                                     ${p.name === state.playerName ? '<span class="text-xs bg-purple-500 px-2 py-0.5 rounded">YOU</span>' : ''}
                                 </div>
-                                <span class="text-yellow-400 font-bold">${p.score} XP</span>
+                                <span class="text-yellow-400 font-bold text-lg">${p.score} XP</span>
                             </div>
                         `).join('')}
                     </div>
                 </div>
                 
                 ${playerRank === 1 ? `
-                    <p class="text-center text-2xl">🎉 Congratulations! You won! 🎉</p>
+                    <p class="text-center text-3xl">🎉 Congratulations! You won! 🎉</p>
                 ` : `
-                    <p class="text-center text-gray-400">You finished #${playerRank} - Great game!</p>
+                    <p class="text-center text-gray-400 text-lg">You finished #${playerRank} - Great game!</p>
                 `}
                 
                 <button onclick="leaveRoom()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
