@@ -1,6 +1,7 @@
 // Oracle of Wit API - Supports Multiplayer & Single-Player
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 const SUBMISSION_TIME = 40000;
 const BETTING_TIME = 30000;
@@ -862,8 +863,24 @@ function addBotBets(room) {
 async function autoJudge(room) {
     const now = Date.now();
     room.status = 'judging';
+    await setRoom(room.id, room); // Save judging status so UI updates
     
-    const winnerId = pickWinner(room.submissions);
+    // Use AI to pick the winner
+    const winnerId = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category);
+    const winningSubmission = room.submissions.find(s => s.id === winnerId);
+    
+    if (!winningSubmission) {
+        // Fallback if something went wrong
+        const fallbackWinner = room.submissions[0];
+        console.error('Winner not found, using fallback');
+        return createRoundResult(room, fallbackWinner.id, now);
+    }
+    
+    return createRoundResult(room, winnerId, now);
+}
+
+// Helper to create round result and update scores
+async function createRoundResult(room, winnerId, now) {
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
     
     const roundResult = {
@@ -1037,7 +1054,84 @@ function getNextPrompt(room) {
     return prompt;
 }
 
-function pickWinner(submissions) {
+// AI-powered winner selection using Claude
+async function pickWinnerWithAI(submissions, jokePrompt, category) {
+    if (!submissions?.length) return null;
+    if (submissions.length === 1) return submissions[0].id;
+    
+    // If no API key, fall back to random
+    if (!ANTHROPIC_API_KEY) {
+        console.log('No Anthropic API key, using random selection');
+        return submissions[Math.floor(Math.random() * submissions.length)].id;
+    }
+    
+    try {
+        const submissionsList = submissions.map(s => 
+            `[ID: ${s.id}] "${s.punchline}"`
+        ).join('\n');
+        
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 200,
+                messages: [{
+                    role: 'user',
+                    content: `You are the Oracle of Wit, a comedy judge for a joke completion game. Your job is to pick the FUNNIEST punchline.
+
+JOKE SETUP: "${jokePrompt}"
+CATEGORY: ${category}
+
+SUBMITTED PUNCHLINES:
+${submissionsList}
+
+JUDGING CRITERIA:
+1. Humor & comedic timing
+2. Cleverness & wordplay  
+3. Relevance to the setup
+4. Surprise factor / unexpected twist
+5. Overall laugh-out-loud potential
+
+Pick the single funniest submission. Respond with ONLY the ID number of the winner (just the number, nothing else).`
+                }]
+            })
+        });
+        
+        if (!response.ok) {
+            console.error('AI API error:', response.status);
+            return submissions[Math.floor(Math.random() * submissions.length)].id;
+        }
+        
+        const data = await response.json();
+        const aiResponse = data.content?.[0]?.text?.trim();
+        
+        // Extract the ID from the response
+        const winnerId = parseInt(aiResponse);
+        
+        // Validate the winner ID exists in submissions
+        if (winnerId && submissions.find(s => s.id === winnerId)) {
+            console.log(`AI picked winner: ${winnerId}`);
+            return winnerId;
+        }
+        
+        // If AI returned invalid ID, fall back to random
+        console.log('AI returned invalid ID, using random');
+        return submissions[Math.floor(Math.random() * submissions.length)].id;
+        
+    } catch (error) {
+        console.error('AI judging error:', error);
+        // Fall back to random selection on any error
+        return submissions[Math.floor(Math.random() * submissions.length)].id;
+    }
+}
+
+// Legacy random picker (backup)
+function pickWinnerRandom(submissions) {
     if (!submissions?.length) return null;
     return submissions[Math.floor(Math.random() * submissions.length)].id;
 }
