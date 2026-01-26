@@ -367,6 +367,15 @@ function createConfetti() {
 }
 
 function render() {
+    // Preserve textarea focus and cursor position
+    const activeEl = document.activeElement;
+    const wasTextareaFocused = activeEl && activeEl.id === 'punchline';
+    let selectionStart = 0, selectionEnd = 0;
+    if (wasTextareaFocused) {
+        selectionStart = activeEl.selectionStart;
+        selectionEnd = activeEl.selectionEnd;
+    }
+    
     document.getElementById('app').innerHTML = `
         <header class="py-3 px-4 border-b border-white/10 sticky top-0 bg-slate-900/95 backdrop-blur z-50">
             <div class="max-w-4xl mx-auto flex justify-between items-center">
@@ -389,6 +398,15 @@ function render() {
             ${renderScreen()}
         </main>
     `;
+    
+    // Restore textarea focus and cursor position
+    if (wasTextareaFocused) {
+        const textarea = document.getElementById('punchline');
+        if (textarea) {
+            textarea.focus();
+            textarea.setSelectionRange(selectionStart, selectionEnd);
+        }
+    }
 }
 
 function renderTimer() {
