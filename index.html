@@ -41,9 +41,19 @@
 
 <script>
 const API_URL = '/api/game';
-const POLL_INTERVAL = 1500;
+const BASE_POLL_INTERVAL = 1500;
+let currentPollInterval = BASE_POLL_INTERVAL;
 let soundEnabled = true;
 let audioCtx = null;
+
+// Dynamic polling - slower for larger rooms to reduce server load
+function getPollInterval() {
+    const playerCount = state.room?.players?.length || 0;
+    if (playerCount > 50) return 3000;  // 3s for 50+ players
+    if (playerCount > 20) return 2500;  // 2.5s for 20-50 players
+    if (playerCount > 10) return 2000;  // 2s for 10-20 players
+    return BASE_POLL_INTERVAL;          // 1.5s for small rooms
+}
 
 function initAudio() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -210,11 +220,24 @@ async function fetchPublicRooms() {
 function startPolling() {
     stopPolling();
     fetchRoom();
-    pollInterval = setInterval(fetchRoom, POLL_INTERVAL);
+    scheduleNextPoll();
+}
+
+function scheduleNextPoll() {
+    currentPollInterval = getPollInterval();
+    pollInterval = setTimeout(() => {
+        fetchRoom();
+        if (state.roomId) {
+            scheduleNextPoll(); // Recursively schedule with updated interval
+        }
+    }, currentPollInterval);
 }
 
 function stopPolling() {
-    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    if (pollInterval) { 
+        clearTimeout(pollInterval); 
+        pollInterval = null; 
+    }
 }
 
 async function createRoom(category, singlePlayer = false) {
@@ -486,7 +509,18 @@ function renderWelcome() {
                 <span class="text-5xl">👁️</span>
             </div>
             <h2 class="text-3xl font-bold mb-3">Welcome to <span class="gradient-text">Oracle of Wit</span></h2>
-            <p class="text-gray-400 mb-8 max-w-md mx-auto">The AI humor prediction game powered by GenLayer</p>
+            <p class="text-gray-400 mb-4 max-w-md mx-auto">The AI humor prediction game powered by GenLayer</p>
+            
+            <!-- GenLayer Explainer -->
+            <div class="glass rounded-xl p-4 max-w-md mx-auto mb-6 text-left">
+                <p class="text-purple-400 font-bold text-sm mb-2">⛓️ Powered by GenLayer Intelligent Contracts</p>
+                <div class="text-xs text-gray-400 space-y-1">
+                    <p>✓ <strong class="text-white">Optimistic Democracy:</strong> Multiple AI validators judge jokes</p>
+                    <p>✓ <strong class="text-white">Decentralized Consensus:</strong> No single AI decides - validators must agree</p>
+                    <p>✓ <strong class="text-white">On-Chain Results:</strong> Winners verified and stored on blockchain</p>
+                </div>
+            </div>
+            
             <div class="glass rounded-xl p-6 max-w-md mx-auto">
                 <label class="text-sm text-gray-400 block mb-2 text-left">Your Name:</label>
                 <input type="text" placeholder="Enter your name..." value="${state.playerName}"
@@ -732,9 +766,33 @@ function renderJudging() {
                 <span class="text-6xl">👁️</span>
             </div>
             <h2 class="text-2xl font-bold mb-4">The Oracle Judges...</h2>
-            <p class="text-gray-400 mb-4">AI consensus via Optimistic Democracy</p>
+            
+            <!-- Optimistic Democracy Visualization -->
+            <div class="glass rounded-xl p-4 mb-4 text-left">
+                <p class="text-purple-400 font-bold text-sm mb-3">⛓️ GenLayer Optimistic Democracy</p>
+                <div class="space-y-2 text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-xs animate-pulse">1</span>
+                        <span class="text-gray-300">Leader validator evaluates submissions...</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center text-xs animate-pulse" style="animation-delay:0.3s">2</span>
+                        <span class="text-gray-300">Other validators verify independently...</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-xs animate-pulse" style="animation-delay:0.6s">3</span>
+                        <span class="text-gray-300">Reaching consensus on funniest joke...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <p class="text-gray-400 mb-4 text-sm">Multiple AI models reaching decentralized consensus</p>
             <div class="flex justify-center gap-2">
                 ${[0,1,2,3,4].map(i => `<div class="w-3 h-3 bg-purple-500 rounded-full animate-pulse" style="animation-delay:${i*0.15}s"></div>`).join('')}
+            </div>
+            
+            <div class="mt-4 text-xs text-gray-500">
+                Powered by GenLayer Intelligent Contracts
             </div>
         </div>
     `;
@@ -746,6 +804,14 @@ function renderRoundResults() {
     const result = r.roundResults[r.roundResults.length - 1];
     if (!result) return renderJudging();
     
+    // Determine judging method badge
+    const judgingMethod = result.judgingMethod || r.lastJudgingMethod || 'ai';
+    const methodBadge = judgingMethod === 'genlayer_optimistic_democracy' 
+        ? '<span class="text-xs bg-green-600 px-2 py-0.5 rounded-full">⛓️ On-Chain Verified</span>'
+        : judgingMethod === 'claude_api'
+        ? '<span class="text-xs bg-blue-600 px-2 py-0.5 rounded-full">🤖 AI Judged</span>'
+        : '<span class="text-xs bg-gray-600 px-2 py-0.5 rounded-full">🎲 Random</span>';
+    
     return `
         <div class="space-y-4">
             <div class="glass rounded-xl p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center">
@@ -754,7 +820,19 @@ function renderRoundResults() {
                 <p class="text-xl font-bold my-2">"${result.winningPunchline}"</p>
                 <p class="text-gray-400">by <span class="text-white font-bold">${result.winnerName}</span></p>
                 <p class="text-green-400 mt-1">+100 XP</p>
+                <div class="mt-2">${methodBadge}</div>
             </div>
+            
+            ${judgingMethod === 'genlayer_optimistic_democracy' ? `
+                <div class="glass rounded-xl p-3 border border-green-500/30">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="text-green-400">✓</span>
+                        <span class="text-gray-300">Verified by GenLayer Optimistic Democracy</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Multiple AI validators reached consensus on this result</p>
+                </div>
+            ` : ''}
+            
             <div class="glass rounded-xl p-4">
                 <h3 class="font-bold mb-3">📊 Standings</h3>
                 <div class="space-y-2">

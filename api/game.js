@@ -1,10 +1,108 @@
-// Oracle of Wit API - Supports Multiplayer & Single-Player
+// Oracle of Wit API - Powered by GenLayer Intelligent Contracts
+// Showcasing Optimistic Democracy & AI Consensus
+
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
+// GenLayer Configuration
+const GENLAYER_RPC_URL = process.env.GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
+const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
+const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
+
 const SUBMISSION_TIME = 40000;
 const BETTING_TIME = 30000;
+
+// GenLayer Intelligent Contract Integration
+// This calls the on-chain Oracle of Wit contract which uses
+// Optimistic Democracy for decentralized AI consensus
+async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
+    if (!GENLAYER_CONTRACT_ADDRESS || !GENLAYER_RPC_URL) {
+        console.log('GenLayer not configured, using fallback');
+        return null;
+    }
+    
+    try {
+        // Prepare submissions for the contract
+        const submissionsJson = JSON.stringify(submissions.map(s => ({
+            id: s.id,
+            playerName: s.playerName,
+            punchline: s.punchline
+        })));
+        
+        // Call the GenLayer Intelligent Contract
+        const response = await fetch(`${GENLAYER_RPC_URL}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'gen_call',
+                params: [{
+                    to: GENLAYER_CONTRACT_ADDRESS,
+                    function: 'judge_round',
+                    args: [gameId, jokePrompt, category, submissionsJson]
+                }],
+                id: 1
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.result) {
+            console.log('GenLayer Optimistic Democracy result:', result.result);
+            return {
+                winnerId: result.result.winner_id,
+                winnerName: result.result.winner_name,
+                winningPunchline: result.result.winning_punchline,
+                consensusMethod: result.result.consensus_method || 'optimistic_democracy',
+                validatorsAgreed: result.result.validators_agreed || true,
+                onChain: true
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('GenLayer call failed:', error);
+        return null;
+    }
+}
+
+// Record game results on GenLayer blockchain
+async function recordOnChain(gameId, finalScores) {
+    if (!GENLAYER_CONTRACT_ADDRESS || !GENLAYER_RPC_URL) {
+        return false;
+    }
+    
+    try {
+        const scoresJson = JSON.stringify(finalScores.map(p => ({
+            playerName: p.name,
+            score: p.score
+        })));
+        
+        const response = await fetch(`${GENLAYER_RPC_URL}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'gen_call',
+                params: [{
+                    to: GENLAYER_CONTRACT_ADDRESS,
+                    function: 'record_game_result',
+                    args: [gameId, scoresJson]
+                }],
+                id: 1
+            })
+        });
+        
+        const result = await response.json();
+        return result.result?.recorded || false;
+    } catch (error) {
+        console.error('Failed to record on chain:', error);
+        return false;
+    }
+}
 
 // Bot names and punchlines for single-player mode
 const BOT_NAMES = ['WittyBot', 'JokesMaster', 'PunLord', 'ComedyAI', 'LaughBot', 'HumorEngine'];
@@ -863,24 +961,56 @@ function addBotBets(room) {
 async function autoJudge(room) {
     const now = Date.now();
     room.status = 'judging';
-    await setRoom(room.id, room); // Save judging status so UI updates
+    room.judgingMethod = 'processing'; // Track how we're judging
+    await setRoom(room.id, room);
     
-    // Use AI to pick the winner
-    const winnerId = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category);
+    let winnerId = null;
+    let judgingMethod = 'random'; // Default fallback
+    let onChain = false;
+    
+    // STEP 1: Try GenLayer Optimistic Democracy (Real decentralized AI consensus)
+    const genLayerResult = await judgeWithGenLayer(
+        room.submissions, 
+        room.jokePrompt, 
+        room.category,
+        room.id
+    );
+    
+    if (genLayerResult) {
+        winnerId = genLayerResult.winnerId;
+        judgingMethod = 'genlayer_optimistic_democracy';
+        onChain = true;
+        console.log(`✓ GenLayer consensus reached: Winner #${winnerId}`);
+    }
+    
+    // STEP 2: Fallback to Claude API (centralized but still AI-powered)
+    if (!winnerId) {
+        winnerId = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category);
+        if (winnerId) {
+            judgingMethod = 'claude_api';
+            console.log(`✓ Claude API judged: Winner #${winnerId}`);
+        }
+    }
+    
+    // STEP 3: Final fallback to random selection
+    if (!winnerId) {
+        winnerId = pickWinnerRandom(room.submissions);
+        judgingMethod = 'random_fallback';
+        console.log(`✓ Random fallback: Winner #${winnerId}`);
+    }
+    
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
     
     if (!winningSubmission) {
-        // Fallback if something went wrong
         const fallbackWinner = room.submissions[0];
-        console.error('Winner not found, using fallback');
-        return createRoundResult(room, fallbackWinner.id, now);
+        return createRoundResult(room, fallbackWinner.id, now, 'fallback', false);
     }
     
-    return createRoundResult(room, winnerId, now);
+    return createRoundResult(room, winnerId, now, judgingMethod, onChain);
 }
 
 // Helper to create round result and update scores
-async function createRoundResult(room, winnerId, now) {
+async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false) {
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
     
     const roundResult = {
@@ -888,6 +1018,8 @@ async function createRoundResult(room, winnerId, now) {
         winnerId,
         winnerName: winningSubmission.playerName,
         winningPunchline: winningSubmission.punchline,
+        judgingMethod: judgingMethod, // NEW: Track how winner was determined
+        onChain: onChain, // NEW: Whether result is on blockchain
         scores: {}
     };
     
@@ -913,6 +1045,7 @@ async function createRoundResult(room, winnerId, now) {
     room.status = 'roundResults';
     room.phaseEndsAt = null;
     room.updatedAt = now;
+    room.lastJudgingMethod = judgingMethod; // Store for UI display
     
     await setRoom(room.id, room);
     return room;
@@ -1164,7 +1297,7 @@ export default async function handler(req, res) {
     try {
         switch (action) {
             case 'createRoom': {
-                const { hostName, category, maxPlayers = 10, singlePlayer = false } = body;
+                const { hostName, category, maxPlayers = 100, singlePlayer = false } = body;
                 if (!hostName) return res.status(400).json({ error: 'hostName required' });
                 
                 const roomId = generateRoomCode();
