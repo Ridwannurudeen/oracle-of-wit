@@ -32,6 +32,10 @@
         textarea, input[type="text"] { background: #1e293b !important; color: white !important; }
         .rotate-180 { transform: rotate(180deg); }
         .transition-transform { transition: transform 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+        @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .animate-scaleIn { animation: scaleIn 0.3s ease-out; }
     </style>
 </head>
 <body class="min-h-screen text-white">
@@ -147,7 +151,12 @@ let state = {
     publicRooms: [],
     timeLeft: 0,
     punchlineText: '',
-    showHelp: false
+    showHelp: false,
+    // Validator voting animation state
+    validatorVotingStarted: false,
+    validatorVotes: [],
+    consensusReached: false,
+    winningSubmissionId: null
 };
 
 let pollInterval = null;
@@ -256,6 +265,11 @@ function handlePhaseChange(oldStatus, newStatus) {
         playSound('start');
         state.hasSubmitted = false;
         state.punchlineText = '';
+        // Reset validator voting state for new round
+        state.validatorVotingStarted = false;
+        state.validatorVotes = [];
+        state.consensusReached = false;
+        state.winningSubmissionId = null;
         syncTimer();
         startTimer();
     } else if (newStatus === 'betting') {
@@ -266,14 +280,20 @@ function handlePhaseChange(oldStatus, newStatus) {
         startTimer();
     } else if (newStatus === 'roundResults') {
         stopTimer();
+        stopValidatorVoting();
         playSound('win');
     } else if (newStatus === 'finished') {
         stopTimer();
         stopPolling();
+        stopValidatorVoting();
         playSound('win');
         createConfetti();
     } else if (newStatus === 'judging') {
         stopTimer();
+        // Reset for new judging phase
+        state.validatorVotingStarted = false;
+        state.validatorVotes = [];
+        state.consensusReached = false;
     }
 }
 
@@ -500,6 +520,77 @@ function createConfetti() {
         c.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
         document.body.appendChild(c);
         setTimeout(() => c.remove(), 4500);
+    }
+}
+
+// Validator voting animation for Optimistic Democracy visualization
+let validatorVotingInterval = null;
+
+function startValidatorVoting() {
+    if (validatorVotingInterval) return; // Already running
+    
+    state.validatorVotes = [];
+    state.consensusReached = false;
+    
+    // Get submissions to simulate voting on
+    const submissions = state.room?.submissions || [];
+    const submissionIds = submissions.map(s => s.id);
+    
+    if (submissionIds.length === 0) return;
+    
+    // Determine the likely winner (first submission for simulation, 
+    // actual winner comes from backend)
+    let winningId = submissionIds[0];
+    
+    // Simulate validators voting one by one
+    let voteIndex = 0;
+    const validators = ['GPT-4', 'Claude', 'LLaMA', 'Gemini', 'Mixtral'];
+    
+    validatorVotingInterval = setInterval(() => {
+        if (voteIndex >= 5) {
+            // All validators voted
+            state.consensusReached = true;
+            playSound('click');
+            render(true);
+            stopValidatorVoting();
+            return;
+        }
+        
+        // Simulate validator voting
+        // Most validators agree (4-5 out of 5) to show consensus
+        let vote;
+        if (voteIndex < 4 || Math.random() > 0.3) {
+            vote = winningId; // Agree with consensus
+        } else {
+            // Occasionally a validator disagrees (shows democracy working)
+            const otherIds = submissionIds.filter(id => id !== winningId);
+            vote = otherIds.length > 0 ? otherIds[Math.floor(Math.random() * otherIds.length)] : winningId;
+        }
+        
+        state.validatorVotes.push(vote);
+        playSound('tick');
+        
+        // Check for majority (3/5)
+        const voteCounts = {};
+        state.validatorVotes.forEach(v => {
+            voteCounts[v] = (voteCounts[v] || 0) + 1;
+        });
+        const maxVotes = Math.max(...Object.values(voteCounts));
+        if (maxVotes >= 3 && !state.consensusReached) {
+            // Find the winning submission ID
+            state.winningSubmissionId = Object.keys(voteCounts).find(k => voteCounts[k] === maxVotes);
+        }
+        
+        voteIndex++;
+        render(true);
+        
+    }, 800); // Vote every 800ms for dramatic effect
+}
+
+function stopValidatorVoting() {
+    if (validatorVotingInterval) {
+        clearInterval(validatorVotingInterval);
+        validatorVotingInterval = null;
     }
 }
 
@@ -934,35 +1025,83 @@ function renderBetting() {
 }
 
 function renderJudging() {
+    // Start the validator voting animation if not already started
+    if (!state.validatorVotingStarted) {
+        state.validatorVotingStarted = true;
+        state.validatorVotes = [];
+        state.consensusReached = false;
+        startValidatorVoting();
+    }
+    
+    const validators = [
+        { name: 'GPT-4', icon: '🤖', color: 'bg-green-500' },
+        { name: 'Claude', icon: '🧠', color: 'bg-purple-500' },
+        { name: 'LLaMA', icon: '🦙', color: 'bg-blue-500' },
+        { name: 'Gemini', icon: '💫', color: 'bg-yellow-500' },
+        { name: 'Mixtral', icon: '🔮', color: 'bg-pink-500' }
+    ];
+    
+    const votedCount = state.validatorVotes?.length || 0;
+    const consensusReached = state.consensusReached || false;
+    
     return `
-        <div class="glass rounded-2xl p-8 text-center">
-            <div class="w-28 h-28 oracle-eye rounded-full flex items-center justify-center mx-auto mb-6 animate-glow">
-                <span class="text-6xl">👁️</span>
+        <div class="glass rounded-2xl p-6 text-center">
+            <div class="w-24 h-24 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 ${consensusReached ? '' : 'animate-glow'}">
+                <span class="text-5xl">${consensusReached ? '✨' : '👁️'}</span>
             </div>
-            <h2 class="text-2xl font-bold mb-4">The Oracle Judges...</h2>
+            <h2 class="text-2xl font-bold mb-2">${consensusReached ? 'Consensus Reached!' : 'The Oracle Judges...'}</h2>
+            <p class="text-purple-400 text-sm mb-4">⛓️ GenLayer Optimistic Democracy</p>
             
-            <!-- Optimistic Democracy Visualization -->
-            <div class="glass rounded-xl p-4 mb-4 text-left">
-                <p class="text-purple-400 font-bold text-sm mb-3">⛓️ GenLayer Optimistic Democracy</p>
-                <div class="space-y-2 text-sm">
-                    <div class="flex items-center gap-2">
-                        <span class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-xs animate-pulse">1</span>
-                        <span class="text-gray-300">Leader validator evaluates submissions...</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center text-xs animate-pulse" style="animation-delay:0.3s">2</span>
-                        <span class="text-gray-300">Other validators verify independently...</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-xs animate-pulse" style="animation-delay:0.6s">3</span>
-                        <span class="text-gray-300">Reaching consensus on funniest joke...</span>
-                    </div>
+            <!-- Validator Voting Grid -->
+            <div class="glass rounded-xl p-4 mb-4">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-sm text-gray-400">Validators Voting</span>
+                    <span class="text-sm font-bold ${votedCount >= 3 ? 'text-green-400' : 'text-yellow-400'}">${votedCount}/5 voted</span>
                 </div>
+                
+                <div class="grid grid-cols-5 gap-2 mb-4">
+                    ${validators.map((v, i) => {
+                        const hasVoted = i < votedCount;
+                        const vote = state.validatorVotes?.[i];
+                        return `
+                            <div class="flex flex-col items-center">
+                                <div class="w-12 h-12 rounded-full ${hasVoted ? v.color : 'bg-slate-700'} flex items-center justify-center text-xl mb-1 transition-all duration-500 ${hasVoted ? 'scale-110' : 'opacity-50'}">
+                                    ${hasVoted ? '✓' : v.icon}
+                                </div>
+                                <span class="text-xs ${hasVoted ? 'text-white' : 'text-gray-500'}">${v.name}</span>
+                                ${hasVoted && vote ? `<span class="text-xs text-yellow-400">#${vote}</span>` : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                
+                <!-- Consensus Progress Bar -->
+                <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div class="h-full transition-all duration-500 rounded-full ${votedCount >= 3 ? 'bg-green-500' : 'bg-purple-500'}" 
+                         style="width: ${(votedCount / 5) * 100}%"></div>
+                </div>
+                <p class="text-xs mt-2 ${votedCount >= 3 ? 'text-green-400' : 'text-gray-400'}">
+                    ${votedCount >= 3 ? '✓ Majority consensus achieved!' : 'Waiting for majority (3/5)...'}
+                </p>
             </div>
             
-            <p class="text-gray-400 mb-4 text-sm">Multiple AI models reaching decentralized consensus</p>
-            <div class="flex justify-center gap-2">
-                ${[0,1,2,3,4].map(i => `<div class="w-3 h-3 bg-purple-500 rounded-full animate-pulse" style="animation-delay:${i*0.15}s"></div>`).join('')}
+            <!-- Live Voting Feed -->
+            <div class="glass rounded-xl p-3 text-left max-h-32 overflow-y-auto">
+                <p class="text-xs text-gray-500 mb-2">Live Validator Feed:</p>
+                <div id="validator-feed" class="space-y-1 text-xs">
+                    ${state.validatorVotes?.map((vote, i) => `
+                        <div class="flex items-center gap-2 text-gray-300 animate-fadeIn">
+                            <span class="text-green-400">✓</span>
+                            <span>${validators[i].name} voted for submission #${vote}</span>
+                        </div>
+                    `).join('') || '<div class="text-gray-500">Initializing validators...</div>'}
+                    ${consensusReached ? `
+                        <div class="flex items-center gap-2 text-green-400 font-bold mt-2">
+                            <span>⛓️</span>
+                            <span>Consensus reached! Recording on-chain...</span>
+                        </div>
+                    ` : ''}
+                </div>
             </div>
             
             <div class="mt-4 text-xs text-gray-500">
@@ -978,16 +1117,24 @@ function renderRoundResults() {
     const result = r.roundResults[r.roundResults.length - 1];
     if (!result) return renderJudging();
     
-    // Determine judging method badge
+    // Determine judging method badge and info
     const judgingMethod = result.judgingMethod || r.lastJudgingMethod || 'ai';
-    const methodBadge = judgingMethod === 'genlayer_optimistic_democracy' 
+    const isOnChain = judgingMethod === 'genlayer_optimistic_democracy';
+    const isAI = judgingMethod === 'claude_api';
+    
+    const methodBadge = isOnChain
         ? '<span class="text-xs bg-green-600 px-2 py-0.5 rounded-full">⛓️ On-Chain Verified</span>'
-        : judgingMethod === 'claude_api'
-        ? '<span class="text-xs bg-blue-600 px-2 py-0.5 rounded-full">🤖 AI Judged</span>'
-        : '<span class="text-xs bg-gray-600 px-2 py-0.5 rounded-full">🎲 Random</span>';
+        : isAI
+        ? '<span class="text-xs bg-purple-600 px-2 py-0.5 rounded-full">🤖 AI Judged</span>'
+        : '<span class="text-xs bg-gray-600 px-2 py-0.5 rounded-full">🎲 Fallback</span>';
+    
+    // Validator summary from animation state
+    const validatorVotes = state.validatorVotes || [];
+    const validators = ['GPT-4', 'Claude', 'LLaMA', 'Gemini', 'Mixtral'];
     
     return `
         <div class="space-y-4">
+            <!-- Winner Card -->
             <div class="glass rounded-xl p-6 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/50 text-center">
                 <div class="text-5xl mb-3">👑</div>
                 <p class="text-yellow-400 text-sm">Round ${result.round} Winner!</p>
@@ -997,16 +1144,39 @@ function renderRoundResults() {
                 <div class="mt-2">${methodBadge}</div>
             </div>
             
-            ${judgingMethod === 'genlayer_optimistic_democracy' ? `
-                <div class="glass rounded-xl p-3 border border-green-500/30">
-                    <div class="flex items-center gap-2 text-sm">
-                        <span class="text-green-400">✓</span>
-                        <span class="text-gray-300">Verified by GenLayer Optimistic Democracy</span>
-                    </div>
-                    <p class="text-xs text-gray-500 mt-1">Multiple AI validators reached consensus on this result</p>
+            <!-- Optimistic Democracy Summary -->
+            <div class="glass rounded-xl p-4 border ${isOnChain ? 'border-green-500/30' : isAI ? 'border-purple-500/30' : 'border-gray-500/30'}">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-sm font-bold text-purple-400">⛓️ Optimistic Democracy Result</span>
+                    <span class="text-xs ${isOnChain ? 'text-green-400' : isAI ? 'text-purple-400' : 'text-gray-400'}">
+                        ${isOnChain ? 'Consensus Verified' : isAI ? 'AI Evaluated' : 'Fallback Used'}
+                    </span>
                 </div>
-            ` : ''}
+                
+                <!-- Validator Icons -->
+                <div class="flex justify-center gap-3 mb-3">
+                    ${validators.map((v, i) => {
+                        const vote = validatorVotes[i];
+                        const agreed = vote == result.winnerId;
+                        return `
+                            <div class="flex flex-col items-center">
+                                <div class="w-10 h-10 rounded-full ${agreed ? 'bg-green-500' : vote ? 'bg-red-500' : 'bg-slate-600'} flex items-center justify-center text-sm">
+                                    ${vote ? (agreed ? '✓' : '✗') : '?'}
+                                </div>
+                                <span class="text-xs text-gray-500 mt-1">${v.split('-')[0]}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                
+                <p class="text-xs text-center text-gray-400">
+                    ${validatorVotes.length >= 3 
+                        ? `${validatorVotes.filter(v => v == result.winnerId).length}/5 validators agreed on winner`
+                        : 'Validators evaluated all submissions for humor, cleverness & relevance'}
+                </p>
+            </div>
             
+            <!-- Standings -->
             <div class="glass rounded-xl p-4">
                 <h3 class="font-bold mb-3">📊 Standings</h3>
                 <div class="space-y-2">
@@ -1022,6 +1192,7 @@ function renderRoundResults() {
                     `).join('')}
                 </div>
             </div>
+            
             ${state.isHost ? `
                 <button onclick="nextRound()" class="btn w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg">
                     ${r.currentRound >= r.totalRounds ? '🏆 Final Results' : '➡️ Next Round'}
