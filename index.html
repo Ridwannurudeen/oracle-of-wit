@@ -98,6 +98,9 @@ let state = {
 
 let pollInterval = null;
 let timerInterval = null;
+let renderPending = false;
+let lastRenderTime = 0;
+const MIN_RENDER_INTERVAL = 100; // Minimum ms between renders
 
 function syncTimer() {
     if (!state.room?.phaseEndsAt) { state.timeLeft = 0; return; }
@@ -351,6 +354,26 @@ function selectSubmission(id) {
     render();
 }
 
+function copyRoomCode(code) {
+    navigator.clipboard.writeText(code).then(() => {
+        playSound('click');
+        const feedback = document.getElementById('copy-feedback');
+        if (feedback) {
+            feedback.classList.remove('hidden');
+            setTimeout(() => feedback.classList.add('hidden'), 2000);
+        }
+    }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = code;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        playSound('click');
+    });
+}
+
 function createConfetti() {
     const colors = ['#f59e0b','#ec4899','#6366f1','#10b981','#ef4444','#8b5cf6'];
     for (let i = 0; i < 60; i++) {
@@ -367,6 +390,20 @@ function createConfetti() {
 }
 
 function render() {
+    // Throttle renders to prevent freezing
+    const now = Date.now();
+    if (now - lastRenderTime < MIN_RENDER_INTERVAL) {
+        if (!renderPending) {
+            renderPending = true;
+            setTimeout(() => {
+                renderPending = false;
+                render();
+            }, MIN_RENDER_INTERVAL);
+        }
+        return;
+    }
+    lastRenderTime = now;
+    
     // Preserve textarea focus and cursor position
     const activeEl = document.activeElement;
     const wasTextareaFocused = activeEl && activeEl.id === 'punchline';
@@ -412,7 +449,7 @@ function render() {
 function renderTimer() {
     if (state.timeLeft <= 0) return '';
     const isLow = state.timeLeft <= 10;
-    const max = state.screen === 'submitting' ? 60 : 45;
+    const max = state.screen === 'submitting' ? 40 : 30;
     const pct = (state.timeLeft / max) * 100;
     return `
         <div class="glass rounded-xl p-4 mb-4">
@@ -563,7 +600,13 @@ function renderWaiting() {
             ${!r.isSinglePlayer ? `
                 <div class="mb-4 p-3 bg-slate-800 rounded-lg text-center">
                     <p class="text-sm text-gray-400">Share code:</p>
-                    <p class="font-mono text-2xl text-purple-400 select-all">${r.id}</p>
+                    <div class="flex items-center justify-center gap-2 mt-1">
+                        <p class="font-mono text-2xl text-purple-400 select-all">${r.id}</p>
+                        <button onclick="copyRoomCode('${r.id}')" class="btn p-2 bg-purple-600 hover:bg-purple-500 rounded-lg" title="Copy code">
+                            📋
+                        </button>
+                    </div>
+                    <p id="copy-feedback" class="text-green-400 text-sm mt-1 hidden">Copied!</p>
                 </div>
             ` : ''}
             
