@@ -45,6 +45,8 @@ const BASE_POLL_INTERVAL = 1500;
 let currentPollInterval = BASE_POLL_INTERVAL;
 let soundEnabled = true;
 let audioCtx = null;
+let isTyping = false; // Track if user is typing
+let typingTimeout = null;
 
 // Dynamic polling - slower for larger rooms to reduce server load
 function getPollInterval() {
@@ -53,6 +55,45 @@ function getPollInterval() {
     if (playerCount > 20) return 2500;  // 2.5s for 20-50 players
     if (playerCount > 10) return 2000;  // 2s for 10-20 players
     return BASE_POLL_INTERVAL;          // 1.5s for small rooms
+}
+
+// Mark user as typing (prevents full re-renders)
+function setTyping() {
+    isTyping = true;
+    if (typingTimeout) clearTimeout(typingTimeout);
+    // Keep typing flag active for 3 seconds after last keystroke
+    typingTimeout = setTimeout(() => { isTyping = false; }, 3000);
+}
+
+// Update ONLY the timer display without re-rendering everything
+function updateTimerDisplay() {
+    const timerEl = document.getElementById('timer-display');
+    const timerBar = document.getElementById('timer-bar');
+    const timerWarning = document.getElementById('timer-warning');
+    
+    if (timerEl) {
+        const isLow = state.timeLeft <= 10;
+        timerEl.textContent = formatTime(state.timeLeft);
+        timerEl.className = `text-3xl font-bold ${isLow ? 'countdown-critical text-red-500' : ''}`;
+    }
+    if (timerBar) {
+        const max = state.screen === 'submitting' ? 40 : 30;
+        const pct = (state.timeLeft / max) * 100;
+        const isLow = state.timeLeft <= 10;
+        timerBar.style.width = `${pct}%`;
+        timerBar.className = `h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}`;
+    }
+    if (timerWarning) {
+        timerWarning.style.display = state.timeLeft <= 10 ? 'block' : 'none';
+    }
+}
+
+// Update character count without re-rendering
+function updateCharCount() {
+    const charCount = document.getElementById('char-count');
+    if (charCount) {
+        charCount.textContent = `${state.punchlineText.length}/200`;
+    }
 }
 
 function initAudio() {
@@ -124,7 +165,8 @@ function startTimer() {
             state.timeLeft--;
             if (state.timeLeft <= 5 && state.timeLeft > 0) playSound('tick');
             if (state.timeLeft === 10) playSound('warning');
-            render();
+            // ALWAYS use targeted update - NEVER full render from timer
+            updateTimerDisplay();
         }
     }, 1000);
 }
@@ -140,7 +182,8 @@ function formatTime(s) {
 async function api(action, data = {}) {
     state.loading = true;
     state.error = null;
-    render();
+    // Don't render during loading if user is typing
+    if (!isTyping) render();
     try {
         const res = await fetch(`${API_URL}?action=${action}`, {
             method: 'POST',
@@ -154,7 +197,7 @@ async function api(action, data = {}) {
     } catch (e) {
         state.loading = false;
         state.error = e.message;
-        render();
+        render(true); // Force render to show error
         throw e;
     }
 }
@@ -166,15 +209,45 @@ async function fetchRoom() {
         const result = await res.json();
         if (result.success && result.room) {
             const oldStatus = state.room?.status;
+            const oldSubmissionCount = state.room?.submissions?.length || 0;
+            const oldBetCount = state.room?.bets?.length || 0;
+            const oldPlayerCount = state.room?.players?.length || 0;
+            
             state.room = result.room;
-            if (state.room.status !== oldStatus) handlePhaseChange(oldStatus, state.room.status);
             syncTimer();
-            render();
+            
+            // Only render if status changed
+            if (state.room.status !== oldStatus) {
+                handlePhaseChange(oldStatus, state.room.status);
+                render(true); // Force render on phase change
+                return;
+            }
+            
+            // Check if something important changed
+            const newSubmissionCount = state.room?.submissions?.length || 0;
+            const newBetCount = state.room?.bets?.length || 0;
+            const newPlayerCount = state.room?.players?.length || 0;
+            
+            const hasImportantChange = 
+                newSubmissionCount !== oldSubmissionCount ||
+                newBetCount !== oldBetCount ||
+                newPlayerCount !== oldPlayerCount;
+            
+            // Only render if something important changed AND user is not typing
+            if (hasImportantChange && !isTyping) {
+                render();
+            }
+            // Always update timer display
+            updateTimerDisplay();
         }
     } catch (e) {}
 }
 
 function handlePhaseChange(oldStatus, newStatus) {
+    // Reset typing flag on phase change
+    isTyping = false;
+    if (typingTimeout) clearTimeout(typingTimeout);
+    
     state.screen = newStatus === 'roundResults' ? 'roundResults' : newStatus;
     if (newStatus === 'submitting') {
         playSound('start');
@@ -287,12 +360,15 @@ async function startGame() {
 
 async function submitPunchline() {
     const text = state.punchlineText.trim();
-    if (!text) { state.error = 'Write a punchline first'; render(); return; }
+    if (!text) { state.error = 'Write a punchline first'; render(true); return; }
+    // Reset typing flag since user is done typing
+    isTyping = false;
+    if (typingTimeout) clearTimeout(typingTimeout);
     playSound('submit');
     try {
         await api('submitPunchline', { roomId: state.roomId, playerName: state.playerName, punchline: text });
         state.hasSubmitted = true;
-        render();
+        render(true); // Force render after submission
     } catch (e) {}
 }
 
@@ -412,10 +488,16 @@ function createConfetti() {
     }
 }
 
-function render() {
+function render(force = false) {
+    // Skip render completely while typing (unless forced)
+    if (isTyping && !force) {
+        updateTimerDisplay();
+        return;
+    }
+    
     // Throttle renders to prevent freezing
     const now = Date.now();
-    if (now - lastRenderTime < MIN_RENDER_INTERVAL) {
+    if (now - lastRenderTime < MIN_RENDER_INTERVAL && !force) {
         if (!renderPending) {
             renderPending = true;
             setTimeout(() => {
@@ -478,12 +560,12 @@ function renderTimer() {
         <div class="glass rounded-xl p-4 mb-4">
             <div class="flex justify-between items-center mb-2">
                 <span class="text-gray-400">⏱️ Time</span>
-                <span class="text-3xl font-bold ${isLow ? 'countdown-critical text-red-500' : ''}">${formatTime(state.timeLeft)}</span>
+                <span id="timer-display" class="text-3xl font-bold ${isLow ? 'countdown-critical text-red-500' : ''}">${formatTime(state.timeLeft)}</span>
             </div>
             <div class="h-3 bg-slate-700 rounded-full overflow-hidden">
-                <div class="h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}" style="width:${pct}%"></div>
+                <div id="timer-bar" class="h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}" style="width:${pct}%"></div>
             </div>
-            ${isLow ? '<p class="text-red-400 text-sm mt-2 text-center animate-pulse">⚡ Hurry!</p>' : ''}
+            <p id="timer-warning" class="text-red-400 text-sm mt-2 text-center animate-pulse" style="display:${isLow ? 'block' : 'none'}">⚡ Hurry!</p>
         </div>
     `;
 }
@@ -688,10 +770,13 @@ function renderSubmitting() {
             ${!state.hasSubmitted ? `
                 <div class="glass rounded-xl p-4">
                     <textarea id="punchline" maxlength="200" placeholder="Write your funniest punchline..."
-                        oninput="state.punchlineText=this.value"
+                        oninput="state.punchlineText=this.value;setTyping();updateCharCount()"
+                        onfocus="setTyping()"
+                        onkeydown="setTyping()"
+                        onkeyup="setTyping()"
                         class="w-full h-28 px-4 py-3 rounded-xl border border-slate-700 focus:border-purple-500 focus:outline-none text-lg resize-none">${state.punchlineText}</textarea>
                     <div class="flex justify-between items-center mt-3">
-                        <span class="text-sm text-gray-400">${state.punchlineText.length}/200</span>
+                        <span id="char-count" class="text-sm text-gray-400">${state.punchlineText.length}/200</span>
                         <button onclick="submitPunchline()" class="btn px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl font-bold">📤 Submit</button>
                     </div>
                 </div>
