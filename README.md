@@ -273,9 +273,11 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 ## 🙏 Acknowledgments
 
 - **[GenLayer](https://genlayer.com)** — Intelligent Contracts platform
+- **[GENLAYER_RPC_URL](https://studio.genlayer.com/api)** - Genlayer Rpc
 - **[Anthropic](https://anthropic.com)** — Claude AI for joke judging
 - **[Upstash](https://upstash.com)** — Serverless Redis
 - **[Vercel](https://vercel.com)** — Deployment platform
+- **[GENLAYER_CONTRACT_ADDRESS)**
 
 ---
 
