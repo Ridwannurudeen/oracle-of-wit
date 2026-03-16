@@ -21,50 +21,66 @@ async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
         console.log('GenLayer not configured, using fallback');
         return null;
     }
-    
+
     try {
-        // Prepare submissions for the contract
         const submissionsJson = JSON.stringify(submissions.map(s => ({
             id: s.id,
             playerName: s.playerName,
             punchline: s.punchline
         })));
-        
-        // Call the GenLayer Intelligent Contract
+
+        console.log(`[GenLayer] Calling judge_round for game ${gameId} with ${submissions.length} submissions`);
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+
+        // judge_round is @gl.public.write — use gen_sendTransaction
         const response = await fetch(`${GENLAYER_RPC_URL}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
                 jsonrpc: '2.0',
-                method: 'gen_call',
+                method: 'gen_sendTransaction',
                 params: [{
                     to: GENLAYER_CONTRACT_ADDRESS,
                     function: 'judge_round',
-                    args: [gameId, jokePrompt, category, submissionsJson]
+                    args: [gameId, jokePrompt, category, submissionsJson],
+                    ...(GENLAYER_PRIVATE_KEY ? { from: GENLAYER_PRIVATE_KEY } : {})
                 }],
                 id: 1
             })
         });
-        
+
+        clearTimeout(timeout);
         const result = await response.json();
-        
+
+        if (result.error) {
+            console.error('[GenLayer] RPC error:', result.error);
+            return null;
+        }
+
         if (result.result) {
-            console.log('GenLayer Optimistic Democracy result:', result.result);
+            console.log('[GenLayer] Optimistic Democracy result:', JSON.stringify(result.result));
             return {
                 winnerId: result.result.winner_id,
                 winnerName: result.result.winner_name,
                 winningPunchline: result.result.winning_punchline,
                 consensusMethod: result.result.consensus_method || 'optimistic_democracy',
                 validatorsAgreed: result.result.validators_agreed || true,
+                validatorCount: result.result.validator_count || 5,
                 onChain: true
             };
         }
-        
+
+        console.log('[GenLayer] No result returned from judge_round');
         return null;
     } catch (error) {
-        console.error('GenLayer call failed:', error);
+        if (error.name === 'AbortError') {
+            console.error('[GenLayer] judge_round timed out after 30s');
+        } else {
+            console.error('[GenLayer] judge_round failed:', error.message);
+        }
         return null;
     }
 }
@@ -74,34 +90,149 @@ async function recordOnChain(gameId, finalScores) {
     if (!GENLAYER_CONTRACT_ADDRESS || !GENLAYER_RPC_URL) {
         return false;
     }
-    
+
     try {
         const scoresJson = JSON.stringify(finalScores.map(p => ({
             playerName: p.name,
             score: p.score
         })));
-        
+
+        console.log(`[GenLayer] Recording game ${gameId} results on-chain`);
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+
+        // record_game_result is @gl.public.write — use gen_sendTransaction
         const response = await fetch(`${GENLAYER_RPC_URL}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
                 jsonrpc: '2.0',
-                method: 'gen_call',
+                method: 'gen_sendTransaction',
                 params: [{
                     to: GENLAYER_CONTRACT_ADDRESS,
                     function: 'record_game_result',
-                    args: [gameId, scoresJson]
+                    args: [gameId, scoresJson],
+                    ...(GENLAYER_PRIVATE_KEY ? { from: GENLAYER_PRIVATE_KEY } : {})
                 }],
                 id: 1
             })
         });
-        
+
+        clearTimeout(timeout);
         const result = await response.json();
+
+        if (result.error) {
+            console.error('[GenLayer] record_game_result RPC error:', result.error);
+            return false;
+        }
+
+        console.log('[GenLayer] Game results recorded on-chain:', result.result);
         return result.result?.recorded || false;
     } catch (error) {
-        console.error('Failed to record on chain:', error);
+        if (error.name === 'AbortError') {
+            console.error('[GenLayer] record_game_result timed out after 30s');
+        } else {
+            console.error('[GenLayer] record_game_result failed:', error.message);
+        }
         return false;
     }
+}
+
+// Weekly rotating themes — cycles through based on week number
+const WEEKLY_THEMES = [
+    {
+        name: 'Roast the AI',
+        emoji: '🤖',
+        description: 'AI fails, sentience scares, and chatbot drama',
+        bonusPrompts: [
+            "The AI became self-aware and its first complaint was...",
+            "ChatGPT and Claude walk into a bar and...",
+            "My AI assistant refused to help because...",
+            "The robot uprising was cancelled because...",
+            "AI will replace humans at everything except...",
+            "The Turing test failed because the AI..."
+        ]
+    },
+    {
+        name: 'DeFi Degen Week',
+        emoji: '💸',
+        description: 'Yields, rugs, gas fees, and diamond-hand cope',
+        bonusPrompts: [
+            "The yield farm promised 10000% APY but delivered...",
+            "I aped into a new token and...",
+            "The rug pull was so obvious that...",
+            "Gas fees were so high that it was cheaper to...",
+            "My liquidation notification said...",
+            "The DeFi protocol's audit revealed..."
+        ]
+    },
+    {
+        name: 'Office Humor',
+        emoji: '🏢',
+        description: 'Meetings that should be emails, Slack chaos, WFH life',
+        bonusPrompts: [
+            "The all-hands meeting revealed that...",
+            "My Slack status has been 'In a meeting' for so long that...",
+            "Working from home means...",
+            "The corporate retreat team-building exercise was...",
+            "My manager's motivational speech boiled down to...",
+            "The performance review said I excel at..."
+        ]
+    },
+    {
+        name: 'Internet Culture',
+        emoji: '🌐',
+        description: 'Memes, social media, viral moments, and terminally online takes',
+        bonusPrompts: [
+            "The tweet went viral because...",
+            "My screen time report showed...",
+            "The comment section was surprisingly...",
+            "I doom-scrolled for so long that...",
+            "The influencer's hot take was...",
+            "The meme format died when..."
+        ]
+    },
+    {
+        name: 'Science & Space',
+        emoji: '🚀',
+        description: 'Quantum physics, space exploration, and nerdy science humor',
+        bonusPrompts: [
+            "NASA's latest discovery was actually just...",
+            "Schrodinger's cat walked into a bar and...",
+            "The Mars colony's first law was...",
+            "A black hole walks into a bar and...",
+            "The quantum computer's first calculation proved...",
+            "Aliens finally contacted us to say..."
+        ]
+    },
+    {
+        name: 'GenLayer Special',
+        emoji: '⛓️',
+        description: 'Validators, consensus, smart contracts, and fork drama',
+        bonusPrompts: [
+            "The validators couldn't reach consensus on...",
+            "The smart contract had a bug that...",
+            "The hard fork happened because...",
+            "Optimistic Democracy voted and decided...",
+            "The blockchain's gas fees were so low that...",
+            "The decentralized AI judges agreed that..."
+        ]
+    }
+];
+
+function getCurrentWeekNumber() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 1);
+    const diff = now - start;
+    const oneWeek = 604800000;
+    return Math.floor(diff / oneWeek);
+}
+
+function getCurrentTheme() {
+    const weekNum = getCurrentWeekNumber();
+    return WEEKLY_THEMES[weekNum % WEEKLY_THEMES.length];
 }
 
 // Bot names and punchlines for single-player mode
@@ -876,6 +1007,7 @@ async function checkAutoAdvance(room) {
         if (room.submissions.length >= 1) {
             room.status = 'betting';
             room.bets = [];
+            room.reactions = [];
             room.phaseEndsAt = now + BETTING_TIME;
             room.updatedAt = now;
             await setRoom(room.id, room);
@@ -977,49 +1109,53 @@ async function autoJudge(room) {
     );
     
     if (genLayerResult) {
-        winnerId = genLayerResult.winnerId;
+        winnerId = parseInt(genLayerResult.winnerId);
         judgingMethod = 'genlayer_optimistic_democracy';
         onChain = true;
         console.log(`✓ GenLayer consensus reached: Winner #${winnerId}`);
     }
     
     // STEP 2: Fallback to Claude API (centralized but still AI-powered)
+    let aiCommentary = null;
     if (!winnerId) {
-        winnerId = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category);
+        const aiResult = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category);
+        winnerId = aiResult.winnerId;
+        aiCommentary = aiResult.aiCommentary;
         if (winnerId) {
             judgingMethod = 'claude_api';
             console.log(`✓ Claude API judged: Winner #${winnerId}`);
         }
     }
-    
+
     // STEP 3: Final fallback to random selection
     if (!winnerId) {
         winnerId = pickWinnerRandom(room.submissions);
         judgingMethod = 'random_fallback';
         console.log(`✓ Random fallback: Winner #${winnerId}`);
     }
-    
+
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
-    
+
     if (!winningSubmission) {
         const fallbackWinner = room.submissions[0];
-        return createRoundResult(room, fallbackWinner.id, now, 'fallback', false);
+        return createRoundResult(room, fallbackWinner.id, now, 'fallback', false, null);
     }
-    
-    return createRoundResult(room, winnerId, now, judgingMethod, onChain);
+
+    return createRoundResult(room, winnerId, now, judgingMethod, onChain, aiCommentary);
 }
 
 // Helper to create round result and update scores
-async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false) {
+async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false, aiCommentary = null) {
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
-    
+
     const roundResult = {
         round: room.currentRound,
         winnerId,
         winnerName: winningSubmission.playerName,
         winningPunchline: winningSubmission.punchline,
-        judgingMethod: judgingMethod, // NEW: Track how winner was determined
-        onChain: onChain, // NEW: Whether result is on blockchain
+        judgingMethod: judgingMethod,
+        onChain: onChain,
+        aiCommentary: aiCommentary,
         scores: {}
     };
     
@@ -1040,12 +1176,47 @@ async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown',
             }
         }
     });
+
+    // Wrong prediction penalty — lose your bet amount
+    room.bets.forEach(bet => {
+        if (bet.submissionId !== winnerId) {
+            const betPlayer = room.players.find(p => p.name === bet.playerName);
+            if (betPlayer) {
+                const oldScore = betPlayer.score;
+                betPlayer.score = Math.max(0, betPlayer.score - bet.amount);
+                const actualPenalty = betPlayer.score - oldScore;
+                roundResult.scores[bet.playerName] = (roundResult.scores[bet.playerName] || 0) + actualPenalty;
+            }
+        }
+    });
     
+    // Reveal order: shuffled losers first, winner always last
+    const otherIds = room.submissions.map(s => s.id).filter(id => id !== winnerId);
+    const shuffled = otherIds.sort(() => Math.random() - 0.5);
+    roundResult.revealOrder = [...shuffled, winnerId];
+
+    // Track win streaks
+    if (!room.streaks) room.streaks = {};
+    for (const p of room.players) {
+        if (!room.streaks[p.name]) room.streaks[p.name] = 0;
+    }
+    room.streaks[winningSubmission.playerName] = (room.streaks[winningSubmission.playerName] || 0) + 1;
+    for (const p of room.players) {
+        if (p.name !== winningSubmission.playerName) room.streaks[p.name] = 0;
+    }
+    roundResult.streak = room.streaks[winningSubmission.playerName];
+
+    // Detect comeback — winner was in last place before this round's scoring
+    const sortedBefore = [...room.players].sort((a, b) =>
+        (b.score - (roundResult.scores[b.name] || 0)) - (a.score - (roundResult.scores[a.name] || 0))
+    );
+    roundResult.isComeback = sortedBefore.length > 1 && sortedBefore[sortedBefore.length - 1]?.name === winningSubmission.playerName;
+
     room.roundResults.push(roundResult);
     room.status = 'roundResults';
     room.phaseEndsAt = null;
     room.updatedAt = now;
-    room.lastJudgingMethod = judgingMethod; // Store for UI display
+    room.lastJudgingMethod = judgingMethod;
     
     await setRoom(room.id, room);
     return room;
@@ -1174,7 +1345,12 @@ function getPromptsForCategory(category) {
             "Why did the student eat his homework?"
         ]
     };
-    return prompts[category] || prompts.general;
+    const base = prompts[category] || prompts.general;
+
+    // Append shuffled bonus prompts from current weekly theme
+    const theme = getCurrentTheme();
+    const bonus = [...theme.bonusPrompts].sort(() => Math.random() - 0.5).slice(0, 3);
+    return [...base, ...bonus];
 }
 
 function getNextPrompt(room) {
@@ -1189,20 +1365,20 @@ function getNextPrompt(room) {
 
 // AI-powered winner selection using Claude
 async function pickWinnerWithAI(submissions, jokePrompt, category) {
-    if (!submissions?.length) return null;
-    if (submissions.length === 1) return submissions[0].id;
-    
+    if (!submissions?.length) return { winnerId: null, aiCommentary: null };
+    if (submissions.length === 1) return { winnerId: submissions[0].id, aiCommentary: null };
+
     // If no API key, fall back to random
     if (!ANTHROPIC_API_KEY) {
         console.log('No Anthropic API key, using random selection');
-        return submissions[Math.floor(Math.random() * submissions.length)].id;
+        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
     }
-    
+
     try {
-        const submissionsList = submissions.map(s => 
+        const submissionsList = submissions.map(s =>
             `[ID: ${s.id}] "${s.punchline}"`
         ).join('\n');
-        
+
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -1212,10 +1388,10 @@ async function pickWinnerWithAI(submissions, jokePrompt, category) {
             },
             body: JSON.stringify({
                 model: 'claude-sonnet-4-20250514',
-                max_tokens: 200,
+                max_tokens: 500,
                 messages: [{
                     role: 'user',
-                    content: `You are the Oracle of Wit, a comedy judge for a joke completion game. Your job is to pick the FUNNIEST punchline.
+                    content: `You are the Oracle of Wit, a savage and hilarious comedy judge. Pick the FUNNIEST punchline and roast the losers.
 
 JOKE SETUP: "${jokePrompt}"
 CATEGORY: ${category}
@@ -1225,41 +1401,60 @@ ${submissionsList}
 
 JUDGING CRITERIA:
 1. Humor & comedic timing
-2. Cleverness & wordplay  
+2. Cleverness & wordplay
 3. Relevance to the setup
 4. Surprise factor / unexpected twist
 5. Overall laugh-out-loud potential
 
-Pick the single funniest submission. Respond with ONLY the ID number of the winner (just the number, nothing else).`
+Respond with JSON only (no markdown, no backticks):
+{"winnerId": <number>, "winnerComment": "<1 witty sentence why this joke won>", "roasts": {${submissions.map(s => `"${s.id}": "<1 savage but funny sentence roasting why this joke lost>"`).join(', ')}}}`
                 }]
             })
         });
-        
+
         if (!response.ok) {
             console.error('AI API error:', response.status);
-            return submissions[Math.floor(Math.random() * submissions.length)].id;
+            return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
         }
-        
+
         const data = await response.json();
         const aiResponse = data.content?.[0]?.text?.trim();
-        
-        // Extract the ID from the response
-        const winnerId = parseInt(aiResponse);
-        
-        // Validate the winner ID exists in submissions
-        if (winnerId && submissions.find(s => s.id === winnerId)) {
-            console.log(`AI picked winner: ${winnerId}`);
-            return winnerId;
+
+        // Try to parse JSON response
+        try {
+            const parsed = JSON.parse(aiResponse);
+            const winnerId = parseInt(parsed.winnerId);
+
+            if (winnerId && submissions.find(s => s.id === winnerId)) {
+                console.log(`AI picked winner: ${winnerId} with commentary`);
+                // Remove winner from roasts
+                if (parsed.roasts) delete parsed.roasts[String(winnerId)];
+                return {
+                    winnerId,
+                    aiCommentary: {
+                        winnerComment: parsed.winnerComment || null,
+                        roasts: parsed.roasts || {}
+                    }
+                };
+            }
+        } catch (parseErr) {
+            // JSON parse failed, try to extract just the ID
+            console.log('AI response not valid JSON, extracting ID');
+            const match = aiResponse.match(/\d+/);
+            if (match) {
+                const winnerId = parseInt(match[0]);
+                if (submissions.find(s => s.id === winnerId)) {
+                    return { winnerId, aiCommentary: null };
+                }
+            }
         }
-        
-        // If AI returned invalid ID, fall back to random
-        console.log('AI returned invalid ID, using random');
-        return submissions[Math.floor(Math.random() * submissions.length)].id;
-        
+
+        console.log('AI returned invalid response, using random');
+        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
+
     } catch (error) {
         console.error('AI judging error:', error);
-        // Fall back to random selection on any error
-        return submissions[Math.floor(Math.random() * submissions.length)].id;
+        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
     }
 }
 
@@ -1326,16 +1521,18 @@ export default async function handler(req, res) {
                     players,
                     status: 'waiting',
                     currentRound: 0,
-                    totalRounds: 3,
+                    totalRounds: 5,
                     jokePrompt: '',
                     submissions: [],
                     bets: [],
+                    reactions: [],
                     roundResults: [],
                     usedPrompts: [],
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                     phaseEndsAt: null,
-                    isSinglePlayer: singlePlayer
+                    isSinglePlayer: singlePlayer,
+                    weeklyTheme: getCurrentTheme()
                 };
                 
                 await setRoom(roomId, room);
@@ -1411,6 +1608,7 @@ export default async function handler(req, res) {
                 room.currentRound = 1;
                 room.submissions = [];
                 room.bets = [];
+                room.reactions = [];
                 room.jokePrompt = getNextPrompt(room);
                 room.phaseEndsAt = now + SUBMISSION_TIME;
                 room.roundStartedAt = now;
@@ -1471,6 +1669,7 @@ export default async function handler(req, res) {
                     if (room.submissions.length >= 1) {
                         room.status = 'betting';
                         room.bets = [];
+                        room.reactions = [];
                         room.phaseEndsAt = now + BETTING_TIME;
                         room.updatedAt = now;
                         await setRoom(roomId, room);
@@ -1509,6 +1708,7 @@ export default async function handler(req, res) {
                 room.status = 'submitting';
                 room.submissions = [];
                 room.bets = [];
+                room.reactions = [];
                 room.jokePrompt = getNextPrompt(room);
                 room.phaseEndsAt = now + SUBMISSION_TIME;
                 room.roundStartedAt = now;
@@ -1518,9 +1718,34 @@ export default async function handler(req, res) {
                 return res.status(200).json({ success: true, room });
             }
 
+            case 'sendReaction': {
+                const { roomId, playerName, submissionId, emoji } = body;
+                let room = await getRoom(roomId);
+                if (!room || room.status !== 'betting') return res.status(400).json({ error: 'Not in betting phase' });
+                if (!room.players.find(p => p.name === playerName)) return res.status(403).json({ error: 'Not a player' });
+                if (!room.submissions.find(s => s.id === submissionId)) return res.status(400).json({ error: 'Invalid submission' });
+                const ALLOWED = ['\u{1F602}','\u{1F525}','\u{1F480}','\u{1F610}','\u{1F44F}','\u{1F92E}'];
+                if (!ALLOWED.includes(emoji)) return res.status(400).json({ error: 'Invalid emoji' });
+                if (!room.reactions) room.reactions = [];
+                const playerReactions = room.reactions.filter(r => r.playerName === playerName);
+                if (playerReactions.length >= 3) return res.status(400).json({ error: 'Max reactions reached' });
+                room.reactions.push({ playerName, submissionId, emoji, at: Date.now() });
+                room.updatedAt = Date.now();
+                await setRoom(roomId, room);
+                return res.status(200).json({ success: true });
+            }
+
             case 'getLeaderboard': {
                 const leaderboard = await getLeaderboard();
                 return res.status(200).json({ success: true, leaderboard: leaderboard.slice(0, 20) });
+            }
+
+            case 'getWeeklyTheme': {
+                const theme = getCurrentTheme();
+                return res.status(200).json({
+                    success: true,
+                    theme: { name: theme.name, emoji: theme.emoji, description: theme.description }
+                });
             }
 
             default:
