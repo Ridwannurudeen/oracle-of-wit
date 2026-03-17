@@ -68,7 +68,7 @@ const ACHIEVEMENTS = [
 // so we run GenLayer for on-chain proof + Claude for winner determination in parallel.
 // Track last GenLayer submission to avoid nonce conflicts on testnet
 let _lastGLSubmit = 0;
-const GL_COOLDOWN = 15000; // 15s between on-chain submissions
+const GL_COOLDOWN = 5000; // 5s between on-chain submissions
 
 async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
     const client = await getGenLayerClient();
@@ -94,6 +94,12 @@ async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
         console.log(`[GenLayer] Submitting judge_round for ${gameId} (${submissions.length} submissions)`);
         _lastGLSubmit = now;
 
+        // Note: The contract uses gl.eq_principle_strict_eq which requires all validators
+        // to agree on the exact same winner ID. For subjective humor judging, this causes
+        // high validator rotation (~22 rotations, ~32 min finalization) because different
+        // LLMs disagree on which joke is funniest. This is expected behavior for subjective
+        // judging — the contract prompt would need to use ranked scoring or a less strict
+        // equivalence principle (e.g. gl.eq_principle_prompt_comparative) to reduce rotations.
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
             functionName: 'judge_round',
@@ -134,6 +140,29 @@ async function recordOnChain(gameId, finalScores) {
         return txHash;
     } catch (error) {
         console.error('[GenLayer] record_game_result failed:', error.message);
+        return false;
+    }
+}
+
+// Register a new game on GenLayer blockchain
+async function createGameOnChain(gameId, hostName, category) {
+    const client = await getGenLayerClient();
+    if (!client) return false;
+
+    try {
+        console.log(`[GenLayer] Creating game ${gameId} on-chain (host: ${hostName}, category: ${category})`);
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'create_game',
+            args: [gameId, hostName, category],
+            value: 0n,
+        });
+
+        console.log(`[GenLayer] create_game tx: ${txHash}`);
+        return txHash;
+    } catch (error) {
+        console.error('[GenLayer] create_game failed:', error.message);
         return false;
     }
 }
@@ -2009,6 +2038,12 @@ export default async function handler(req, res) {
                 };
                 
                 await setRoom(roomId, room);
+
+                // Register game on GenLayer (fire-and-forget)
+                createGameOnChain(roomId, hostName, room.category).catch(e =>
+                    console.error('[GenLayer] create_game fire-and-forget error:', e.message)
+                );
+
                 return res.status(200).json({ success: true, roomId, room });
             }
 
@@ -2238,6 +2273,12 @@ export default async function handler(req, res) {
                         await updateLeaderboard(p.name, p.score, p.isBot);
                     }
                     await setRoom(roomId, room);
+
+                    // Record final scores on GenLayer (fire-and-forget)
+                    recordOnChain(roomId, room.players).catch(e =>
+                        console.error('[GenLayer] record_game_result fire-and-forget error:', e.message)
+                    );
+
                     const leaderboard = await getLeaderboard();
 
                     // Update player profile if playerId provided
