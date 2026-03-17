@@ -796,12 +796,19 @@ async function fetchRoom() {
     try {
         const res = await fetch(`${API_URL}?action=getRoom&roomId=${state.roomId}`);
         const result = await res.json();
+        if (!result.success || !result.room) {
+            // Room expired on server — auto-recover
+            leaveRoom();
+            state.error = 'Room expired. Returned to lobby.';
+            render(true);
+            return;
+        }
         if (result.success && result.room) {
             const oldStatus = state.room?.status;
             const oldSubmissionCount = state.room?.submissions?.length || 0;
             const oldBetCount = state.room?.bets?.length || 0;
             const oldPlayerCount = state.room?.players?.length || 0;
-            
+
             state.room = result.room;
             syncTimer();
             
@@ -1101,7 +1108,13 @@ async function nextRound() {
             startTimer();
         }
         render();
-    } catch (e) {}
+    } catch (e) {
+        // Room expired or not found — auto-recover to lobby
+        playSound('loss');
+        leaveRoom();
+        state.error = 'Room expired. Returned to lobby.';
+        render(true);
+    }
 }
 
 function leaveRoom() {
@@ -1791,6 +1804,8 @@ function render(force = false) {
                     <span>R${state.room.currentRound || 0}/${state.room.totalRounds || 5}</span>
                     <span class="text-white/10">|</span>
                     <span class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${state.room.status?.toUpperCase() || 'IDLE'}</span>
+                    <span class="text-white/10">|</span>
+                    <button onclick="if(confirm('Leave this game?'))leaveRoom()" class="text-red-400/60 hover:text-red-400 transition-colors text-[10px] font-mono tracking-wider">EXIT</button>
                 </div>
             </div>
         </div>
@@ -2967,6 +2982,7 @@ function renderRoundResults() {
                     ${r.currentRound >= r.totalRounds ? 'FINAL RESULTS' : 'NEXT ROUND'}
                 </button>
             ` : '<div class="text-center py-4 text-gray-500 font-mono text-xs tracking-wider"><div class="spinner mx-auto mb-2"></div>WAITING FOR HOST</div>'}
+            <button onclick="leaveRoom()" class="btn btn-ghost w-full py-2 rounded-xl text-xs text-gray-500 hover:text-white mt-1">&larr; LEAVE GAME</button>
         </div>
     `;
 }
