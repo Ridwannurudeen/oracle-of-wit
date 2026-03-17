@@ -2134,11 +2134,13 @@ export default async function handler(req, res) {
 
             case 'submitPunchline': {
                 const { roomId, playerName, punchline } = body;
+                console.log(`[submitPunchline] roomId=${roomId} player=${playerName} punchline=${!!punchline}`);
                 let room = await getRoom(roomId);
-                
+                console.log(`[submitPunchline] room found=${!!room} status=${room?.status} subs=${room?.submissions?.length}`);
+
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (!room.players.find(p => p.name === playerName)) return res.status(403).json({ error: 'Not a player in this room' });
-                if (room.status !== 'submitting') return res.status(400).json({ error: 'Not in submission phase' });
+                if (room.status !== 'submitting') return res.status(400).json({ error: 'Not in submission phase', currentStatus: room.status });
                 if (room.phaseEndsAt && Date.now() > room.phaseEndsAt) return res.status(400).json({ error: 'Time expired' });
                 if (room.submissions.find(s => s.playerName === playerName)) return res.status(400).json({ error: 'Already submitted' });
                 
