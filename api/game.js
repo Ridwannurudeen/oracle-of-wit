@@ -67,7 +67,7 @@ const ACHIEVEMENTS = [
 async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
     const client = await getGenLayerClient();
     if (!client) {
-        console.log('[GenLayer] Not configured');
+        console.log('[GenLayer] Not configured (missing key or address)');
         return null;
     }
 
@@ -87,21 +87,11 @@ async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
             value: 0n,
         });
 
-        console.log(`[GenLayer] judge_round tx: ${txHash}`);
-
-        // Wait for OD consensus (5 validators must agree on winner)
-        const { TransactionStatus } = await import('genlayer-js/types');
-        const receipt = await client.waitForTransactionReceipt({
-            hash: txHash,
-            status: TransactionStatus.ACCEPTED,
-            retries: 40,
-            interval: 3000,
-        });
-
-        const validators = receipt?.lastRound?.roundValidators?.length || 0;
-        console.log(`[GenLayer] ACCEPTED — ${validators} validators reached consensus (tx: ${txHash})`);
-
-        return { txHash, onChain: true, validators };
+        // Don't wait for receipt — consensus takes 10-30s, serverless functions time out.
+        // The txHash is proof the judgment was submitted to Optimistic Democracy.
+        // Validators will independently evaluate and reach consensus in the background.
+        console.log(`[GenLayer] judge_round submitted to OD: ${txHash}`);
+        return { txHash, onChain: true };
     } catch (error) {
         console.error('[GenLayer] judge_round failed:', error.message);
         return null;
@@ -158,19 +148,8 @@ async function appealWithGenLayer(gameId, jokePrompt, category, submissions, ori
             value: 0n,
         });
 
-        console.log(`[GenLayer] appeal_judgment tx: ${txHash}`);
-
-        const { TransactionStatus } = await import('genlayer-js/types');
-        const receipt = await client.waitForTransactionReceipt({
-            hash: txHash,
-            status: TransactionStatus.ACCEPTED,
-            retries: 40,
-            interval: 3000,
-        });
-
-        const validators = receipt?.lastRound?.roundValidators?.length || 0;
-        console.log(`[GenLayer] Appeal ACCEPTED — ${validators} validators (tx: ${txHash})`);
-        return { txHash, onChain: true, validators };
+        console.log(`[GenLayer] appeal_judgment submitted to OD: ${txHash}`);
+        return { txHash, onChain: true };
     } catch (error) {
         console.error('[GenLayer] appeal_judgment failed:', error.message);
         return null;
