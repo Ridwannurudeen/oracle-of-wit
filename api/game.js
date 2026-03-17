@@ -1009,10 +1009,17 @@ const fallbackLeaderboard = [];
 // Track rooms currently being auto-advanced to prevent double execution
 const _advancingRooms = new Set();
 
-async function getRoom(roomId) {
+// Read room without triggering auto-advance (for write operations)
+async function getRoomRaw(roomId) {
     let room = await redisGet(`room:${roomId}`) || fallbackRooms[roomId];
     if (!room) return null;
     if (room.version === undefined) room.version = 0;
+    return room;
+}
+
+async function getRoom(roomId) {
+    let room = await getRoomRaw(roomId);
+    if (!room) return null;
     // Only auto-advance if not already being advanced by another concurrent request
     if (!_advancingRooms.has(roomId)) {
         _advancingRooms.add(roomId);
@@ -2134,9 +2141,7 @@ export default async function handler(req, res) {
 
             case 'submitPunchline': {
                 const { roomId, playerName, punchline } = body;
-                console.log(`[submitPunchline] roomId=${roomId} player=${playerName} punchline=${!!punchline}`);
-                let room = await getRoom(roomId);
-                console.log(`[submitPunchline] room found=${!!room} status=${room?.status} subs=${room?.submissions?.length}`);
+                let room = await getRoomRaw(roomId);
 
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (!room.players.find(p => p.name === playerName)) return res.status(403).json({ error: 'Not a player in this room' });
@@ -2158,7 +2163,7 @@ export default async function handler(req, res) {
 
             case 'placeBet': {
                 const { roomId, playerName, submissionId, amount } = body;
-                let room = await getRoom(roomId);
+                let room = await getRoomRaw(roomId);
 
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.status !== 'betting') return res.status(400).json({ error: 'Not in betting phase' });
@@ -2184,7 +2189,7 @@ export default async function handler(req, res) {
 
             case 'castVote': {
                 const { roomId, playerName, submissionId } = body;
-                let room = await getRoom(roomId);
+                let room = await getRoomRaw(roomId);
 
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.status !== 'voting') return res.status(400).json({ error: 'Not in voting phase' });
