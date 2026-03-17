@@ -1719,11 +1719,13 @@ export default async function handler(req, res) {
                 if (room.isSinglePlayer) return res.status(400).json({ error: 'Cannot join single-player game' });
                 if (room.players.length >= room.maxPlayers) return res.status(400).json({ error: 'Room is full' });
 
-                if (!room.players.find(p => p.name === playerName)) {
-                    room.players.push({ name: playerName, score: 0, isHost: false, isBot: false, joinedAt: Date.now() });
-                    room.updatedAt = Date.now();
-                    await setRoom(roomId, room);
+                if (room.players.find(p => p.name === playerName)) {
+                    return res.status(400).json({ error: 'Player already in room' });
                 }
+
+                room.players.push({ name: playerName, score: 0, isHost: false, isBot: false, joinedAt: Date.now() });
+                room.updatedAt = Date.now();
+                await setRoom(roomId, room);
 
                 return res.status(200).json({ success: true, room });
             }
@@ -1977,7 +1979,7 @@ export default async function handler(req, res) {
 
             // --- Player Profiles ---
             case 'getProfile': {
-                const { playerId } = body;
+                const playerId = body.playerId || req.query.playerId;
                 if (!playerId) return res.status(400).json({ error: 'playerId required' });
                 const profile = await getProfile(playerId);
                 if (!profile) return res.status(404).json({ error: 'Profile not found' });
