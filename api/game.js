@@ -29,6 +29,8 @@ async function getGenLayerClient() {
 
 const SUBMISSION_TIME = 40000;
 const BETTING_TIME = 30000;
+const VOTING_TIME = 20000;
+const CURATION_THRESHOLD = 8; // Rooms with 8+ submissions trigger AI curation
 
 // Level system
 const LEVEL_THRESHOLDS = [
@@ -999,13 +1001,43 @@ const fallbackLeaderboard = [];
 async function getRoom(roomId) {
     let room = await redisGet(`room:${roomId}`) || fallbackRooms[roomId];
     if (!room) return null;
+    // Ensure version field exists (migration for pre-locking rooms)
+    if (room.version === undefined) room.version = 0;
     room = await checkAutoAdvance(room);
     return room;
 }
 
-async function setRoom(roomId, room) {
+// Optimistic locking: compare-and-swap with retry
+// Prevents race conditions when 100 players submit/vote simultaneously
+async function setRoom(roomId, room, retries = 3) {
+    const newVersion = (room.version || 0) + 1;
+    room.version = newVersion;
     fallbackRooms[roomId] = room;
-    await redisSet(`room:${roomId}`, room);
+
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) return true;
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+        // Read current version from Redis
+        const current = await redisGet(`room:${roomId}`);
+        const currentVersion = current?.version || 0;
+
+        // If someone else wrote since we read, re-merge and retry
+        if (current && currentVersion >= newVersion) {
+            console.log(`[Lock] Version conflict on ${roomId}: expected ${newVersion - 1}, got ${currentVersion}. Retry ${attempt + 1}/${retries}`);
+            // Re-read fresh and let caller retry the mutation
+            return false;
+        }
+
+        // Write with updated version
+        const success = await redisSet(`room:${roomId}`, room);
+        if (success) return true;
+
+        // Redis write failed, wait briefly and retry
+        await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+    }
+
+    console.error(`[Lock] Failed to write room ${roomId} after ${retries} retries`);
+    return false;
 }
 
 async function getLeaderboard() {
@@ -1128,25 +1160,114 @@ function getDailyPrompt() {
     return allPrompts[dayNum % allPrompts.length];
 }
 
+// AI curation — pick top 8 from many submissions for large rooms
+async function curateSubmissions(submissions, jokePrompt, category) {
+    if (!ANTHROPIC_API_KEY || submissions.length < CURATION_THRESHOLD) return null;
+
+    const submissionsList = submissions.map(s => `[ID:${s.id}] "${s.punchline}"`).join('\n');
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 100,
+                messages: [{
+                    role: 'user',
+                    content: `You are curating a comedy contest. Pick the 8 funniest punchlines from these submissions for the joke: "${jokePrompt}" (Category: ${category}).
+
+${submissionsList}
+
+Return ONLY a JSON array of the 8 IDs (numbers), e.g. [1,3,5,7,8,12,15,20]. No text.`
+                }]
+            })
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) return null;
+        const data = await response.json();
+        const text = data.content?.[0]?.text?.trim();
+        if (!text) return null;
+
+        const match = text.match(/\[[\d,\s]+\]/);
+        if (!match) return null;
+        const ids = JSON.parse(match[0]).filter(id => typeof id === 'number');
+        if (ids.length < 4) return null; // Need at least 4 curated
+        return ids.slice(0, 8);
+    } catch (e) {
+        console.log('[Curate] AI curation failed:', e.message);
+        return null;
+    }
+}
+
+// Transition from submitting → curating (large rooms) or betting (small rooms)
+async function transitionFromSubmitting(room) {
+    const now = Date.now();
+    if (room.isSinglePlayer) await addBotSubmissions(room);
+    if (room.submissions.length < 1) {
+        // No submissions even after bots — skip round
+        room.status = 'roundResults';
+        room.roundResults = room.roundResults || [];
+        room.roundResults.push({ round: room.currentRound, winnerId: null, winnerName: 'No one', winningPunchline: 'No submissions', scores: {}, judgingMethod: 'skipped' });
+        return;
+    }
+
+    // Large rooms: AI curation → audience voting
+    if (room.submissions.length >= CURATION_THRESHOLD) {
+        room.status = 'curating';
+        room.updatedAt = now;
+        room.phaseEndsAt = now + 6000; // 6s for curation animation + API call
+        room.curatedIds = null;
+        room.audienceVotes = {};
+        await setRoom(room.id, room);
+        // Kick off curation in background — result stored when curating timer expires
+        return;
+    }
+
+    // Small rooms: straight to betting
+    room.status = 'betting';
+    room.bets = [];
+    room.reactions = [];
+    room.phaseEndsAt = now + BETTING_TIME;
+    room.updatedAt = now;
+    await setRoom(room.id, room);
+}
+
 // Auto-advance when timer expires
 async function checkAutoAdvance(room) {
     if (!room?.phaseEndsAt) return room;
     const now = Date.now();
-    
+
     if (room.status === 'submitting' && now >= room.phaseEndsAt) {
-        // Add bot submissions for single-player
-        if (room.isSinglePlayer) {
-            addBotSubmissions(room);
+        await transitionFromSubmitting(room);
+    } else if (room.status === 'curating' && now >= room.phaseEndsAt) {
+        // Curation timer expired — run AI curation and move to voting
+        if (!room.curatedIds) {
+            const ids = await curateSubmissions(room.submissions, room.jokePrompt, room.category);
+            if (ids) {
+                room.curatedIds = ids;
+            } else {
+                // Fallback: random pick of 8
+                const shuffled = [...room.submissions].sort(() => Math.random() - 0.5);
+                room.curatedIds = shuffled.slice(0, 8).map(s => s.id);
+            }
         }
-        
-        if (room.submissions.length >= 1) {
-            room.status = 'betting';
-            room.bets = [];
-            room.reactions = [];
-            room.phaseEndsAt = now + BETTING_TIME;
-            room.updatedAt = now;
-            await setRoom(room.id, room);
-        }
+        room.status = 'voting';
+        room.audienceVotes = {};
+        room.phaseEndsAt = now + VOTING_TIME;
+        room.updatedAt = now;
+        await setRoom(room.id, room);
+    } else if (room.status === 'voting' && now >= room.phaseEndsAt) {
+        // Tally votes → winner
+        room = await tallyVotesAndJudge(room);
     } else if (room.status === 'betting' && now >= room.phaseEndsAt) {
         // Add bot bets for single-player
         if (room.isSinglePlayer) {
@@ -1154,49 +1275,164 @@ async function checkAutoAdvance(room) {
         }
         room = await autoJudge(room);
     }
-    
+
     return room;
 }
 
-// Add bot submissions in single-player mode - SMART MATCHING
-function addBotSubmissions(room) {
+// Tally audience votes and determine winner for large rooms
+async function tallyVotesAndJudge(room) {
+    const votes = room.audienceVotes || {};
+    const voteCounts = {};
+
+    // Count votes per submission
+    for (const [playerName, submissionId] of Object.entries(votes)) {
+        voteCounts[submissionId] = (voteCounts[submissionId] || 0) + 1;
+    }
+
+    // Find highest vote count
+    const maxVotes = Math.max(...Object.values(voteCounts), 0);
+    const topIds = Object.entries(voteCounts)
+        .filter(([_, count]) => count === maxVotes)
+        .map(([id]) => parseInt(id));
+
+    let winnerId;
+    let judgingMethod = 'audience_vote';
+    let aiCommentary = null;
+
+    if (topIds.length === 1) {
+        winnerId = topIds[0];
+    } else if (topIds.length > 1) {
+        // Tiebreak: AI picks among tied submissions
+        const tiedSubmissions = room.submissions.filter(s => topIds.includes(s.id));
+        const aiResult = await pickWinnerWithAI(tiedSubmissions, room.jokePrompt, room.category);
+        winnerId = aiResult.winnerId || topIds[Math.floor(Math.random() * topIds.length)];
+        aiCommentary = aiResult.aiCommentary;
+        judgingMethod = 'audience_vote_ai_tiebreak';
+    } else {
+        // No votes at all — AI picks from curated
+        const curated = room.submissions.filter(s => room.curatedIds?.includes(s.id));
+        const aiResult = await pickWinnerWithAI(curated.length ? curated : room.submissions, room.jokePrompt, room.category);
+        winnerId = aiResult.winnerId;
+        aiCommentary = aiResult.aiCommentary;
+        judgingMethod = aiResult.judgingMethod;
+    }
+
+    if (!winnerId || !room.submissions.find(s => s.id === winnerId)) {
+        winnerId = room.submissions[0]?.id;
+        judgingMethod = 'coin_flip';
+    }
+
+    // Use createRoundResult for consistent scoring, reveal order, etc.
+    // Attach vote metadata to round result after creation
+    const result = await createRoundResult(room, winnerId, Date.now(), judgingMethod, false, aiCommentary);
+
+    // Enrich the last round result with vote data
+    const lastResult = room.roundResults[room.roundResults.length - 1];
+    if (lastResult) {
+        lastResult.voteCounts = voteCounts;
+        lastResult.totalVotes = Object.keys(votes).length;
+        await setRoom(room.id, room);
+    }
+
+    return room;
+}
+
+// Generate bot punchlines via Claude Haiku (fast, cheap, contextual)
+async function generateBotPunchlines(jokePrompt, category, count = 3) {
+    if (!ANTHROPIC_API_KEY) return null;
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 200,
+                messages: [{
+                    role: 'user',
+                    content: `Generate ${count} funny punchlines for this joke setup: "${jokePrompt}"
+Category: ${category}. Each should have a distinct comedy style:
+1. Clever wordplay
+2. Absurd/surreal
+3. Dark/edgy
+
+Return ONLY a JSON array of ${count} strings, no markdown:
+["punchline1", "punchline2", "punchline3"]`
+                }]
+            })
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) return null;
+        const data = await response.json();
+        const text = data.content?.[0]?.text?.trim();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length >= count) {
+            console.log(`[Bots] Generated ${count} dynamic punchlines via Haiku`);
+            return parsed.slice(0, count);
+        }
+        return null;
+    } catch (e) {
+        console.log(`[Bots] Haiku generation failed (${e.message}), using hardcoded fallback`);
+        return null;
+    }
+}
+
+// Add bot submissions in single-player mode — prefers dynamic AI generation
+async function addBotSubmissions(room) {
     const botsToAdd = room.players.filter(p => p.isBot && !room.submissions.find(s => s.playerName === p.name));
+    if (botsToAdd.length === 0) return;
+
+    // Try dynamic generation first
+    const dynamicPunchlines = await generateBotPunchlines(room.jokePrompt, room.category, botsToAdd.length);
+
+    if (dynamicPunchlines && dynamicPunchlines.length >= botsToAdd.length) {
+        // Use AI-generated punchlines
+        botsToAdd.forEach((bot, i) => {
+            room.submissions.push({
+                id: room.submissions.length + 1,
+                playerName: bot.name,
+                punchline: dynamicPunchlines[i],
+                submittedAt: Date.now()
+            });
+        });
+        return;
+    }
+
+    // Fallback to hardcoded dict
     const currentPrompt = room.jokePrompt;
-    
-    // Try to find matched punchlines for this prompt
-    let availablePunchlines = PROMPT_PUNCHLINES[currentPrompt] 
-        ? [...PROMPT_PUNCHLINES[currentPrompt]] 
+    let availablePunchlines = PROMPT_PUNCHLINES[currentPrompt]
+        ? [...PROMPT_PUNCHLINES[currentPrompt]]
         : null;
-    
-    // If no exact match, try partial matching
+
     if (!availablePunchlines) {
-        const promptKey = Object.keys(PROMPT_PUNCHLINES).find(key => 
+        const promptKey = Object.keys(PROMPT_PUNCHLINES).find(key =>
             currentPrompt.toLowerCase().includes(key.toLowerCase().slice(0, 30)) ||
             key.toLowerCase().includes(currentPrompt.toLowerCase().slice(0, 30))
         );
-        if (promptKey) {
-            availablePunchlines = [...PROMPT_PUNCHLINES[promptKey]];
-        }
+        if (promptKey) availablePunchlines = [...PROMPT_PUNCHLINES[promptKey]];
     }
-    
-    // Fall back to category-based punchlines if no match found
+
     if (!availablePunchlines || availablePunchlines.length === 0) {
         availablePunchlines = [...(FALLBACK_PUNCHLINES[room.category] || FALLBACK_PUNCHLINES.general)];
     }
-    
+
     botsToAdd.forEach(bot => {
-        // Filter out already used punchlines
-        const unusedPunchlines = availablePunchlines.filter(p => 
+        const unusedPunchlines = availablePunchlines.filter(p =>
             !room.submissions.find(s => s.punchline === p)
         );
-        
         const punchlinePool = unusedPunchlines.length > 0 ? unusedPunchlines : availablePunchlines;
         const punchline = punchlinePool[Math.floor(Math.random() * punchlinePool.length)];
-        
-        // Remove selected punchline from available pool to avoid duplicates
         const idx = availablePunchlines.indexOf(punchline);
         if (idx > -1) availablePunchlines.splice(idx, 1);
-        
+
         room.submissions.push({
             id: room.submissions.length + 1,
             playerName: bot.name,
@@ -1241,7 +1477,7 @@ async function autoJudge(room) {
 
     let winnerId = aiResult.winnerId;
     let aiCommentary = aiResult.aiCommentary;
-    let judgingMethod = winnerId ? 'claude_api' : 'random';
+    let judgingMethod = aiResult.judgingMethod || (winnerId ? 'claude_api' : 'coin_flip');
     let onChain = false;
     let txHash = null;
 
@@ -1249,19 +1485,19 @@ async function autoJudge(room) {
     if (genLayerResult && genLayerResult.txHash) {
         onChain = true;
         txHash = genLayerResult.txHash;
-        judgingMethod = winnerId ? 'genlayer_optimistic_democracy' : 'genlayer_verified';
-        console.log(`✓ GenLayer OD verified on-chain (${genLayerResult.validators} validators, tx: ${txHash})`);
+        if (judgingMethod === 'claude_api') judgingMethod = 'genlayer_optimistic_democracy';
+        console.log(`✓ GenLayer OD verified on-chain (tx: ${txHash})`);
     }
 
     if (winnerId) {
         console.log(`✓ Winner #${winnerId} — method: ${judgingMethod}, onChain: ${onChain}`);
     }
 
-    // Final fallback to random
+    // Final fallback
     if (!winnerId) {
         winnerId = pickWinnerRandom(room.submissions);
-        if (!onChain) judgingMethod = 'random_fallback';
-        console.log(`✓ Random fallback: Winner #${winnerId}`);
+        judgingMethod = 'coin_flip';
+        console.log(`✓ Coin flip fallback: Winner #${winnerId}`);
     }
 
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
@@ -1349,7 +1585,7 @@ async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown',
     room.lastJudgingMethod = judgingMethod;
 
     // Push winning joke to hall of fame
-    if (winningSubmission && !winningSubmission.playerName?.startsWith?.('Bot')) {
+    if (winningSubmission && !room.players.find(p => p.name === winningSubmission.playerName)?.isBot) {
         try {
             const hof = await redisGet('hall_of_fame') || [];
             hof.unshift({
@@ -1499,32 +1735,50 @@ function getPromptsForCategory(category) {
     return [...base, ...bonus];
 }
 
-function getNextPrompt(room) {
+async function getNextPrompt(room) {
+    // 30% chance to use an approved community prompt
+    if (Math.random() < 0.3) {
+        try {
+            const communityPrompts = await redisGet('community_prompts') || [];
+            const approved = communityPrompts.filter(p => p.status === 'approved' && !room.usedPrompts.includes(p.prompt));
+            if (approved.length > 0) {
+                const pick = approved[Math.floor(Math.random() * approved.length)];
+                room.usedPrompts.push(pick.prompt);
+                room.promptSource = { type: 'community', author: pick.author };
+                return pick.prompt;
+            }
+        } catch (e) {
+            console.log('[CommunityPrompts] Redis fetch failed, using hardcoded:', e.message);
+        }
+    }
+
     const prompts = getPromptsForCategory(room.category);
     const available = prompts.filter(p => !room.usedPrompts.includes(p));
-    const prompt = available.length > 0 
+    const prompt = available.length > 0
         ? available[Math.floor(Math.random() * available.length)]
         : prompts[Math.floor(Math.random() * prompts.length)];
     room.usedPrompts.push(prompt);
+    room.promptSource = null;
     return prompt;
 }
 
-// AI-powered winner selection using Claude
+// AI-powered winner selection using Claude — with retry logic
 async function pickWinnerWithAI(submissions, jokePrompt, category) {
-    if (!submissions?.length) return { winnerId: null, aiCommentary: null };
-    if (submissions.length === 1) return { winnerId: submissions[0].id, aiCommentary: null };
+    if (!submissions?.length) return { winnerId: null, aiCommentary: null, judgingMethod: 'none' };
+    if (submissions.length === 1) return { winnerId: submissions[0].id, aiCommentary: null, judgingMethod: 'single_entry' };
 
-    // If no API key, fall back to random
+    // If no API key, explicit coin flip
     if (!ANTHROPIC_API_KEY) {
-        console.log('No Anthropic API key, using random selection');
-        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
+        console.log('No Anthropic API key — coin flip');
+        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null, judgingMethod: 'coin_flip' };
     }
 
-    try {
-        const submissionsList = submissions.map(s =>
-            `[ID: ${s.id}] "${s.punchline}"`
-        ).join('\n');
+    const submissionsList = submissions.map(s =>
+        `[ID: ${s.id}] "${s.punchline}"`
+    ).join('\n');
 
+    // --- ATTEMPT 1: Full prompt (winner + roast + commentary) ---
+    try {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -1533,75 +1787,95 @@ async function pickWinnerWithAI(submissions, jokePrompt, category) {
                 'anthropic-version': '2023-06-01'
             },
             body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 500,
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 400,
                 messages: [{
                     role: 'user',
-                    content: `You are the Oracle of Wit, a savage and hilarious comedy judge. Pick the FUNNIEST punchline and roast the losers.
+                    content: `You are the Oracle of Wit, a savage comedy judge. Pick the FUNNIEST punchline.
 
 JOKE SETUP: "${jokePrompt}"
 CATEGORY: ${category}
 
-SUBMITTED PUNCHLINES:
+PUNCHLINES:
 ${submissionsList}
 
-JUDGING CRITERIA:
-1. Humor & comedic timing
-2. Cleverness & wordplay
-3. Relevance to the setup
-4. Surprise factor / unexpected twist
-5. Overall laugh-out-loud potential
+Judge on: humor, cleverness, relevance, surprise factor.
 
-Respond with JSON only (no markdown, no backticks):
-{"winnerId": <number>, "winnerComment": "<1 witty sentence why this joke won>", "roasts": {${submissions.map(s => `"${s.id}": "<1 savage but funny sentence roasting why this joke lost>"`).join(', ')}}}`
+Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
+{"winnerId": <number>, "winnerComment": "<1 witty sentence>", "roasts": {${submissions.map(s => `"${s.id}": "<1 sentence>"`).join(', ')}}}`
                 }]
             })
         });
 
-        if (!response.ok) {
-            console.error('AI API error:', response.status);
-            return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
-        }
-
-        const data = await response.json();
-        const aiResponse = data.content?.[0]?.text?.trim();
-
-        // Try to parse JSON response
-        try {
-            const parsed = JSON.parse(aiResponse);
-            const winnerId = parseInt(parsed.winnerId);
-
-            if (winnerId && submissions.find(s => s.id === winnerId)) {
-                console.log(`AI picked winner: ${winnerId} with commentary`);
-                // Remove winner from roasts
-                if (parsed.roasts) delete parsed.roasts[String(winnerId)];
-                return {
-                    winnerId,
-                    aiCommentary: {
-                        winnerComment: parsed.winnerComment || null,
-                        roasts: parsed.roasts || {}
+        if (response.ok) {
+            const data = await response.json();
+            const aiResponse = data.content?.[0]?.text?.trim();
+            try {
+                const parsed = JSON.parse(aiResponse);
+                const winnerId = parseInt(parsed.winnerId);
+                if (winnerId && submissions.find(s => s.id === winnerId)) {
+                    console.log(`[Judge] Attempt 1 success: winner #${winnerId}`);
+                    if (parsed.roasts) delete parsed.roasts[String(winnerId)];
+                    return {
+                        winnerId,
+                        aiCommentary: { winnerComment: parsed.winnerComment || null, roasts: parsed.roasts || {} },
+                        judgingMethod: 'claude_api'
+                    };
+                }
+            } catch (parseErr) {
+                // Try regex extraction from attempt 1
+                const match = aiResponse?.match(/"winnerId"\s*:\s*(\d+)/);
+                if (match) {
+                    const winnerId = parseInt(match[1]);
+                    if (submissions.find(s => s.id === winnerId)) {
+                        console.log(`[Judge] Attempt 1 regex fallback: winner #${winnerId}`);
+                        return { winnerId, aiCommentary: null, judgingMethod: 'claude_api' };
                     }
-                };
-            }
-        } catch (parseErr) {
-            // JSON parse failed, try to extract just the ID
-            console.log('AI response not valid JSON, extracting ID');
-            const match = aiResponse.match(/\d+/);
-            if (match) {
-                const winnerId = parseInt(match[0]);
-                if (submissions.find(s => s.id === winnerId)) {
-                    return { winnerId, aiCommentary: null };
                 }
             }
         }
-
-        console.log('AI returned invalid response, using random');
-        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
-
-    } catch (error) {
-        console.error('AI judging error:', error);
-        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null };
+        console.log('[Judge] Attempt 1 failed, trying simplified prompt');
+    } catch (e) {
+        console.error('[Judge] Attempt 1 error:', e.message);
     }
+
+    // --- ATTEMPT 2: Simplified prompt (just pick a number) ---
+    try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 10,
+                messages: [{
+                    role: 'user',
+                    content: `Which punchline is funniest for "${jokePrompt}"?\n${submissionsList}\nReply with ONLY the ID number, nothing else.`
+                }]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const text = data.content?.[0]?.text?.trim();
+            const winnerId = parseInt(text);
+            if (winnerId && submissions.find(s => s.id === winnerId)) {
+                console.log(`[Judge] Attempt 2 success: winner #${winnerId}`);
+                return { winnerId, aiCommentary: null, judgingMethod: 'claude_api' };
+            }
+        }
+        console.log('[Judge] Attempt 2 failed');
+    } catch (e) {
+        console.error('[Judge] Attempt 2 error:', e.message);
+    }
+
+    // --- FINAL FALLBACK: Coin flip (explicitly flagged) ---
+    const winnerId = submissions[Math.floor(Math.random() * submissions.length)].id;
+    console.log(`[Judge] Coin flip fallback: winner #${winnerId}`);
+    return { winnerId, aiCommentary: null, judgingMethod: 'coin_flip' };
 }
 
 // Legacy random picker (backup)
@@ -1698,7 +1972,8 @@ export default async function handler(req, res) {
                     updatedAt: Date.now(),
                     phaseEndsAt: null,
                     isSinglePlayer: singlePlayer,
-                    weeklyTheme: getCurrentTheme()
+                    weeklyTheme: getCurrentTheme(),
+                    version: 0
                 };
                 
                 await setRoom(roomId, room);
@@ -1794,11 +2069,17 @@ export default async function handler(req, res) {
                 room.submissions = [];
                 room.bets = [];
                 room.reactions = [];
-                room.jokePrompt = getNextPrompt(room);
+                room.jokePrompt = await getNextPrompt(room);
                 room.phaseEndsAt = now + SUBMISSION_TIME;
                 room.roundStartedAt = now;
                 room.updatedAt = now;
-                
+
+                // Initialize betting budgets — 300 XP per player for entire game
+                room.betBudgets = {};
+                for (const p of room.players) {
+                    room.betBudgets[p.name] = 300;
+                }
+
                 await setRoom(roomId, room);
                 return res.status(200).json({ success: true, room });
             }
@@ -1827,43 +2108,82 @@ export default async function handler(req, res) {
             case 'placeBet': {
                 const { roomId, playerName, submissionId, amount } = body;
                 let room = await getRoom(roomId);
-                
+
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.status !== 'betting') return res.status(400).json({ error: 'Not in betting phase' });
                 if (room.phaseEndsAt && Date.now() > room.phaseEndsAt) return res.status(400).json({ error: 'Time expired' });
                 if (room.bets.find(b => b.playerName === playerName)) return res.status(400).json({ error: 'Already placed bet' });
-                
-                room.bets.push({ playerName, submissionId, amount: amount || 50, placedAt: Date.now() });
+
+                // Enforce betting budget
+                if (!room.betBudgets) room.betBudgets = {};
+                const budget = room.betBudgets[playerName] ?? 300;
+                const betAmount = Math.min(Math.max(amount || 50, 10), Math.min(100, budget));
+                if (budget <= 0) return res.status(400).json({ error: 'No budget remaining' });
+
+                // Deduct from budget immediately
+                room.betBudgets[playerName] = budget - betAmount;
+
+                room.bets.push({ playerName, submissionId, amount: betAmount, placedAt: Date.now() });
                 room.updatedAt = Date.now();
-                
+
                 await setRoom(roomId, room);
-                return res.status(200).json({ success: true, betCount: room.bets.length, totalPlayers: room.players.length });
+                return res.status(200).json({ success: true, betCount: room.bets.length, totalPlayers: room.players.length, remainingBudget: room.betBudgets[playerName] });
+            }
+
+            case 'castVote': {
+                const { roomId, playerName, submissionId } = body;
+                let room = await getRoom(roomId);
+
+                if (!room) return res.status(404).json({ error: 'Room not found' });
+                if (room.status !== 'voting') return res.status(400).json({ error: 'Not in voting phase' });
+                if (room.phaseEndsAt && Date.now() > room.phaseEndsAt) return res.status(400).json({ error: 'Time expired' });
+                if (!room.players.find(p => p.name === playerName)) return res.status(403).json({ error: 'Not a player' });
+                if (!room.curatedIds?.includes(submissionId)) return res.status(400).json({ error: 'Not a curated submission' });
+
+                // Can't vote for own submission
+                const sub = room.submissions.find(s => s.id === submissionId);
+                if (sub?.playerName === playerName) return res.status(400).json({ error: 'Cannot vote for yourself' });
+
+                if (!room.audienceVotes) room.audienceVotes = {};
+                if (room.audienceVotes[playerName]) return res.status(400).json({ error: 'Already voted' });
+
+                room.audienceVotes[playerName] = submissionId;
+                room.updatedAt = Date.now();
+                await setRoom(roomId, room);
+
+                const voteCount = Object.keys(room.audienceVotes).length;
+                return res.status(200).json({ success: true, voteCount, totalPlayers: room.players.length });
             }
 
             case 'advancePhase': {
                 const { roomId, hostName } = body;
                 let room = await getRoom(roomId);
-                
+
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.host !== hostName) return res.status(403).json({ error: 'Only host can advance' });
-                
+
                 const now = Date.now();
-                
+
                 if (room.status === 'submitting') {
-                    if (room.isSinglePlayer) addBotSubmissions(room);
-                    if (room.submissions.length >= 1) {
-                        room.status = 'betting';
-                        room.bets = [];
-                        room.reactions = [];
-                        room.phaseEndsAt = now + BETTING_TIME;
-                        room.updatedAt = now;
-                        await setRoom(roomId, room);
+                    await transitionFromSubmitting(room);
+                } else if (room.status === 'curating') {
+                    // Force curation to complete
+                    if (!room.curatedIds) {
+                        const ids = await curateSubmissions(room.submissions, room.jokePrompt, room.category);
+                        room.curatedIds = ids || [...room.submissions].sort(() => Math.random() - 0.5).slice(0, 8).map(s => s.id);
                     }
+                    room.status = 'voting';
+                    room.audienceVotes = {};
+                    room.phaseEndsAt = now + VOTING_TIME;
+                    room.updatedAt = now;
+                    await setRoom(roomId, room);
+                } else if (room.status === 'voting') {
+                    room = await tallyVotesAndJudge(room);
                 } else if (room.status === 'betting') {
                     if (room.isSinglePlayer) addBotBets(room);
                     room = await autoJudge(room);
                 }
-                
+
                 return res.status(200).json({ success: true, room });
             }
 
@@ -1947,7 +2267,7 @@ export default async function handler(req, res) {
                 room.submissions = [];
                 room.bets = [];
                 room.reactions = [];
-                room.jokePrompt = getNextPrompt(room);
+                room.jokePrompt = await getNextPrompt(room);
                 room.phaseEndsAt = now + SUBMISSION_TIME;
                 room.roundStartedAt = now;
                 room.updatedAt = now;
@@ -2205,13 +2525,13 @@ export default async function handler(req, res) {
                 const desc = shareData?.punchline || 'The AI humor prediction game powered by GenLayer';
                 const url = `https://oracle-of-wit.vercel.app`;
                 const html = `<!DOCTYPE html><html><head>
-                    <meta property="og:title" content="${title.replace(/"/g, '&quot;')}" />
-                    <meta property="og:description" content="${desc.replace(/"/g, '&quot;')}" />
+                    <meta property="og:title" content="${title.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" />
+                    <meta property="og:description" content="${desc.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" />
                     <meta property="og:image" content="${url}/og-image.png" />
                     <meta property="og:url" content="${url}/share/${shareId}" />
                     <meta name="twitter:card" content="summary_large_image" />
-                    <meta name="twitter:title" content="${title.replace(/"/g, '&quot;')}" />
-                    <meta name="twitter:description" content="${desc.replace(/"/g, '&quot;')}" />
+                    <meta name="twitter:title" content="${title.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" />
+                    <meta name="twitter:description" content="${desc.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" />
                     <meta http-equiv="refresh" content="0; url=${url}" />
                 </head><body>Redirecting...</body></html>`;
                 res.setHeader('Content-Type', 'text/html');
@@ -2239,20 +2559,6 @@ export default async function handler(req, res) {
                 return res.status(200).json({ success: true, season, leaderboard: slb.slice(0, 50) });
             }
 
-            case 'getSeasons': {
-                // Return list of available seasons (current + past 6 months)
-                const seasons = [];
-                const now = new Date();
-                for (let i = 0; i < 6; i++) {
-                    const d = new Date(now.getUTCFullYear(), now.getUTCMonth() - i, 1);
-                    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
-                    const slb = await redisGet(`leaderboard:${key}`);
-                    if (slb && slb.length > 0) {
-                        seasons.push({ key, players: slb.length, topPlayer: slb[0]?.name, topScore: slb[0]?.totalScore });
-                    }
-                }
-                return res.status(200).json({ success: true, seasons, currentSeason: getCurrentSeasonKey() });
-            }
 
             // --- Custom Prompt Submission ---
             case 'submitPrompt': {
@@ -2296,161 +2602,6 @@ export default async function handler(req, res) {
                 // Sort by votes descending, return top 50
                 const sorted = [...prompts].sort((a, b) => b.votes - a.votes).slice(0, 50);
                 return res.status(200).json({ success: true, prompts: sorted });
-            }
-
-            // --- Tournament Mode ---
-            case 'createTournament': {
-                const { hostName, category, size = 8 } = body;
-                if (!hostName) return res.status(400).json({ error: 'hostName required' });
-                const validSizes = [8, 16, 32];
-                const bracketSize = validSizes.includes(size) ? size : 8;
-                const tournamentId = 'T-' + generateRoomCode();
-
-                const tournament = {
-                    id: tournamentId,
-                    host: hostName,
-                    category: category || 'general',
-                    size: bracketSize,
-                    players: [{ name: hostName, joinedAt: Date.now() }],
-                    spectators: [],
-                    status: 'registration', // registration -> active -> finished
-                    bracket: [],
-                    currentRound: 0,
-                    totalRounds: Math.log2(bracketSize),
-                    activeMatches: [],
-                    results: [],
-                    createdAt: Date.now(),
-                    updatedAt: Date.now()
-                };
-                await redisSet(`tournament:${tournamentId}`, tournament, 86400 * 2);
-                return res.status(200).json({ success: true, tournamentId, tournament });
-            }
-
-            case 'joinTournament': {
-                const { tournamentId, playerName, spectator: tSpectator } = body;
-                if (!tournamentId || !playerName) return res.status(400).json({ error: 'tournamentId and playerName required' });
-
-                const t = await redisGet(`tournament:${tournamentId}`);
-                if (!t) return res.status(404).json({ error: 'Tournament not found' });
-
-                if (tSpectator) {
-                    if (!t.spectators) t.spectators = [];
-                    if (!t.spectators.find(s => s.name === playerName)) {
-                        t.spectators.push({ name: playerName, joinedAt: Date.now() });
-                    }
-                } else {
-                    if (t.status !== 'registration') return res.status(400).json({ error: 'Registration closed' });
-                    if (t.players.length >= t.size) return res.status(400).json({ error: 'Tournament full' });
-                    if (t.players.find(p => p.name === playerName)) return res.status(400).json({ error: 'Already registered' });
-                    t.players.push({ name: playerName, joinedAt: Date.now() });
-                }
-                t.updatedAt = Date.now();
-                await redisSet(`tournament:${tournamentId}`, t, 86400 * 2);
-                return res.status(200).json({ success: true, tournament: t });
-            }
-
-            case 'startTournament': {
-                const { tournamentId, hostName } = body;
-                const t = await redisGet(`tournament:${tournamentId}`);
-                if (!t) return res.status(404).json({ error: 'Tournament not found' });
-                if (t.host !== hostName) return res.status(403).json({ error: 'Only host can start' });
-                if (t.status !== 'registration') return res.status(400).json({ error: 'Already started' });
-                if (t.players.length < 2) return res.status(400).json({ error: 'Need at least 2 players' });
-
-                // Shuffle and seed bracket
-                const shuffled = [...t.players].sort(() => Math.random() - 0.5);
-                // Pad to next power of 2 with BYEs
-                let bracketSize = 2;
-                while (bracketSize < shuffled.length) bracketSize *= 2;
-                while (shuffled.length < bracketSize) shuffled.push({ name: 'BYE', isBye: true });
-
-                const bracket = [];
-                for (let i = 0; i < shuffled.length; i += 2) {
-                    const matchId = `R1-M${bracket.length + 1}`;
-                    const match = {
-                        id: matchId, round: 1,
-                        player1: shuffled[i].name, player2: shuffled[i + 1].name,
-                        winner: null, roomId: null, status: 'pending'
-                    };
-                    // Auto-advance BYE matches
-                    if (shuffled[i + 1].isBye) {
-                        match.winner = shuffled[i].name;
-                        match.status = 'completed';
-                    } else if (shuffled[i].isBye) {
-                        match.winner = shuffled[i + 1].name;
-                        match.status = 'completed';
-                    }
-                    bracket.push(match);
-                }
-
-                t.bracket = bracket;
-                t.status = 'active';
-                t.currentRound = 1;
-                t.totalRounds = Math.log2(bracketSize);
-                t.updatedAt = Date.now();
-                await redisSet(`tournament:${tournamentId}`, t, 86400 * 2);
-                return res.status(200).json({ success: true, tournament: t });
-            }
-
-            case 'getTournament': {
-                const tid = req.query.id || body.tournamentId;
-                if (!tid) return res.status(400).json({ error: 'tournamentId required' });
-                const t = await redisGet(`tournament:${tid}`);
-                if (!t) return res.status(404).json({ error: 'Tournament not found' });
-                return res.status(200).json({ success: true, tournament: t });
-            }
-
-            case 'completeTournamentMatch': {
-                const { tournamentId, matchId, winnerName } = body;
-                const t = await redisGet(`tournament:${tournamentId}`);
-                if (!t) return res.status(404).json({ error: 'Tournament not found' });
-
-                const match = t.bracket.find(m => m.id === matchId);
-                if (!match) return res.status(404).json({ error: 'Match not found' });
-                match.winner = winnerName;
-                match.status = 'completed';
-
-                // Check if current round is complete, build next round
-                const currentMatches = t.bracket.filter(m => m.round === t.currentRound);
-                if (currentMatches.every(m => m.status === 'completed')) {
-                    if (t.currentRound < t.totalRounds) {
-                        const winners = currentMatches.map(m => m.winner);
-                        const nextRound = t.currentRound + 1;
-                        for (let i = 0; i < winners.length; i += 2) {
-                            const mId = `R${nextRound}-M${t.bracket.length + 1}`;
-                            t.bracket.push({
-                                id: mId, round: nextRound,
-                                player1: winners[i], player2: winners[i + 1] || 'BYE',
-                                winner: (winners[i + 1] === undefined || winners[i + 1] === 'BYE') ? winners[i] : null,
-                                roomId: null,
-                                status: (winners[i + 1] === undefined || winners[i + 1] === 'BYE') ? 'completed' : 'pending'
-                            });
-                        }
-                        t.currentRound = nextRound;
-                    } else {
-                        t.status = 'finished';
-                        t.champion = match.winner;
-                    }
-                }
-                t.updatedAt = Date.now();
-                await redisSet(`tournament:${tournamentId}`, t, 86400 * 2);
-                return res.status(200).json({ success: true, tournament: t });
-            }
-
-            case 'listTournaments': {
-                const keys = await redisKeys('tournament:*');
-                const tournaments = [];
-                for (const key of keys.slice(0, 20)) {
-                    const t = await redisGet(key);
-                    if (t && t.status !== 'finished') {
-                        tournaments.push({
-                            id: t.id, host: t.host, category: t.category,
-                            size: t.size, players: t.players.length,
-                            status: t.status, currentRound: t.currentRound
-                        });
-                    }
-                }
-                return res.status(200).json({ success: true, tournaments });
             }
 
             default:

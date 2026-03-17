@@ -5,112 +5,238 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oracle of Wit - GenLayer Community Game</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    void: '#050505',
+                    obsidian: '#0A0A12',
+                    wit: { DEFAULT: '#A855F7', dim: '#7c3aed', bright: '#c084fc' },
+                    oracle: { DEFAULT: '#2DD4BF', dim: '#14b8a6', bright: '#5eead4' },
+                    consensus: { DEFAULT: '#FBBF24', dim: '#f59e0b', bright: '#fde68a' },
+                },
+                fontFamily: {
+                    display: ['Clash Display', 'Space Grotesk', 'sans-serif'],
+                    mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+                    body: ['Space Grotesk', 'sans-serif'],
+                }
+            }
+        }
+    }
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+        @font-face { font-family: 'Clash Display'; src: url('https://cdn.fontshare.com/wf/YFLQMJRNFGCUWTAQWHISJVQXGG4WKPGX/Y2THQT62O5V3BKQFXNM7YDYLWSSLBK4T/CPUHQKZSLCF4GFVG2MI3M3GJDTUOAMMS.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+
         * { font-family: 'Space Grotesk', sans-serif; box-sizing: border-box; }
-        body { background: #070b14; }
-        /* Glass cards with subtle glow */
-        .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; }
-        .glass-bright { background: rgba(255,255,255,0.06); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; }
-        /* Gradient border cards */
-        .glow-card { position: relative; background: rgba(15,20,35,0.9); border-radius: 16px; overflow: hidden; }
-        .glow-card::before { content:''; position:absolute; inset:-1px; border-radius:17px; padding:1px; background:linear-gradient(135deg,rgba(168,85,247,0.4),rgba(236,72,153,0.2),rgba(99,102,241,0.4)); -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events:none; }
-        .glow-card-gold::before { background:linear-gradient(135deg,rgba(245,158,11,0.6),rgba(234,88,12,0.3),rgba(245,158,11,0.6)); }
-        .glow-card-red::before { background:linear-gradient(135deg,rgba(239,68,68,0.5),rgba(185,28,28,0.3),rgba(239,68,68,0.5)); }
-        .glow-card-cyan::before { background:linear-gradient(135deg,rgba(34,211,238,0.4),rgba(6,182,212,0.2),rgba(34,211,238,0.4)); }
-        .glow-card-green::before { background:linear-gradient(135deg,rgba(34,197,94,0.5),rgba(22,163,74,0.2),rgba(34,197,94,0.5)); }
-        .glow-card-amber::before { background:linear-gradient(135deg,rgba(245,158,11,0.4),rgba(234,88,12,0.2),rgba(245,158,11,0.4)); }
-        .gradient-text { background: linear-gradient(135deg, #f59e0b, #ec4899, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .gradient-text-blue { background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .oracle-eye { background: radial-gradient(circle at 30% 30%, #a855f7, #6366f1, #1e1b4b); box-shadow: 0 0 80px rgba(168,85,247,0.4), 0 0 160px rgba(139,92,246,0.15); }
-        /* Neon button styles */
-        .btn { transition: all 0.2s; cursor: pointer; font-weight: 600; }
-        .btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.15); }
-        .btn:active:not(:disabled) { transform: translateY(0); }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-primary { background: linear-gradient(135deg, #7c3aed, #db2777); box-shadow: 0 4px 20px rgba(124,58,237,0.3); }
-        .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 30px rgba(124,58,237,0.5); }
-        .btn-play { background: linear-gradient(135deg, #f59e0b, #ea580c); box-shadow: 0 4px 20px rgba(245,158,11,0.3); }
-        .btn-play:hover:not(:disabled) { box-shadow: 0 6px 30px rgba(245,158,11,0.5); }
-        .btn-ghost { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); }
-        .btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-        /* Category pill buttons */
-        .cat-btn { position:relative; overflow:hidden; transition:all 0.3s; }
-        .cat-btn::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg,rgba(255,255,255,0.1) 0%,transparent 50%); pointer-events:none; border-radius:inherit; }
-        .cat-btn:hover { transform:translateY(-3px); box-shadow:0 8px 25px rgba(0,0,0,0.3); }
-        .card-selected { background: rgba(139,92,246,0.25) !important; border: 2px solid #a855f7 !important; box-shadow: 0 0 30px rgba(139,92,246,0.2); }
-        .spinner { border: 3px solid rgba(255,255,255,0.08); border-top-color: #a855f7; border-radius: 50%; animation: spin 1s linear infinite; width: 24px; height: 24px; }
-        /* Animations */
-        @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .animate-float { animation: float 3s ease-in-out infinite; }
-        @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 20px rgba(139,92,246,0.5); } 50% { box-shadow: 0 0 60px rgba(139,92,246,0.9); } }
+        body { background: #050505; overflow-x: hidden; }
+        h1, h2, h3, .font-display { font-family: 'Clash Display', 'Space Grotesk', sans-serif; letter-spacing: 0.02em; }
+        .font-mono, code, .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+        /* === LIQUID GLASSMORPHISM === */
+        .glass { background: rgba(255,255,255,0.02); backdrop-filter: blur(20px) saturate(1.2); border: 1px solid rgba(255,255,255,0.04); border-radius: 16px; }
+        .glass-bright { background: rgba(255,255,255,0.04); backdrop-filter: blur(24px) saturate(1.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; }
+        .glow-card { position: relative; background: rgba(10,10,18,0.85); backdrop-filter: blur(16px) saturate(1.1); border-radius: 16px; overflow: hidden; transition: transform 0.1s ease, box-shadow 0.2s ease; }
+        .glow-card:hover { transform: translateY(-1px); }
+        .glow-card::before { content:''; position:absolute; inset:-1px; border-radius:17px; padding:1px; background:linear-gradient(135deg,rgba(168,85,247,0.3),rgba(45,212,191,0.15),rgba(168,85,247,0.3)); -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events:none; }
+        .glow-card-gold::before { background:linear-gradient(135deg,rgba(251,191,36,0.5),rgba(245,158,11,0.25),rgba(251,191,36,0.5)); }
+        .glow-card-red::before { background:linear-gradient(135deg,rgba(239,68,68,0.4),rgba(185,28,28,0.2),rgba(239,68,68,0.4)); }
+        .glow-card-cyan::before { background:linear-gradient(135deg,rgba(45,212,191,0.4),rgba(20,184,166,0.2),rgba(45,212,191,0.4)); }
+        .glow-card-green::before { background:linear-gradient(135deg,rgba(34,197,94,0.4),rgba(22,163,74,0.2),rgba(34,197,94,0.4)); }
+        .glow-card-amber::before { background:linear-gradient(135deg,rgba(251,191,36,0.35),rgba(245,158,11,0.15),rgba(251,191,36,0.35)); }
+
+        /* === GRADIENT TEXT === */
+        .gradient-text { background: linear-gradient(135deg, #FBBF24, #A855F7, #2DD4BF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .gradient-text-blue { background: linear-gradient(135deg, #2DD4BF, #A855F7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+        /* === ORACLE EYE — Procedural === */
+        .oracle-eye { position: relative; background: radial-gradient(circle at var(--eye-x, 40%) var(--eye-y, 40%), #A855F7 0%, #6366f1 40%, #0A0A12 80%); box-shadow: 0 0 60px rgba(168,85,247,0.5), 0 0 120px rgba(45,212,191,0.15), inset 0 0 30px rgba(0,0,0,0.5); }
+        .oracle-eye::after { content: ''; position: absolute; inset: 20%; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #A855F7 40%, transparent 70%); opacity: 0.7; transition: all 0.3s ease; }
+        .oracle-eye.processing { animation: eyePulse 1.5s ease-in-out infinite; }
+        .oracle-eye.processing::after { animation: eyeInnerPulse 0.8s ease-in-out infinite alternate; }
+        @keyframes eyePulse { 0%,100% { box-shadow: 0 0 60px rgba(168,85,247,0.5), 0 0 120px rgba(45,212,191,0.15); } 50% { box-shadow: 0 0 100px rgba(168,85,247,0.8), 0 0 200px rgba(45,212,191,0.3); } }
+        @keyframes eyeInnerPulse { from { opacity: 0.5; transform: scale(0.9); } to { opacity: 1; transform: scale(1.1); } }
+
+        /* === BUTTONS — Mechanical feel === */
+        .btn { transition: all 0.1s ease; cursor: pointer; font-weight: 600; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase; font-size: 0.8rem; }
+        .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.1); }
+        .btn:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-primary { background: linear-gradient(135deg, #7c3aed, #A855F7); border: 1px solid rgba(168,85,247,0.3); box-shadow: 0 4px 20px rgba(168,85,247,0.25); }
+        .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 30px rgba(168,85,247,0.4); border-color: rgba(168,85,247,0.5); }
+        .btn-play { background: linear-gradient(135deg, #FBBF24, #f59e0b); border: 1px solid rgba(251,191,36,0.3); box-shadow: 0 4px 20px rgba(251,191,36,0.2); color: #0A0A12; }
+        .btn-play:hover:not(:disabled) { box-shadow: 0 6px 30px rgba(251,191,36,0.4); }
+        .btn-ghost { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+        .btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.06); border-color: rgba(168,85,247,0.3); }
+        .btn-teal { background: linear-gradient(135deg, #14b8a6, #2DD4BF); border: 1px solid rgba(45,212,191,0.3); box-shadow: 0 4px 20px rgba(45,212,191,0.2); }
+
+        /* === CATEGORY PILLS === */
+        .cat-btn { position:relative; overflow:hidden; transition:all 0.15s ease; border: 1px solid rgba(255,255,255,0.06); }
+        .cat-btn::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg,rgba(255,255,255,0.08) 0%,transparent 50%); pointer-events:none; border-radius:inherit; }
+        .cat-btn:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(0,0,0,0.4); border-color: rgba(168,85,247,0.3); }
+        .card-selected { background: rgba(168,85,247,0.15) !important; border: 1px solid rgba(168,85,247,0.5) !important; box-shadow: 0 0 30px rgba(168,85,247,0.15); }
+
+        /* === SPINNER === */
+        .spinner { border: 2px solid rgba(168,85,247,0.1); border-top-color: #2DD4BF; border-radius: 50%; animation: spin 0.8s linear infinite; width: 20px; height: 20px; }
+
+        /* === ANIMATIONS === */
+        @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        .animate-float { animation: float 4s ease-in-out infinite; }
+        @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 30px rgba(168,85,247,0.4); } 50% { box-shadow: 0 0 80px rgba(168,85,247,0.7); } }
         .animate-glow { animation: pulse-glow 2s ease-in-out infinite; }
-        @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
-        .animate-shake { animation: shake 0.5s ease-in-out; }
-        @keyframes countdown-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+        @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+        .animate-shake { animation: shake 0.4s ease-in-out; }
+        @keyframes countdown-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
         .countdown-critical { animation: countdown-pulse 0.5s ease-in-out infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .confetti { position: fixed; width: 10px; height: 10px; pointer-events: none; z-index: 1000; }
+        .confetti { position: fixed; width: 8px; height: 8px; pointer-events: none; z-index: 1000; }
         @keyframes confetti-fall { 0% { transform: translateY(-100vh) rotate(0deg); opacity:1; } 100% { transform: translateY(100vh) rotate(720deg); opacity:0; } }
         .timer-bar { transition: width 0.5s linear; }
-        textarea, input[type="text"] { background: rgba(15,20,35,0.8) !important; color: white !important; border: 1px solid rgba(255,255,255,0.1) !important; }
-        textarea:focus, input[type="text"]:focus { border-color: rgba(139,92,246,0.5) !important; box-shadow: 0 0 20px rgba(139,92,246,0.15); }
+        textarea, input[type="text"] { background: rgba(10,10,18,0.9) !important; color: white !important; border: 1px solid rgba(168,85,247,0.15) !important; font-family: 'JetBrains Mono', monospace !important; font-size: 0.9rem; }
+        textarea:focus, input[type="text"]:focus { border-color: rgba(45,212,191,0.5) !important; box-shadow: 0 0 20px rgba(45,212,191,0.1); outline: none; }
         .rotate-180 { transform: rotate(180deg); }
-        .transition-transform { transition: transform 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
-        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
-        @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .animate-scaleIn { animation: scaleIn 0.3s ease-out; }
-        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .animate-slideIn { animation: slideInRight 0.5s ease-out; }
-        @keyframes slideOutLeft { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-100%); opacity: 0; } }
-        .animate-slideOut { animation: slideOutLeft 0.4s ease-in forwards; }
-        @keyframes goldPulse { 0%,100% { box-shadow: 0 0 20px rgba(245,158,11,0.5); } 50% { box-shadow: 0 0 80px rgba(245,158,11,0.9); } }
-        .animate-goldPulse { animation: goldPulse 1s ease-in-out infinite; }
+        .transition-transform { transition: transform 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+        .animate-fadeIn { animation: fadeIn 0.25s ease-out; }
+        @keyframes scaleIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .animate-scaleIn { animation: scaleIn 0.25s ease-out; }
+        @keyframes slideInRight { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .animate-slideIn { animation: slideInRight 0.4s ease-out; }
+        @keyframes slideOutLeft { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-30px); opacity: 0; } }
+        .animate-slideOut { animation: slideOutLeft 0.3s ease-in forwards; }
+        @keyframes goldPulse { 0%,100% { box-shadow: 0 0 20px rgba(251,191,36,0.4); } 50% { box-shadow: 0 0 60px rgba(251,191,36,0.7); } }
+        .animate-goldPulse { animation: goldPulse 1.5s ease-in-out infinite; }
         @keyframes winnerScale { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .animate-winnerScale { animation: winnerScale 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        @keyframes screenFlash { 0% { opacity: 0; } 30% { opacity: 0.3; } 100% { opacity: 0; } }
-        .screen-flash { animation: screenFlash 0.6s ease-out; position: fixed; inset: 0; background: gold; pointer-events: none; z-index: 999; }
+        .animate-winnerScale { animation: winnerScale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes screenFlash { 0% { opacity: 0; } 30% { opacity: 0.2; } 100% { opacity: 0; } }
+        .screen-flash { animation: screenFlash 0.5s ease-out; position: fixed; inset: 0; background: linear-gradient(135deg, #FBBF24, #A855F7); pointer-events: none; z-index: 999; }
         @keyframes meterFill { from { width: 0%; } to { width: var(--fill-pct); } }
         .meter-fill { animation: meterFill 1.5s ease-out forwards; }
         @keyframes typewriter { from { width: 0; } to { width: 100%; } }
         .typewriter { overflow: hidden; white-space: nowrap; animation: typewriter 1s steps(40) forwards; display: inline-block; max-width: 100%; }
-        @keyframes emojiFloat { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-60px) scale(1.3); opacity: 0; } }
-        .emoji-float { position: absolute; animation: emojiFloat 2s ease-out forwards; pointer-events: none; font-size: 1.5rem; }
-        @keyframes screenShake { 0%,100% { transform: translateX(0); } 10% { transform: translateX(-8px) rotate(-1deg); } 30% { transform: translateX(8px) rotate(1deg); } 50% { transform: translateX(-5px); } 70% { transform: translateX(5px); } }
-        .animate-screenShake { animation: screenShake 0.6s ease-in-out; }
-        @keyframes comebackBanner { 0% { transform: scale(0) rotate(-10deg); opacity: 0; } 50% { transform: scale(1.2) rotate(3deg); } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
-        .animate-comeback { animation: comebackBanner 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .streak-fire { text-shadow: 0 0 10px #f59e0b, 0 0 20px #ef4444; }
-        @keyframes toastIn { from { transform: translateY(-100%) scale(0.8); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
-        @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-20px); } }
-        .toast-in { animation: toastIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .toast-out { animation: toastOut 0.4s ease-in forwards; }
-        .xp-bar { background: linear-gradient(90deg, #7c3aed, #db2777, #f59e0b); transition: width 1s ease-out; border-radius: 999px; }
-        @keyframes countUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .stat-count { animation: countUp 0.5s ease-out backwards; }
-        /* Background grid effect */
-        .bg-grid { background-image: linear-gradient(rgba(139,92,246,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.03) 1px, transparent 1px); background-size: 40px 40px; }
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
+        @keyframes emojiFloat { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-50px) scale(1.2); opacity: 0; } }
+        .emoji-float { position: absolute; animation: emojiFloat 1.5s ease-out forwards; pointer-events: none; font-size: 1.5rem; }
+        @keyframes screenShake { 0%,100% { transform: translateX(0); } 10% { transform: translateX(-6px) rotate(-0.5deg); } 30% { transform: translateX(6px) rotate(0.5deg); } 50% { transform: translateX(-4px); } 70% { transform: translateX(4px); } }
+        .animate-screenShake { animation: screenShake 0.5s ease-in-out; }
+        @keyframes comebackBanner { 0% { transform: scale(0) rotate(-5deg); opacity: 0; } 50% { transform: scale(1.1) rotate(2deg); } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+        .animate-comeback { animation: comebackBanner 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .streak-fire { text-shadow: 0 0 8px #FBBF24, 0 0 16px #ef4444; }
+        @keyframes toastIn { from { transform: translateY(-100%) scale(0.9); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+        @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-16px); } }
+        .toast-in { animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .toast-out { animation: toastOut 0.3s ease-in forwards; }
+        .xp-bar { background: linear-gradient(90deg, #A855F7, #2DD4BF, #FBBF24); transition: width 1s ease-out; border-radius: 999px; }
+        @keyframes countUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .stat-count { animation: countUp 0.4s ease-out backwards; }
+
+        /* === SCROLLBAR === */
+        ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.5); }
-        /* Tab styles */
-        .tab-active { background: linear-gradient(135deg, rgba(124,58,237,0.3), rgba(219,39,119,0.15)); border-bottom: 2px solid #a855f7; }
+        ::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.2); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.4); }
+
+        /* === TABS === */
+        .tab-active { background: rgba(168,85,247,0.1); border-bottom: 2px solid #A855F7; }
         .tab-inactive { background: transparent; border-bottom: 2px solid transparent; }
-        .tab-inactive:hover { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.1); }
+        .tab-inactive:hover { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.06); }
+
+        /* === HIGH STAKES MODE — shifts palette to amber === */
+        .high-stakes .glow-card::before { background: linear-gradient(135deg,rgba(251,191,36,0.4),rgba(245,158,11,0.2),rgba(251,191,36,0.4)) !important; }
+        .high-stakes .oracle-eye { background: radial-gradient(circle at var(--eye-x, 40%) var(--eye-y, 40%), #FBBF24 0%, #f59e0b 40%, #0A0A12 80%) !important; box-shadow: 0 0 60px rgba(251,191,36,0.5), 0 0 120px rgba(245,158,11,0.2) !important; }
+        .high-stakes .btn-primary { background: linear-gradient(135deg, #f59e0b, #FBBF24) !important; }
+
+        /* === PARTICLE CANVAS === */
+        #mist-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.6; }
+
+        /* === CONSENSUS HUD === */
+        .consensus-hud { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase; }
+        .hud-dot { width: 6px; height: 6px; border-radius: 50%; animation: hudPulse 2s ease-in-out infinite; }
+        @keyframes hudPulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+        /* === SHATTERING GLASS OVERLAY === */
+        @keyframes shatterPiece { 0% { opacity: 1; transform: translate(0,0) rotate(0deg); } 100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(var(--tr)); } }
+        .shatter-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+        .shatter-piece { position: absolute; background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.3); animation: shatterPiece 0.8s ease-out forwards; }
+
+        /* === DATA STREAM OVERLAY === */
+        @keyframes dataStream { 0% { transform: translateY(-100%); opacity: 0; } 10% { opacity: 0.3; } 90% { opacity: 0.3; } 100% { transform: translateY(100%); opacity: 0; } }
+        .data-stream { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
+        .data-stream span { position: absolute; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(45,212,191,0.4); animation: dataStream 2s linear infinite; white-space: nowrap; }
     </style>
 </head>
-<body class="min-h-screen text-white bg-grid">
-    <div class="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-        <div class="absolute top-1/4 -left-20 w-96 h-96 bg-purple-600/10 rounded-full blur-[120px]"></div>
-        <div class="absolute bottom-1/4 -right-20 w-96 h-96 bg-pink-600/10 rounded-full blur-[120px]"></div>
-        <div class="absolute top-3/4 left-1/3 w-64 h-64 bg-indigo-600/8 rounded-full blur-[100px]"></div>
+<body class="min-h-screen text-white">
+    <!-- Nebula mesh gradient background -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none -z-10" style="background:#050505">
+        <div class="absolute top-0 left-0 w-full h-full" style="background:radial-gradient(ellipse 80% 60% at 20% 30%,rgba(168,85,247,0.08),transparent),radial-gradient(ellipse 60% 80% at 80% 70%,rgba(45,212,191,0.05),transparent),radial-gradient(ellipse 50% 50% at 50% 50%,rgba(251,191,36,0.02),transparent)"></div>
     </div>
+    <!-- Data Mist particle canvas -->
+    <canvas id="mist-canvas"></canvas>
     <div id="app"></div>
 
 <script>
+// === DATA MIST PARTICLE SYSTEM ===
+(function initMist() {
+    const c = document.getElementById('mist-canvas');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    let w, h, particles = [], mouseX = 0, mouseY = 0;
+
+    function resize() { w = c.width = window.innerWidth; h = c.height = window.innerHeight; }
+    resize();
+    window.addEventListener('resize', resize);
+    document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+
+    for (let i = 0; i < 60; i++) {
+        particles.push({
+            x: Math.random() * w, y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.2,
+            r: Math.random() * 2 + 0.5,
+            color: Math.random() > 0.5 ? 'rgba(168,85,247,' : 'rgba(45,212,191,',
+            alpha: Math.random() * 0.3 + 0.05
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, w, h);
+        for (const p of particles) {
+            // Subtle mouse repulsion
+            const dx = p.x - mouseX, dy = p.y - mouseY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 150) {
+                p.vx += dx / dist * 0.02;
+                p.vy += dy / dist * 0.02;
+            }
+            p.x += p.vx; p.y += p.vy;
+            p.vx *= 0.99; p.vy *= 0.99;
+            if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+            if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = p.color + p.alpha + ')';
+            ctx.fill();
+        }
+        requestAnimationFrame(draw);
+    }
+    draw();
+})();
+
+// === ORACLE EYE CURSOR TRACKING ===
+document.addEventListener('mousemove', e => {
+    document.querySelectorAll('.oracle-eye').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = (e.clientX - cx) / (window.innerWidth / 2);
+        const dy = (e.clientY - cy) / (window.innerHeight / 2);
+        const x = 40 + dx * 15;
+        const y = 40 + dy * 15;
+        el.style.setProperty('--eye-x', x + '%');
+        el.style.setProperty('--eye-y', y + '%');
+    });
+});
+
 const API_URL = '/api/game';
 const BASE_POLL_INTERVAL = 1500;
 
@@ -153,14 +279,14 @@ function updateTimerDisplay() {
     if (timerEl) {
         const isLow = state.timeLeft <= 10;
         timerEl.textContent = formatTime(state.timeLeft);
-        timerEl.className = `text-3xl font-bold ${isLow ? 'countdown-critical text-red-500' : ''}`;
+        timerEl.className = `text-3xl font-mono font-bold ${isLow ? 'countdown-critical text-red-500' : 'text-white'}`;
     }
     if (timerBar) {
-        const max = state.screen === 'submitting' ? 40 : 30;
+        const max = state.screen === 'submitting' ? 40 : state.screen === 'voting' ? 20 : 30;
         const pct = (state.timeLeft / max) * 100;
         const isLow = state.timeLeft <= 10;
         timerBar.style.width = `${pct}%`;
-        timerBar.className = `h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}`;
+        timerBar.className = `h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-wit to-oracle'}`;
     }
     if (timerWarning) {
         timerWarning.style.display = state.timeLeft <= 10 ? 'block' : 'none';
@@ -279,20 +405,11 @@ let state = {
     // Appeal
     appealInProgress: false,
     appealResult: null,
-    // Spectator
-    isSpectator: false,
-    // Seasonal leaderboard
-    currentSeason: null,
-    seasonalLeaderboard: [],
-    availableSeasons: [],
-    selectedSeason: null,
     // Community prompts
     communityPrompts: [],
     showCommunityPrompts: false,
-    // Tournament
-    tournament: null,
-    tournaments: [],
-    showTournaments: false
+    // Audience voting (large rooms)
+    votedFor: null,
 };
 
 let pollInterval = null;
@@ -409,6 +526,13 @@ function handlePhaseChange(oldStatus, newStatus) {
         state.consensusReached = false;
         state.winningSubmissionId = null;
         state.sentReactions = 0;
+        syncTimer();
+        startTimer();
+    } else if (newStatus === 'curating') {
+        playSound('click');
+    } else if (newStatus === 'voting') {
+        playSound('click');
+        state.votedFor = null;
         syncTimer();
         startTimer();
     } else if (newStatus === 'betting') {
@@ -567,14 +691,32 @@ async function submitPunchline() {
     } catch (e) {}
 }
 
+async function castVote(submissionId) {
+    if (state.votedFor) return;
+    playSound('bet');
+    try {
+        await api('castVote', { roomId: state.roomId, playerName: state.playerName, submissionId });
+        state.votedFor = submissionId;
+        if (state.room?.audienceVotes) state.room.audienceVotes[state.playerName] = submissionId;
+        render();
+    } catch (e) {
+        if (e.message) { state.error = e.message; render(); }
+    }
+}
+
 async function placeBet() {
     if (!state.selectedSubmission) { state.error = 'Select a submission first'; render(); return; }
     playSound('bet');
     try {
-        await api('placeBet', { roomId: state.roomId, playerName: state.playerName, submissionId: state.selectedSubmission, amount: state.betAmount });
+        const result = await api('placeBet', { roomId: state.roomId, playerName: state.playerName, submissionId: state.selectedSubmission, amount: state.betAmount });
         state.hasBet = true;
+        if (result.remainingBudget !== undefined && state.room?.betBudgets) {
+            state.room.betBudgets[state.playerName] = result.remainingBudget;
+        }
         render();
-    } catch (e) {}
+    } catch (e) {
+        if (e.message?.includes('No budget')) { state.error = 'No betting budget left!'; render(); }
+    }
 }
 
 async function sendReaction(submissionId, emoji) {
@@ -632,16 +774,16 @@ function leaveRoom() {
     playSound('click');
     stopPolling();
     stopTimer();
+    stopRevealSequence();
     state.roomId = null;
     state.room = null;
     state.isHost = false;
     state.hasSubmitted = false;
     state.hasBet = false;
+    state.votedFor = null;
     state.punchlineText = '';
     state.appealInProgress = false;
     state.appealResult = null;
-    state.isSpectator = false;
-    state.tournament = null;
     state.screen = 'lobby';
     fetchPublicRooms();
     fetchProfile();
@@ -764,8 +906,8 @@ function showAchievementToast(achievementId) {
     const a = state.allAchievements.find(x => x.id === achievementId);
     if (!a) return;
     const toast = document.createElement('div');
-    toast.className = 'fixed top-20 left-1/2 -translate-x-1/2 z-[1000] glass rounded-xl px-6 py-3 border border-yellow-500/50 text-center toast-in';
-    toast.innerHTML = `<p class="text-yellow-400 font-bold text-sm">Achievement Unlocked!</p><p class="text-xl">${a.icon} ${a.name}</p>`;
+    toast.className = 'fixed top-20 left-1/2 -translate-x-1/2 z-[1000] glass rounded-xl px-6 py-3 border border-consensus/50 text-center toast-in';
+    toast.innerHTML = `<p class="text-consensus font-mono font-bold text-xs tracking-wider">ACHIEVEMENT UNLOCKED</p><p class="text-lg mt-1">${a.icon} ${a.name}</p>`;
     document.body.appendChild(toast);
     setTimeout(() => { toast.classList.add('toast-out'); setTimeout(() => toast.remove(), 500); }, 3000);
 }
@@ -1061,27 +1203,48 @@ function render(force = false) {
         selectionEnd = activeEl.selectionEnd;
     }
     
+    const isHighStakes = state.room?.betBudgets?.[state.playerName] !== undefined && (state.room.betBudgets[state.playerName] ?? 300) <= 50;
     document.getElementById('app').innerHTML = `
-        <header class="py-3 px-4 border-b border-white/5 sticky top-0 z-50" style="background:rgba(7,11,20,0.92);backdrop-filter:blur(16px)">
+        <div class="${isHighStakes ? 'high-stakes' : ''}">
+        <header class="py-2.5 px-4 border-b border-white/[0.04] sticky top-0 z-50" style="background:rgba(5,5,5,0.88);backdrop-filter:blur(24px) saturate(1.2)">
             <div class="max-w-lg mx-auto flex justify-between items-center">
-                <div class="flex items-center gap-2.5">
-                    <span class="text-2xl">🎭</span>
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 oracle-eye rounded-full flex items-center justify-center shrink-0">
+                        <span class="text-sm">👁</span>
+                    </div>
                     <div>
-                        <h1 class="text-lg font-bold gradient-text leading-tight">Oracle of Wit</h1>
-                        <p class="text-[10px] text-gray-500 tracking-wide">GENLAYER GAME</p>
+                        <h1 class="text-sm font-display font-bold gradient-text leading-tight tracking-wider">ORACLE OF WIT</h1>
+                        <p class="text-[9px] font-mono text-gray-600 tracking-widest">GENLAYER PROTOCOL</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button onclick="toggleSound()" class="btn btn-ghost p-2 rounded-lg text-lg">${soundEnabled ? '🔊' : '🔇'}</button>
-                    ${state.profile ? `<span class="px-2.5 py-1 bg-purple-600/20 border border-purple-500/20 rounded-lg text-sm font-medium">Lv.${state.profile.level} <span class="text-purple-400">${esc(state.profile.title)}</span></span>` : state.playerName ? `<span class="px-2.5 py-1 bg-purple-600/20 border border-purple-500/20 rounded-lg text-sm">${esc(state.playerName)}</span>` : ''}
-                    ${state.roomId ? `<span class="px-2 py-1 bg-slate-800/80 border border-white/5 rounded-lg text-xs font-mono text-gray-400">${state.roomId}</span>` : ''}
+                <div class="flex items-center gap-1.5">
+                    <button onclick="toggleSound()" class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '🔊' : '🔇'}</button>
+                    ${state.profile ? `<span class="px-2 py-1 bg-wit/10 border border-wit/20 rounded-lg text-xs font-mono">Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span></span>` : state.playerName ? `<span class="px-2 py-1 bg-wit/10 border border-wit/20 rounded-lg text-xs font-mono">${esc(state.playerName)}</span>` : ''}
+                    ${state.roomId ? `<span class="px-1.5 py-1 bg-obsidian border border-white/[0.04] rounded text-[10px] font-mono text-gray-500">${state.roomId}</span>` : ''}
                 </div>
             </div>
         </header>
-        <main class="px-4 py-6 max-w-lg mx-auto pb-20">
-            ${state.error ? `<div class="glow-card glow-card-red mb-4 p-3 text-red-300 animate-shake">⚠️ ${state.error} <button onclick="state.error=null;render()" class="ml-3 underline">×</button></div>` : ''}
+        ${state.room ? `
+        <div class="consensus-hud border-b border-white/[0.03] py-1 px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
+            <div class="max-w-lg mx-auto flex items-center justify-between text-gray-500">
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1"><div class="hud-dot bg-green-500"></div><span>GenLayer</span></div>
+                    <span class="text-white/10">|</span>
+                    <span>${state.room.players?.length || 0} players</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span>R${state.room.currentRound || 0}/${state.room.totalRounds || 5}</span>
+                    <span class="text-white/10">|</span>
+                    <span class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${state.room.status?.toUpperCase() || 'IDLE'}</span>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+        <main class="px-4 py-5 max-w-lg mx-auto pb-20 relative z-10">
+            ${state.error ? `<div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">⚠ ${esc(state.error)} <button onclick="state.error=null;render()" class="ml-3 text-red-400 hover:text-white">×</button></div>` : ''}
             ${renderScreen()}
         </main>
+        </div>
     `;
     
     // Restore textarea focus and cursor position
@@ -1097,25 +1260,23 @@ function render(force = false) {
 function renderTimer() {
     if (state.timeLeft <= 0) return '';
     const isLow = state.timeLeft <= 10;
-    const max = state.screen === 'submitting' ? 40 : 30;
+    const max = state.screen === 'submitting' ? 40 : state.screen === 'voting' ? 20 : 30;
     const pct = (state.timeLeft / max) * 100;
     return `
         <div class="glow-card ${isLow ? 'glow-card-red' : ''} p-4 mb-4">
             <div class="flex justify-between items-center mb-2">
-                <span class="text-gray-400">⏱️ Time</span>
-                <span id="timer-display" class="text-3xl font-bold ${isLow ? 'countdown-critical text-red-500' : ''}">${formatTime(state.timeLeft)}</span>
+                <span class="text-[10px] font-mono text-gray-500 tracking-widest uppercase">TIMER</span>
+                <span id="timer-display" class="text-3xl font-mono font-bold ${isLow ? 'countdown-critical text-red-500' : 'text-white'}">${formatTime(state.timeLeft)}</span>
             </div>
-            <div class="h-3 bg-slate-800 rounded-full overflow-hidden">
-                <div id="timer-bar" class="h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}" style="width:${pct}%"></div>
+            <div class="h-2 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
+                <div id="timer-bar" class="h-full timer-bar rounded-full ${isLow ? 'bg-red-500' : 'bg-gradient-to-r from-wit to-oracle'}" style="width:${pct}%"></div>
             </div>
-            <p id="timer-warning" class="text-red-400 text-sm mt-2 text-center animate-pulse" style="display:${isLow ? 'block' : 'none'}">⚡ Hurry!</p>
+            <p id="timer-warning" class="text-red-400 text-xs font-mono mt-2 text-center animate-pulse tracking-wider" style="display:${isLow ? 'block' : 'none'}">TIME CRITICAL</p>
         </div>
     `;
 }
 
 function renderScreen() {
-    // Spectator intercepts all game screens
-    if (state.isSpectator && state.room) return renderSpectating();
     // Reveal phase intercepts roundResults
     if (state.revealPhase === 'revealing') return renderRevealing();
     switch (state.screen) {
@@ -1123,6 +1284,8 @@ function renderScreen() {
         case 'lobby': return renderLobby();
         case 'waiting': return renderWaiting();
         case 'submitting': return renderSubmitting();
+        case 'curating': return renderCurating();
+        case 'voting': return renderVoting();
         case 'betting': return renderBetting();
         case 'judging': return renderJudging();
         case 'roundResults': return renderRoundResults();
@@ -1130,88 +1293,65 @@ function renderScreen() {
         case 'daily': return renderDailyChallenge();
         case 'profile': return renderProfileScreen();
         case 'hallOfFame': return renderHallOfFame();
-        case 'tournament': return renderTournament();
         case 'communityPrompts': return renderCommunityPrompts();
-        case 'seasons': return renderSeasons();
         default: return renderWelcome();
     }
 }
 
 function renderWelcome() {
     return `
-        <div class="text-center py-4">
-            <div class="w-28 h-28 oracle-eye rounded-full flex items-center justify-center mx-auto mb-6 animate-float">
-                <span class="text-6xl">👁️</span>
+        <div class="text-center py-6">
+            <div class="w-32 h-32 oracle-eye rounded-full flex items-center justify-center mx-auto mb-8 animate-float processing">
+                <span class="text-5xl" style="filter:brightness(1.5)">👁</span>
             </div>
-            <h2 class="text-4xl font-bold mb-2">Welcome to</h2>
-            <h1 class="text-5xl font-bold mb-3"><span class="gradient-text">Oracle of Wit</span></h1>
-            <p class="text-gray-400 mb-6">The AI humor prediction game powered by GenLayer</p>
+            <p class="font-mono text-xs text-oracle/60 tracking-[0.3em] mb-2">WELCOME TO</p>
+            <h1 class="text-5xl font-display font-bold mb-3 tracking-wider"><span class="gradient-text">ORACLE OF WIT</span></h1>
+            <p class="text-gray-500 text-sm font-mono mb-8">Decentralized humor arbitration protocol</p>
 
             <!-- How to Play Section -->
             <div class="glow-card mb-6 overflow-hidden">
-                <button onclick="toggleHelp()" class="w-full p-4 flex justify-between items-center hover:bg-white/5 transition-colors">
-                    <span class="text-yellow-400 font-bold">📖 How to Play</span>
-                    <span id="help-toggle-icon" class="text-gray-400 transition-transform ${state.showHelp ? 'rotate-180' : ''}">▼</span>
+                <button onclick="toggleHelp()" class="w-full p-4 flex justify-between items-center hover:bg-white/[0.02] transition-colors">
+                    <span class="text-consensus font-mono font-bold text-xs tracking-wider">HOW IT WORKS</span>
+                    <span id="help-toggle-icon" class="text-gray-600 transition-transform text-xs ${state.showHelp ? 'rotate-180' : ''}">▼</span>
                 </button>
-                <div id="help-content" class="${state.showHelp ? '' : 'hidden'} border-t border-white/10 p-4 text-left">
+                <div id="help-content" class="${state.showHelp ? '' : 'hidden'} border-t border-white/[0.04] p-4 text-left">
                     <div class="space-y-4 text-sm">
                         <div class="flex gap-3">
-                            <div class="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center font-bold shrink-0">1</div>
+                            <div class="w-8 h-8 rounded-lg bg-wit/20 border border-wit/30 flex items-center justify-center font-mono font-bold text-wit text-xs shrink-0">01</div>
                             <div>
-                                <p class="font-bold text-white">Complete the Joke</p>
-                                <p class="text-gray-400">You'll see a joke setup. Write the funniest punchline you can think of!</p>
+                                <p class="font-display font-bold text-white text-sm">Complete the Joke</p>
+                                <p class="text-gray-500 text-xs">You'll see a joke setup. Write the funniest punchline you can think of.</p>
                             </div>
                         </div>
                         <div class="flex gap-3">
-                            <div class="w-8 h-8 bg-pink-600 rounded-full flex items-center justify-center font-bold shrink-0">2</div>
+                            <div class="w-8 h-8 rounded-lg bg-oracle/20 border border-oracle/30 flex items-center justify-center font-mono font-bold text-oracle text-xs shrink-0">02</div>
                             <div>
-                                <p class="font-bold text-white">Bet on the Winner</p>
-                                <p class="text-gray-400">See all submissions (anonymously) and bet XP on which one the AI Oracle will pick!</p>
+                                <p class="font-display font-bold text-white text-sm">Bet on the Winner</p>
+                                <p class="text-gray-500 text-xs">See all submissions anonymously. Bet XP on which one the Oracle will pick.</p>
                             </div>
                         </div>
                         <div class="flex gap-3">
-                            <div class="w-8 h-8 bg-yellow-600 rounded-full flex items-center justify-center font-bold shrink-0">3</div>
+                            <div class="w-8 h-8 rounded-lg bg-consensus/20 border border-consensus/30 flex items-center justify-center font-mono font-bold text-consensus text-xs shrink-0">03</div>
                             <div>
-                                <p class="font-bold text-white">AI Oracle Judges</p>
-                                <p class="text-gray-400">Multiple AI validators vote using GenLayer's Optimistic Democracy to pick the funniest joke.</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center font-bold shrink-0">4</div>
-                            <div>
-                                <p class="font-bold text-white">Win XP!</p>
-                                <p class="text-gray-400">Earn <span class="text-yellow-400">+100 XP</span> if your joke wins, plus <span class="text-yellow-400">2x your bet</span> if you predicted correctly!</p>
+                                <p class="font-display font-bold text-white text-sm">Oracle Judges</p>
+                                <p class="text-gray-500 text-xs">AI validators vote via GenLayer Optimistic Democracy. Consensus is recorded on-chain.</p>
                             </div>
                         </div>
 
-                        <div class="mt-4 pt-4 border-t border-white/10">
-                            <p class="font-bold text-white mb-2">🏆 Scoring:</p>
-                            <div class="grid grid-cols-3 gap-2 text-xs">
-                                <div class="bg-slate-800/80 rounded-lg p-2">
-                                    <span class="text-green-400">Your joke wins</span>
-                                    <span class="block text-yellow-400 font-bold">+100 XP</span>
+                        <div class="mt-4 pt-4 border-t border-white/[0.04]">
+                            <p class="font-mono text-xs text-gray-500 tracking-wider mb-2">SCORING</p>
+                            <div class="grid grid-cols-3 gap-2 text-xs font-mono">
+                                <div class="bg-obsidian rounded-lg p-2.5 border border-white/[0.04]">
+                                    <span class="text-green-400/80 text-[10px]">JOKE WINS</span>
+                                    <span class="block text-consensus font-bold mt-1">+100 XP</span>
                                 </div>
-                                <div class="bg-slate-800/80 rounded-lg p-2">
-                                    <span class="text-blue-400">Correct bet</span>
-                                    <span class="block text-yellow-400 font-bold">+Bet × 2</span>
+                                <div class="bg-obsidian rounded-lg p-2.5 border border-white/[0.04]">
+                                    <span class="text-oracle/80 text-[10px]">CORRECT BET</span>
+                                    <span class="block text-consensus font-bold mt-1">+BET×2</span>
                                 </div>
-                                <div class="bg-slate-800/80 rounded-lg p-2">
-                                    <span class="text-red-400">Wrong bet</span>
-                                    <span class="block text-red-400 font-bold">-Bet XP</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mt-4 pt-4 border-t border-white/10">
-                            <p class="font-bold text-white mb-2">🎮 Game Modes:</p>
-                            <div class="space-y-2 text-xs">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-yellow-400">🎯</span>
-                                    <span class="text-gray-300"><strong class="text-white">Single Player:</strong> Practice against AI bots</span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-purple-400">👥</span>
-                                    <span class="text-gray-300"><strong class="text-white">Multiplayer:</strong> Play with friends (2-100 players)</span>
+                                <div class="bg-obsidian rounded-lg p-2.5 border border-white/[0.04]">
+                                    <span class="text-red-400/80 text-[10px]">WRONG BET</span>
+                                    <span class="block text-red-400 font-bold mt-1">-BET XP</span>
                                 </div>
                             </div>
                         </div>
@@ -1219,30 +1359,30 @@ function renderWelcome() {
                 </div>
             </div>
 
-            <!-- GenLayer Explainer -->
+            <!-- GenLayer Protocol -->
             <div class="glow-card-cyan p-4 mb-6 text-left glow-card">
                 <div class="flex items-center gap-2 mb-3">
-                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                    <p class="text-purple-400 font-bold text-sm">⛓️ Powered by GenLayer Intelligent Contracts</p>
+                    <div class="hud-dot bg-oracle"></div>
+                    <p class="font-mono text-oracle text-xs tracking-wider font-bold">GENLAYER INTELLIGENT CONTRACTS</p>
                 </div>
-                <div class="text-xs text-gray-400 space-y-2">
-                    <p>✓ <strong class="text-white">Optimistic Democracy:</strong> Multiple AI validators independently judge each joke</p>
-                    <p>✓ <strong class="text-white">On-Chain Consensus:</strong> Validators reach agreement through GenLayer's protocol</p>
-                    <p>✓ <strong class="text-white">Verifiable Results:</strong> Every round recorded on-chain for transparency</p>
+                <div class="text-xs text-gray-500 space-y-2 font-mono">
+                    <p><span class="text-oracle">&#9632;</span> <span class="text-gray-300">Optimistic Democracy</span> — independent validator judgment</p>
+                    <p><span class="text-oracle">&#9632;</span> <span class="text-gray-300">On-Chain Consensus</span> — protocol-level agreement</p>
+                    <p><span class="text-oracle">&#9632;</span> <span class="text-gray-300">Verifiable Results</span> — transparent, immutable record</p>
                 </div>
-                <div class="mt-3 pt-3 border-t border-white/5 text-center">
-                    <a href="https://www.genlayer.com" target="_blank" class="text-xs text-purple-400 hover:text-purple-300 transition-colors">Learn more about GenLayer →</a>
+                <div class="mt-3 pt-3 border-t border-white/[0.04] text-center">
+                    <a href="https://www.genlayer.com" target="_blank" class="text-[10px] font-mono text-oracle/60 hover:text-oracle transition-colors tracking-wider">GENLAYER.COM →</a>
                 </div>
             </div>
 
             <div class="glow-card p-6">
-                <label class="text-sm text-gray-400 block mb-2 text-left">Your Name:</label>
-                <input type="text" placeholder="Enter your name..." value="${state.playerName}"
+                <label class="text-[10px] font-mono text-gray-600 tracking-wider block mb-2 text-left">IDENTITY</label>
+                <input type="text" placeholder="Enter your name..." value="${esc(state.playerName)}"
                     oninput="state.playerName=this.value"
                     onkeypress="if(event.key==='Enter')goToLobby()"
-                    class="w-full px-4 py-3 rounded-xl text-lg mb-4">
-                <button onclick="goToLobby()" class="btn btn-play w-full py-4 rounded-xl text-lg text-white">
-                    🎮 Enter Game
+                    class="w-full px-4 py-3 rounded-xl mb-4">
+                <button onclick="goToLobby()" class="btn btn-play w-full py-4 rounded-xl text-sm">
+                    INITIALIZE SESSION
                 </button>
             </div>
         </div>
@@ -1259,25 +1399,25 @@ function renderProfileCard() {
         <div class="glow-card p-4">
             <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-xl font-bold shadow-lg shadow-purple-500/20">${p.level}</div>
+                    <div class="w-12 h-12 oracle-eye rounded-full flex items-center justify-center text-xl font-display font-bold">${p.level}</div>
                     <div>
-                        <p class="font-bold text-white">${esc(p.name)}</p>
-                        <p class="text-sm text-purple-400">${esc(p.title)}</p>
+                        <p class="font-display font-bold text-white tracking-wider">${esc(p.name)}</p>
+                        <p class="text-sm font-mono text-wit">${esc(p.title)}</p>
                     </div>
                 </div>
-                <button onclick="state.screen='profile';render()" class="btn btn-ghost text-xs px-3 py-1.5 rounded-lg">View Profile</button>
+                <button onclick="state.screen='profile';render()" class="btn btn-ghost text-xs px-3 py-1.5 rounded-lg">PROFILE</button>
             </div>
-            <div class="flex justify-between text-xs text-gray-400 mb-1">
+            <div class="flex justify-between text-[10px] font-mono text-gray-500 mb-1 tracking-wider">
                 <span>${p.lifetimeXP.toLocaleString()} XP</span>
-                <span>${nextXP ? nextXP.toLocaleString() + ' XP' : 'MAX'}</span>
+                <span>${nextXP ? nextXP.toLocaleString() + ' XP' : 'MAX LEVEL'}</span>
             </div>
-            <div class="h-2.5 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-2.5 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
                 <div class="h-full xp-bar" style="width:${progress}%"></div>
             </div>
-            <div class="flex justify-between mt-2 text-xs text-gray-500">
-                <span>${p.gamesPlayed} games</span>
-                <span>${p.gamesWon} wins</span>
-                <span>${p.roundsWon} rounds won</span>
+            <div class="flex justify-between mt-2 text-[10px] font-mono text-gray-600 tracking-wider">
+                <span>${p.gamesPlayed} GAMES</span>
+                <span>${p.gamesWon} WINS</span>
+                <span>${p.roundsWon} ROUNDS</span>
             </div>
             ${p.achievements.length > 0 ? `<div class="flex flex-wrap gap-1 mt-2">${p.achievements.slice(0,8).map(aId => {
                 const a = state.allAchievements.find(x=>x.id===aId);
@@ -1291,8 +1431,8 @@ function renderLobby() {
     return `
         <div class="space-y-5">
             <div class="text-center">
-                <h2 class="text-3xl font-bold mb-1"><span class="gradient-text">Game Lobby</span></h2>
-                ${gamesPlayedToday > 0 ? `<p class="text-xs text-gray-500">Games today: ${gamesPlayedToday}</p>` : ''}
+                <h2 class="text-2xl font-display font-bold mb-1 tracking-wider"><span class="gradient-text">GAME LOBBY</span></h2>
+                ${gamesPlayedToday > 0 ? `<p class="text-[10px] font-mono text-gray-600 tracking-wider">SESSIONS TODAY: ${gamesPlayedToday}</p>` : ''}
             </div>
 
             <!-- Profile Card -->
@@ -1304,8 +1444,8 @@ function renderLobby() {
                 <div class="flex items-center gap-3">
                     <span class="text-3xl">${state.currentWeeklyTheme.emoji}</span>
                     <div class="flex-1">
-                        <p class="text-sm text-purple-300">This Week's Theme</p>
-                        <p class="font-bold text-lg">${state.currentWeeklyTheme.name}</p>
+                        <p class="text-xs font-mono text-wit tracking-wider">This Week's Theme</p>
+                        <p class="font-display font-bold text-lg tracking-wider">${state.currentWeeklyTheme.name}</p>
                         <p class="text-xs text-gray-400">${state.currentWeeklyTheme.description}</p>
                     </div>
                 </div>
@@ -1314,34 +1454,40 @@ function renderLobby() {
 
             <!-- Single Player -->
             <div class="glow-card glow-card-gold p-5">
-                <h3 class="text-xl font-bold mb-1">🎯 Single Player</h3>
-                <p class="text-gray-400 text-sm mb-4">Practice mode — compete against AI bots</p>
-                <div class="grid grid-cols-3 gap-3">
-                    <button onclick="createRoom('tech',true)" class="btn cat-btn p-4 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-xl text-white">
-                        <span class="text-2xl block mb-1">🤖</span><span class="text-sm font-semibold">Tech</span>
+                <div class="flex items-center gap-2 mb-1">
+                    <h3 class="text-lg font-display font-bold tracking-wider">SOLO MODE</h3>
+                    <span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">VS AI</span>
+                </div>
+                <p class="text-gray-500 text-xs font-mono mb-4">Practice against oracle-calibrated bots</p>
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="createRoom('tech',true)" class="btn cat-btn p-3.5 bg-gradient-to-br from-blue-900/80 to-cyan-900/80 rounded-xl text-white border border-cyan-500/20">
+                        <span class="text-xl block mb-1">🤖</span><span class="text-[10px] font-mono tracking-wider">TECH</span>
                     </button>
-                    <button onclick="createRoom('crypto',true)" class="btn cat-btn p-4 bg-gradient-to-br from-yellow-600 to-orange-600 rounded-xl text-white">
-                        <span class="text-2xl block mb-1">💎</span><span class="text-sm font-semibold">Crypto</span>
+                    <button onclick="createRoom('crypto',true)" class="btn cat-btn p-3.5 bg-gradient-to-br from-amber-900/80 to-orange-900/80 rounded-xl text-white border border-amber-500/20">
+                        <span class="text-xl block mb-1">💎</span><span class="text-[10px] font-mono tracking-wider">CRYPTO</span>
                     </button>
-                    <button onclick="createRoom('general',true)" class="btn cat-btn p-4 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl text-white">
-                        <span class="text-2xl block mb-1">😂</span><span class="text-sm font-semibold">General</span>
+                    <button onclick="createRoom('general',true)" class="btn cat-btn p-3.5 bg-gradient-to-br from-purple-900/80 to-pink-900/80 rounded-xl text-white border border-purple-500/20">
+                        <span class="text-xl block mb-1">😂</span><span class="text-[10px] font-mono tracking-wider">GENERAL</span>
                     </button>
                 </div>
             </div>
 
             <!-- Multiplayer -->
             <div class="glow-card p-5">
-                <h3 class="text-xl font-bold mb-1">👥 Multiplayer</h3>
-                <p class="text-gray-400 text-sm mb-4">Create a room and invite friends</p>
-                <div class="grid grid-cols-3 gap-3 mb-4">
-                    <button onclick="createRoom('tech',false)" class="btn cat-btn p-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-white">
-                        <span class="text-xl block">🤖</span><span class="text-xs">Tech</span>
+                <div class="flex items-center gap-2 mb-1">
+                    <h3 class="text-lg font-display font-bold tracking-wider">MULTIPLAYER</h3>
+                    <span class="text-[9px] font-mono text-wit/60 bg-wit/10 px-1.5 py-0.5 rounded border border-wit/20">2-100</span>
+                </div>
+                <p class="text-gray-500 text-xs font-mono mb-4">Create a room and invite players</p>
+                <div class="grid grid-cols-3 gap-2 mb-4">
+                    <button onclick="createRoom('tech',false)" class="btn cat-btn p-3 bg-obsidian rounded-xl text-white border border-white/[0.04]">
+                        <span class="text-lg block">🤖</span><span class="text-[10px] font-mono text-gray-400">TECH</span>
                     </button>
-                    <button onclick="createRoom('crypto',false)" class="btn cat-btn p-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-white">
-                        <span class="text-xl block">💎</span><span class="text-xs">Crypto</span>
+                    <button onclick="createRoom('crypto',false)" class="btn cat-btn p-3 bg-obsidian rounded-xl text-white border border-white/[0.04]">
+                        <span class="text-lg block">💎</span><span class="text-[10px] font-mono text-gray-400">CRYPTO</span>
                     </button>
-                    <button onclick="createRoom('general',false)" class="btn cat-btn p-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-white">
-                        <span class="text-xl block">😂</span><span class="text-xs">General</span>
+                    <button onclick="createRoom('general',false)" class="btn cat-btn p-3 bg-obsidian rounded-xl text-white border border-white/[0.04]">
+                        <span class="text-lg block">😂</span><span class="text-[10px] font-mono text-gray-400">GENERAL</span>
                     </button>
                 </div>
 
@@ -1354,20 +1500,18 @@ function renderLobby() {
 
                 ${state.publicRooms.length > 0 ? `
                     <div class="mt-4 space-y-2">
-                        <p class="text-sm text-gray-400">Public rooms:</p>
+                        <p class="text-[10px] font-mono text-gray-600 tracking-widest">OPEN ROOMS</p>
                         ${state.publicRooms.map(r => `
-                            <div class="flex justify-between items-center p-2.5 bg-slate-800/80 rounded-xl">
+                            <div class="flex justify-between items-center p-2.5 bg-obsidian border border-white/[0.04] rounded-xl">
                                 <div>
-                                    <span class="font-mono text-purple-400">${r.id}</span>
+                                    <span class="font-mono text-wit">${r.id}</span>
                                     ${r.status !== 'waiting' ? `<span class="text-xs ml-1 ${r.status === 'finished' ? 'text-gray-500' : 'text-green-400'}">R${r.currentRound}/${r.totalRounds}</span>` : ''}
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">${r.players}p${r.spectators ? ' '+r.spectators+'s' : ''}</span>
                                     ${r.status === 'waiting' ? `
                                         <button onclick="joinRoom('${r.id}')" class="btn btn-primary px-3 py-1 rounded-lg text-sm text-white">Join</button>
-                                    ` : `
-                                        <button onclick="joinAsSpectator('${r.id}')" class="btn btn-ghost px-3 py-1 rounded-lg text-sm">Watch</button>
-                                    `}
+                                    ` : ''}
                                 </div>
                             </div>
                         `).join('')}
@@ -1379,45 +1523,40 @@ function renderLobby() {
             <div class="glow-card glow-card-amber p-5">
                 <div class="flex items-center justify-between mb-3">
                     <div>
-                        <h3 class="text-xl font-bold">📅 Daily Challenge</h3>
-                        <p class="text-gray-400 text-sm">One prompt. One shot. Compete globally.</p>
+                        <h3 class="text-lg font-display font-bold tracking-wider">DAILY ORACLE</h3>
+                        <p class="text-gray-500 text-xs font-mono">One prompt. One shot. Global leaderboard.</p>
                     </div>
-                    <div class="text-right">
-                        ${state.profile?.dailyChallengeStreak > 0 ? `<p class="text-orange-400 font-bold text-sm">${'🔥'.repeat(Math.min(state.profile.dailyChallengeStreak, 5))} ${state.profile.dailyChallengeStreak}-day streak</p>` : ''}
-                    </div>
+                    ${state.profile?.dailyChallengeStreak > 0 ? `<span class="text-consensus font-mono text-xs font-bold">${'🔥'.repeat(Math.min(state.profile.dailyChallengeStreak, 5))} ${state.profile.dailyChallengeStreak}d</span>` : ''}
                 </div>
-                <button onclick="fetchDailyChallenge()" class="btn btn-play w-full py-3 rounded-xl font-bold text-lg text-white">
-                    Play Today's Challenge
+                <button onclick="fetchDailyChallenge()" class="btn btn-play w-full py-3 rounded-xl text-sm">
+                    ENTER DAILY CHALLENGE
                 </button>
             </div>
 
             <!-- Challenge link notification -->
             ${state.challengeData ? `
                 <div class="glow-card glow-card-cyan p-4">
-                    <p class="text-cyan-400 font-bold mb-1">Friend Challenge!</p>
-                    <p class="text-sm text-gray-400">${esc(state.challengeData.creatorName)} scored ${state.challengeData.creatorScore} XP — can you beat them?</p>
-                    <button onclick="createRoom('${state.challengeData.category}', true)" class="btn btn-primary mt-2 px-4 py-2 rounded-xl font-bold text-sm text-white">Accept Challenge</button>
+                    <p class="text-oracle font-display font-bold text-sm tracking-wider mb-1">FRIEND CHALLENGE</p>
+                    <p class="text-xs font-mono text-gray-400">${esc(state.challengeData.creatorName)} scored ${state.challengeData.creatorScore} XP — can you beat them?</p>
+                    <button onclick="createRoom('${state.challengeData.category}', true)" class="btn btn-teal mt-2 px-4 py-2 rounded-xl text-xs text-white">ACCEPT</button>
                 </div>
             ` : ''}
 
-            <!-- Tournament & Community -->
-            <div class="grid grid-cols-2 gap-3">
-                <div class="glow-card glow-card-red p-4">
-                    <h3 class="font-bold text-sm mb-1">⚔️ Tournament</h3>
-                    <p class="text-gray-400 text-xs mb-2">Bracket elimination</p>
-                    <button onclick="fetchTournaments()" class="btn btn-ghost w-full py-2 rounded-lg text-xs font-bold">Browse / Create</button>
-                </div>
-                <div class="glow-card glow-card-cyan p-4">
-                    <h3 class="font-bold text-sm mb-1">💡 Community</h3>
-                    <p class="text-gray-400 text-xs mb-2">Submit joke setups</p>
-                    <button onclick="fetchCommunityPrompts()" class="btn btn-ghost w-full py-2 rounded-lg text-xs font-bold">Submit / Vote</button>
+            <!-- Community Prompts -->
+            <div class="glow-card glow-card-cyan p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="font-mono text-oracle text-[10px] tracking-wider font-bold mb-0.5">COMMUNITY PROMPTS</p>
+                        <p class="text-gray-500 text-xs font-mono">Submit joke setups — top-voted enter rotation</p>
+                    </div>
+                    <button onclick="fetchCommunityPrompts()" class="btn btn-teal px-3 py-1.5 rounded-lg text-[10px] text-white">SUBMIT</button>
                 </div>
             </div>
 
             <!-- Leaderboard Tabs -->
             <div class="flex gap-1 mb-0">
-                <button onclick="state.showHallOfFame=false;render()" class="btn flex-1 py-2.5 ${!state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl font-bold text-sm">🏆 Leaderboard</button>
-                <button onclick="fetchHallOfFame()" class="btn flex-1 py-2.5 ${state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl font-bold text-sm">🎭 Hall of Fame</button>
+                <button onclick="state.showHallOfFame=false;render()" class="btn flex-1 py-2.5 ${!state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">LEADERBOARD</button>
+                <button onclick="fetchHallOfFame()" class="btn flex-1 py-2.5 ${state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">HALL OF FAME</button>
             </div>
 
             ${state.showHallOfFame ? `
@@ -1425,11 +1564,11 @@ function renderLobby() {
                     ${state.hallOfFame.length > 0 ? `
                         <div class="space-y-3 max-h-96 overflow-y-auto">
                             ${state.hallOfFame.slice(0, 20).map(j => `
-                                <div class="bg-slate-800/60 rounded-xl p-3">
+                                <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3">
                                     <p class="text-sm text-gray-400 mb-1">"${esc(j.prompt)}"</p>
                                     <p class="text-white font-medium">"${esc(j.punchline)}"</p>
                                     <div class="flex justify-between items-center mt-1">
-                                        <span class="text-xs text-yellow-400">by ${esc(j.author)}</span>
+                                        <span class="text-xs text-consensus">by ${esc(j.author)}</span>
                                         ${j.commentary ? `<span class="text-xs text-gray-500 italic">${esc(j.commentary)}</span>` : ''}
                                     </div>
                                 </div>
@@ -1443,16 +1582,15 @@ function renderLobby() {
                 <div class="glow-card rounded-t-none p-5" style="border-top-left-radius:0;border-top-right-radius:0">
                     <div class="space-y-2">
                         ${state.leaderboard.slice(0,10).map((p,i) => `
-                            <div class="flex justify-between items-center p-2.5 ${i<3?'bg-yellow-500/10 border border-yellow-500/10':'bg-slate-800/60'} rounded-xl">
+                            <div class="flex justify-between items-center p-2.5 ${i<3?'bg-consensus/10 border border-consensus/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
                                 <div class="flex items-center gap-2">
                                     <span class="text-lg">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
-                                    <span>${p.name}</span>
+                                    <span>${esc(p.name)}</span>
                                 </div>
-                                <span class="text-yellow-400 font-bold">${p.totalScore} XP</span>
+                                <span class="text-consensus font-mono font-bold">${p.totalScore} XP</span>
                             </div>
                         `).join('')}
                     </div>
-                    <button onclick="fetchSeasons();state.screen='seasons';render()" class="btn btn-ghost w-full mt-3 py-2 rounded-xl text-xs text-gray-400">📅 Past Seasons</button>
                 </div>
             ` : !state.showHallOfFame ? '' : ''}
         </div>
@@ -1471,34 +1609,36 @@ function renderWaiting() {
         <div class="glow-card p-6">
             <div class="flex justify-between items-center mb-4">
                 <div>
-                    <h2 class="text-2xl font-bold">${r.isSinglePlayer ? '🎯 Single Player' : r.id}</h2>
-                    <span class="text-yellow-400 text-sm">${r.isSinglePlayer ? 'vs AI Bots' : '⏳ Waiting...'}</span>
+                    <h2 class="text-xl font-display font-bold tracking-wider">${r.isSinglePlayer ? 'SOLO MODE' : r.id}</h2>
+                    <span class="text-[10px] font-mono ${r.isSinglePlayer ? 'text-consensus/60' : 'text-oracle/60'} tracking-widest">${r.isSinglePlayer ? 'VS ORACLE BOTS' : 'AWAITING PLAYERS'}</span>
                 </div>
-                <button onclick="leaveRoom()" class="btn btn-ghost px-3 py-2 rounded-lg text-gray-400 hover:text-white text-xl">✕</button>
+                <button onclick="leaveRoom()" class="btn btn-ghost px-3 py-2 rounded-lg text-gray-500 hover:text-white text-lg">✕</button>
             </div>
 
             ${!r.isSinglePlayer ? `
-                <div class="mb-4 p-4 bg-slate-800/60 rounded-xl text-center">
-                    <p class="text-sm text-gray-400">Share code:</p>
-                    <div class="flex items-center justify-center gap-2 mt-1">
-                        <p class="font-mono text-2xl text-purple-400 select-all">${r.id}</p>
-                        <button onclick="copyRoomCode('${r.id}')" class="btn btn-primary p-2 rounded-lg text-white" title="Copy code">
-                            📋
+                <div class="mb-4 p-4 bg-obsidian rounded-xl text-center border border-white/[0.04]">
+                    <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">ROOM CODE</p>
+                    <div class="flex items-center justify-center gap-2">
+                        <p class="font-mono text-2xl text-wit select-all tracking-wider">${r.id}</p>
+                        <button onclick="copyRoomCode('${r.id}')" class="btn btn-ghost p-2 rounded-lg text-gray-400" title="Copy code">
+                            <span class="text-sm">COPY</span>
                         </button>
                     </div>
-                    <p id="copy-feedback" class="text-green-400 text-sm mt-1 hidden">Copied!</p>
+                    <p id="copy-feedback" class="text-oracle text-xs font-mono mt-1 hidden">Copied to clipboard</p>
                 </div>
             ` : ''}
 
             <div class="mb-4">
-                <h3 class="font-bold mb-2">👥 Players (${r.players.length})</h3>
+                <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">CONNECTED &middot; ${r.players.length}</p>
                 <div class="grid grid-cols-2 gap-2">
                     ${r.players.map(p => `
-                        <div class="flex items-center gap-2 p-2.5 bg-slate-800/60 rounded-xl ${p.name===state.playerName?'ring-2 ring-purple-500':''}">
-                            <span>${p.isHost?'👑':p.isBot?'🤖':'🎭'}</span>
-                            <span class="truncate">${p.name}</span>
-                            ${p.isBot?'<span class="text-xs bg-slate-600 px-1.5 py-0.5 rounded-full">BOT</span>':''}
-                            ${p.name===state.playerName?'<span class="text-xs bg-purple-500 px-1.5 py-0.5 rounded-full">YOU</span>':''}
+                        <div class="flex items-center gap-2 p-2.5 bg-obsidian rounded-xl border ${p.name===state.playerName?'border-wit/30':'border-white/[0.04]'}">
+                            <div class="w-6 h-6 rounded-full ${p.isHost?'bg-consensus/20':p.isBot?'bg-oracle/20':'bg-wit/20'} flex items-center justify-center">
+                                <span class="text-xs">${p.isHost?'H':p.isBot?'B':'P'}</span>
+                            </div>
+                            <span class="truncate text-sm">${esc(p.name)}</span>
+                            ${p.isBot?'<span class="text-[9px] font-mono text-oracle/60 bg-oracle/10 px-1 py-0.5 rounded">BOT</span>':''}
+                            ${p.name===state.playerName?'<span class="text-[9px] font-mono text-wit/80 bg-wit/10 px-1 py-0.5 rounded">YOU</span>':''}
                         </div>
                     `).join('')}
                 </div>
@@ -1506,10 +1646,10 @@ function renderWaiting() {
 
             ${state.isHost ? `
                 <button onclick="startGame()" ${!r.isSinglePlayer && r.players.length<2 ? 'disabled' : ''}
-                    class="btn btn-play w-full py-4 rounded-xl font-bold text-lg text-white">
-                    ${!r.isSinglePlayer && r.players.length<2 ? '⏳ Need 2+ players' : '🚀 Start Game!'}
+                    class="btn btn-play w-full py-4 rounded-xl font-bold text-sm">
+                    ${!r.isSinglePlayer && r.players.length<2 ? 'NEED 2+ PLAYERS' : 'INITIALIZE GAME'}
                 </button>
-            ` : '<div class="text-center py-4 text-gray-400"><div class="spinner mx-auto mb-2"></div>Waiting for host...</div>'}
+            ` : '<div class="text-center py-4 text-gray-500 font-mono text-xs tracking-wider"><div class="spinner mx-auto mb-2"></div>WAITING FOR HOST</div>'}
         </div>
     `;
 }
@@ -1519,20 +1659,21 @@ function renderSubmitting() {
     const r = state.room;
     const submitted = r.submissions?.filter(s => !r.players.find(p => p.name === s.playerName)?.isBot).length || 0;
     const humanPlayers = r.players.filter(p => !p.isBot).length;
-    
+
     return `
         <div class="space-y-4">
             ${renderTimer()}
             <div class="glow-card p-3 flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <span class="text-blue-400 font-bold">✍️ Round ${r.currentRound}/${r.totalRounds}</span>
-                    ${r.weeklyTheme ? `<span class="text-xs bg-purple-600/40 px-2 py-0.5 rounded-full">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
+                    <span class="font-mono text-wit text-xs font-bold tracking-wider">ROUND ${r.currentRound}/${r.totalRounds}</span>
+                    ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
                 </div>
-                <span class="text-gray-400">${submitted}/${humanPlayers} submitted</span>
+                <span class="text-[10px] font-mono text-gray-500 tracking-wider">${submitted}/${humanPlayers} SUBMITTED</span>
             </div>
-            <div class="glow-card p-5" style="background:linear-gradient(135deg,rgba(88,28,135,0.2),rgba(157,23,77,0.15),rgba(15,20,35,0.9))">
-                <p class="text-sm text-purple-300 mb-2">🤖 Complete this joke:</p>
-                <p class="text-xl font-medium">"${r.jokePrompt}"</p>
+            <div class="glow-card p-5" style="background:linear-gradient(135deg,rgba(168,85,247,0.08),rgba(45,212,191,0.04),rgba(10,10,18,0.95))">
+                <p class="text-[10px] font-mono text-oracle/60 tracking-widest mb-2">COMPLETE THIS JOKE</p>
+                <p class="text-xl font-display font-medium">"${esc(r.jokePrompt)}"</p>
+                ${r.promptSource?.type === 'community' ? `<p class="text-[10px] font-mono text-oracle mt-2 tracking-wider">COMMUNITY PROMPT by ${esc(r.promptSource.author)}</p>` : ''}
             </div>
             ${!state.hasSubmitted ? `
                 <div class="glow-card p-4">
@@ -1543,19 +1684,21 @@ function renderSubmitting() {
                         onkeyup="setTyping()"
                         class="w-full h-28 px-4 py-3 rounded-xl text-lg resize-none">${state.punchlineText}</textarea>
                     <div class="flex justify-between items-center mt-3">
-                        <span id="char-count" class="text-sm text-gray-400">${state.punchlineText.length}/200</span>
-                        <button onclick="submitPunchline()" class="btn btn-primary px-6 py-2.5 rounded-xl font-bold text-white">📤 Submit</button>
+                        <span id="char-count" class="text-[10px] font-mono text-gray-600 tracking-wider">${state.punchlineText.length}/200</span>
+                        <button onclick="submitPunchline()" class="btn btn-primary px-6 py-2.5 rounded-xl font-bold text-white text-xs">SUBMIT</button>
                     </div>
                 </div>
             ` : `
                 <div class="glow-card glow-card-green p-6 text-center">
-                    <div class="text-5xl mb-3">✅</div>
-                    <p class="text-green-400 font-bold text-xl">Submitted!</p>
-                    <p class="text-gray-400 mt-2">Waiting for timer to end...</p>
+                    <div class="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center mx-auto mb-3">
+                        <span class="text-green-400 font-mono text-2xl">OK</span>
+                    </div>
+                    <p class="text-green-400 font-display font-bold text-lg tracking-wider">SUBMITTED</p>
+                    <p class="text-gray-500 mt-2 text-xs font-mono tracking-wider">AWAITING TIMER EXPIRY</p>
                 </div>
             `}
             ${state.isHost && r.submissions.length >= 1 ? `
-                <button onclick="advancePhase()" class="btn btn-ghost w-full py-2 rounded-xl">⏭️ Skip to Betting</button>
+                <button onclick="advancePhase()" class="btn btn-ghost w-full py-2 rounded-xl text-xs">SKIP TO BETTING</button>
             ` : ''}
         </div>
     `;
@@ -1675,56 +1818,56 @@ function renderRevealing() {
 
     return `
         <div class="space-y-4">
-            <!-- Header -->
             <div class="glow-card p-3 flex justify-between items-center">
-                <span class="text-purple-400 font-bold">Round ${result.round} — THE REVEAL</span>
-                <span class="text-gray-400">${revealed.length} of ${totalJokes} jokes reviewed</span>
+                <span class="font-mono text-wit text-xs font-bold tracking-wider">ROUND ${result.round} — REVEAL</span>
+                <span class="text-[10px] font-mono text-gray-500 tracking-wider">${revealed.length}/${totalJokes} REVIEWED</span>
             </div>
 
-            <!-- Prompt -->
             <div class="glow-card p-3 text-center">
-                <p class="text-gray-400 text-sm">"${r.jokePrompt}"</p>
+                <p class="text-gray-400 text-sm">"${esc(r.jokePrompt)}"</p>
             </div>
 
             ${revealed.length === 0 ? `
                 <div class="glow-card p-8 text-center animate-glow" style="border-radius:20px">
-                    <div class="text-6xl mb-4 animate-float">👁️</div>
-                    <p class="text-2xl font-bold gradient-text">The Oracle is reviewing...</p>
-                    <p class="text-gray-400 mt-2">Preparing the judgment</p>
+                    <div class="w-20 h-20 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 animate-float processing">
+                        <span class="text-3xl" style="filter:brightness(1.5)">👁</span>
+                    </div>
+                    <p class="text-xl font-display font-bold gradient-text tracking-wider">ORACLE REVIEWING</p>
+                    <p class="text-gray-500 mt-2 text-xs font-mono tracking-wider">PREPARING JUDGMENT</p>
                 </div>
             ` : ''}
 
             ${current && !isShowingWinner ? `
                 <div class="glow-card glow-card-red p-6 animate-slideIn">
                     <div class="flex items-center justify-between mb-2">
-                        <span class="text-red-400 font-bold text-sm">NOT THE ONE...</span>
-                        <span class="text-gray-500 text-xs">#${current.id}</span>
+                        <span class="text-red-400 font-mono text-xs font-bold tracking-wider">ELIMINATED</span>
+                        <span class="text-gray-600 text-[10px] font-mono">#${current.id}</span>
                     </div>
                     <p class="text-lg">"${esc(current.punchline)}"</p>
-                    <p class="text-gray-500 text-sm mt-1">by ${esc(current.playerName)}</p>
+                    <p class="text-gray-500 text-xs font-mono mt-1">${esc(current.playerName)}</p>
                     ${commentary?.roasts?.[current.id] ? `
                         <p class="text-gray-400 text-sm mt-2 italic typewriter">${esc(commentary.roasts[current.id])}</p>
                     ` : ''}
                     ${Object.keys(emojiCounts).length > 0 ? `
-                        <div class="flex gap-2 mt-2">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-slate-700 px-2 py-1 rounded-full">${e} x${c}</span>`).join('')}</div>
+                        <div class="flex gap-2 mt-2">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-obsidian px-2 py-1 rounded-full border border-white/[0.04]">${e} x${c}</span>`).join('')}</div>
                     ` : ''}
                 </div>
             ` : ''}
 
             ${isShowingWinner ? `
                 <div class="glow-card glow-card-gold p-8 text-center animate-winnerScale animate-goldPulse">
-                    <div class="text-6xl mb-3">👑</div>
-                    <p class="text-yellow-400 font-bold text-xl mb-2">THE ORACLE HAS SPOKEN!</p>
-                    <p class="text-2xl font-bold my-3">"${esc(current.punchline)}"</p>
-                    <p class="text-gray-300">by <span class="text-white font-bold text-lg">${current.playerName}</span></p>
+                    <p class="text-[10px] font-mono text-consensus/60 tracking-[0.3em] mb-2">WINNER</p>
+                    <p class="text-consensus font-display font-bold text-xl mb-2 tracking-wider">THE ORACLE HAS SPOKEN</p>
+                    <p class="text-2xl font-display font-bold my-3">"${esc(current.punchline)}"</p>
+                    <p class="text-gray-400 text-sm font-mono">${esc(current.playerName)}</p>
                     ${commentary?.winnerComment ? `
-                        <p class="text-yellow-300 text-sm mt-3 italic">${esc(commentary.winnerComment)}</p>
+                        <p class="text-consensus/80 text-sm mt-3 italic">${esc(commentary.winnerComment)}</p>
                     ` : ''}
                     ${result.streak >= 2 ? `
-                        <div class="mt-3 streak-fire text-lg font-bold text-orange-400">${'🔥'.repeat(Math.min(result.streak, 5))} ${result.streak}-WIN STREAK!</div>
+                        <div class="mt-3 streak-fire text-sm font-mono font-bold text-orange-400 tracking-wider">${'🔥'.repeat(Math.min(result.streak, 5))} ${result.streak}-WIN STREAK</div>
                     ` : ''}
                     ${result.isComeback ? `
-                        <div class="mt-2 animate-comeback text-lg font-bold text-cyan-400">⚡ COMEBACK! ⚡</div>
+                        <div class="mt-2 animate-comeback text-sm font-mono font-bold text-oracle tracking-wider">COMEBACK</div>
                     ` : ''}
                 </div>
             ` : ''}
@@ -1732,11 +1875,11 @@ function renderRevealing() {
             ${revealed.length > 0 ? `
                 <div class="glow-card p-3">
                     <div class="flex justify-between items-center mb-1">
-                        <span class="text-xs text-gray-400">Crowd Reaction</span>
-                        <span class="text-xs font-bold ${meterIndex >= 2 ? 'text-green-400' : 'text-gray-400'}">${meterLevels[meterIndex]}</span>
+                        <span class="text-[10px] font-mono text-gray-600 tracking-widest">CROWD REACTION</span>
+                        <span class="text-xs font-mono font-bold ${meterIndex >= 2 ? 'text-green-400' : 'text-gray-500'}">${meterLevels[meterIndex]}</span>
                     </div>
-                    <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div class="h-full rounded-full bg-gradient-to-r from-yellow-500 to-red-500 meter-fill" style="--fill-pct: ${meterPct}%"></div>
+                    <div class="h-1.5 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
+                        <div class="h-full rounded-full bg-gradient-to-r from-consensus to-red-500 meter-fill" style="--fill-pct: ${meterPct}%"></div>
                     </div>
                 </div>
             ` : ''}
@@ -1744,19 +1887,101 @@ function renderRevealing() {
             ${revealed.filter(j => j.eliminated && j !== current).length > 0 ? `
                 <div class="space-y-1">
                     ${revealed.filter(j => j.eliminated && j !== current).map(j => `
-                        <div class="bg-slate-800/30 rounded-xl p-2 opacity-40">
+                        <div class="bg-obsidian/50 rounded-xl p-2 opacity-40 border border-white/[0.02]">
                             <div class="flex items-center gap-2">
-                                <span class="text-red-400 text-xs">✗</span>
-                                <span class="text-xs text-gray-500 truncate">"${esc(j.punchline)}" — ${esc(j.playerName)}</span>
+                                <span class="text-red-400 text-[10px] font-mono">X</span>
+                                <span class="text-[10px] font-mono text-gray-600 truncate">"${esc(j.punchline)}" — ${esc(j.playerName)}</span>
                             </div>
                         </div>
                     `).join('')}
                 </div>
             ` : ''}
 
-            <button onclick="skipReveal()" class="btn btn-ghost w-full py-2 rounded-xl text-sm text-gray-400">
-                Skip Reveal ⏭️
+            <button onclick="skipReveal()" class="btn btn-ghost w-full py-2 rounded-xl text-xs text-gray-500">
+                SKIP REVEAL
             </button>
+        </div>
+    `;
+}
+
+function renderCurating() {
+    const r = state.room;
+    if (!r) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    const total = r.submissions?.length || 0;
+
+    return `
+        <div class="space-y-6">
+            <div class="glow-card p-6 text-center" style="border-radius:20px">
+                <div class="w-20 h-20 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 animate-glow processing">
+                    <span class="text-3xl" style="filter:brightness(1.5)">👁</span>
+                </div>
+                <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-2">PROCESSING</p>
+                <h2 class="text-2xl font-display font-bold mb-2 tracking-wider">ORACLE CURATING</h2>
+                <p class="text-wit text-xs font-mono mb-4 tracking-wider">${total} SUBMISSIONS — SELECTING TOP 8</p>
+                <div class="glass-bright rounded-xl p-4">
+                    <div class="flex items-center justify-center gap-3">
+                        <div class="spinner"></div>
+                        <span class="text-gray-400 text-xs font-mono tracking-wider">ANALYZING HUMOR, ORIGINALITY, TIMING</span>
+                    </div>
+                    <div class="mt-3 h-1.5 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
+                        <div class="h-full bg-gradient-to-r from-wit to-oracle rounded-full animate-pulse" style="width:75%"></div>
+                    </div>
+                </div>
+                <p class="text-[10px] font-mono text-gray-600 mt-3 tracking-wider">LARGE ROOM — AUDIENCE VOTES ON FINALISTS</p>
+            </div>
+        </div>
+    `;
+}
+
+function renderVoting() {
+    const r = state.room;
+    if (!r) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+
+    const curatedIds = r.curatedIds || [];
+    const curated = r.submissions?.filter(s => curatedIds.includes(s.id)) || [];
+    const totalVotes = Object.keys(r.audienceVotes || {}).length;
+    const humanPlayers = r.players?.filter(p => !p.isBot).length || 1;
+    const hasVoted = !!(r.audienceVotes?.[state.playerName]);
+
+    return `
+        <div class="space-y-4">
+            ${renderTimer()}
+            <div class="glow-card p-3 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-oracle text-xs font-bold tracking-wider">ROUND ${r.currentRound} — VOTE</span>
+                    <span class="text-[9px] font-mono text-oracle/60 bg-oracle/10 px-1.5 py-0.5 rounded border border-oracle/20">TOP ${curated.length}</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-500 tracking-wider">${totalVotes}/${humanPlayers} VOTED</span>
+            </div>
+            <div class="glow-card p-2.5">
+                <p class="text-sm text-gray-400 truncate">"${esc(r.jokePrompt)}"</p>
+                ${r.promptSource?.type === 'community' ? `<p class="text-[10px] font-mono text-oracle mt-1 tracking-wider">COMMUNITY PROMPT by ${esc(r.promptSource.author)}</p>` : ''}
+            </div>
+            <p class="text-center text-sm font-display font-bold tracking-wider">VOTE FOR THE FUNNIEST</p>
+            <div class="space-y-3">
+                ${curated.map(s => `
+                    <div onclick="${hasVoted ? '' : `castVote(${s.id})`}" class="glow-card p-4 ${hasVoted ? 'opacity-70' : 'cursor-pointer hover:bg-white/[0.03]'} ${state.votedFor === s.id ? 'card-selected' : ''}">
+                        <div class="flex items-start gap-3">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center font-mono font-bold text-sm ${state.votedFor === s.id ? 'bg-oracle text-void' : 'bg-obsidian border border-white/[0.06]'}">${s.id}</div>
+                            <p class="flex-1 text-sm">${esc(s.punchline)}</p>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            ${hasVoted ? `
+                <div class="glow-card glow-card-green p-6 text-center">
+                    <div class="w-14 h-14 rounded-full bg-oracle/10 border border-oracle/30 flex items-center justify-center mx-auto mb-2">
+                        <span class="text-oracle font-mono text-xl">OK</span>
+                    </div>
+                    <p class="text-oracle font-display font-bold text-lg tracking-wider">VOTE CAST</p>
+                    <p class="text-gray-500 mt-2 text-xs font-mono tracking-wider">AWAITING OTHER PLAYERS</p>
+                </div>
+            ` : `
+                <p class="text-center text-[10px] font-mono text-gray-600 tracking-wider">TAP A PUNCHLINE TO VOTE — CANNOT VOTE FOR YOUR OWN</p>
+            `}
+            ${state.isHost ? `
+                <button onclick="advancePhase()" class="btn btn-ghost w-full py-2 rounded-xl text-xs">SKIP TO RESULTS</button>
+            ` : ''}
         </div>
     `;
 }
@@ -1766,22 +1991,23 @@ function renderBetting() {
     const r = state.room;
     const humanBets = r.bets?.filter(b => !r.players.find(p => p.name === b.playerName)?.isBot).length || 0;
     const humanPlayers = r.players.filter(p => !p.isBot).length;
-    
+
     return `
         <div class="space-y-4">
             ${renderTimer()}
             <div class="glow-card p-3 flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <span class="text-purple-400 font-bold">🎯 Round ${r.currentRound} — BETTING</span>
-                    ${r.weeklyTheme ? `<span class="text-xs bg-purple-600/40 px-2 py-0.5 rounded-full">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
+                    <span class="font-mono text-consensus text-xs font-bold tracking-wider">ROUND ${r.currentRound} — BETTING</span>
+                    ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
                 </div>
-                <span class="text-gray-400">${humanBets}/${humanPlayers} voted</span>
+                <span class="text-[10px] font-mono text-gray-500 tracking-wider">${humanBets}/${humanPlayers} BET</span>
             </div>
             <div class="glow-card p-2.5">
-                <p class="text-sm text-gray-400 truncate">"${r.jokePrompt}"</p>
+                <p class="text-sm text-gray-400 truncate">"${esc(r.jokePrompt)}"</p>
+                ${r.promptSource?.type === 'community' ? `<p class="text-[10px] font-mono text-oracle mt-1 tracking-wider">COMMUNITY PROMPT by ${esc(r.promptSource.author)}</p>` : ''}
             </div>
-            <p class="text-center text-lg font-semibold">🔮 Which will the AI pick as funniest?</p>
-            <p class="text-center text-xs text-red-400">⚠️ Wrong predictions lose your bet!</p>
+            <p class="text-center text-sm font-display font-bold tracking-wider">PREDICT THE ORACLE'S PICK</p>
+            <p class="text-center text-[10px] font-mono text-red-400/80 tracking-wider">WRONG PREDICTIONS COST YOUR BET</p>
             <div class="space-y-3">
                 ${r.submissions.map(s => {
                     const rxForThis = (r.reactions||[]).filter(rx => rx.submissionId === s.id);
@@ -1789,13 +2015,13 @@ function renderBetting() {
                     rxForThis.forEach(rx => { emojiCounts[rx.emoji] = (emojiCounts[rx.emoji]||0) + 1; });
                     return `
                     <div class="relative">
-                        <div onclick="selectSubmission(${s.id})" class="glow-card p-4 cursor-pointer hover:bg-white/5 ${state.selectedSubmission===s.id?'card-selected':''}">
+                        <div onclick="selectSubmission(${s.id})" class="glow-card p-4 cursor-pointer hover:bg-white/[0.03] ${state.selectedSubmission===s.id?'card-selected':''}">
                             <div class="flex items-start gap-3">
-                                <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold ${state.selectedSubmission===s.id?'bg-purple-500':'bg-slate-700'}">#${s.id}</div>
-                                <p class="flex-1">${s.punchline}</p>
+                                <div class="w-10 h-10 rounded-full flex items-center justify-center font-mono font-bold text-sm ${state.selectedSubmission===s.id?'bg-wit text-void':'bg-obsidian border border-white/[0.06]'}">${s.id}</div>
+                                <p class="flex-1 text-sm">${esc(s.punchline)}</p>
                             </div>
                             ${Object.keys(emojiCounts).length > 0 ? `
-                                <div class="flex gap-1 mt-2 ml-13">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-slate-700/80 px-1.5 py-0.5 rounded-full">${e}${c>1?' x'+c:''}</span>`).join('')}</div>
+                                <div class="flex gap-1 mt-2 ml-13">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-obsidian px-1.5 py-0.5 rounded-full border border-white/[0.04]">${e}${c>1?' x'+c:''}</span>`).join('')}</div>
                             ` : ''}
                         </div>
                         <div class="flex gap-1 mt-1 justify-end">
@@ -1806,24 +2032,39 @@ function renderBetting() {
                     </div>
                 `}).join('')}
             </div>
-            ${!state.hasBet ? `
-                <div class="glow-card p-4">
-                    <div class="flex items-center gap-3 mb-3">
-                        <span class="text-gray-400">Bet:</span>
-                        <input type="range" min="10" max="100" step="10" value="${state.betAmount}" oninput="state.betAmount=+this.value;render()" class="flex-1 accent-purple-500">
-                        <span class="text-xl font-bold text-yellow-400">${state.betAmount} XP</span>
-                    </div>
-                    <button onclick="placeBet()" ${!state.selectedSubmission?'disabled':''} class="btn btn-play w-full py-3 rounded-xl font-bold text-white">🎲 Bet on #${state.selectedSubmission||'?'}</button>
-                </div>
-            ` : `
-                <div class="glow-card glow-card-green p-6 text-center">
-                    <div class="text-5xl mb-3">🎲</div>
-                    <p class="text-purple-400 font-bold text-xl">Bet Placed!</p>
-                    <p class="text-gray-400 mt-2">Waiting for timer...</p>
-                </div>
-            `}
+            ${(() => {
+                const budget = r.betBudgets?.[state.playerName] ?? 300;
+                const sliderMax = Math.min(100, budget);
+                if (state.betAmount > sliderMax) state.betAmount = sliderMax;
+                if (state.hasBet) return `
+                    <div class="glow-card glow-card-green p-6 text-center">
+                        <div class="w-14 h-14 rounded-full bg-consensus/10 border border-consensus/30 flex items-center justify-center mx-auto mb-3">
+                            <span class="text-consensus font-mono text-xl">OK</span>
+                        </div>
+                        <p class="text-consensus font-display font-bold text-lg tracking-wider">BET PLACED</p>
+                        <p class="text-gray-500 mt-2 text-xs font-mono tracking-wider">BUDGET: <span class="text-consensus font-bold">${budget} XP</span></p>
+                    </div>`;
+                if (budget <= 0) return `
+                    <div class="glow-card p-6 text-center">
+                        <p class="text-gray-500 font-display font-bold tracking-wider">NO BETS REMAINING</p>
+                        <p class="text-[10px] font-mono text-gray-600 mt-1 tracking-wider">BUDGET DEPLETED — OBSERVING</p>
+                    </div>`;
+                return `
+                    <div class="glow-card p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[10px] font-mono text-gray-600 tracking-widest">GAME BUDGET</span>
+                            <span class="text-sm font-mono font-bold ${budget <= 50 ? 'text-red-400' : 'text-consensus'}">${budget} XP</span>
+                        </div>
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-[10px] font-mono text-gray-500 tracking-wider">BET</span>
+                            <input type="range" min="10" max="${sliderMax}" step="10" value="${state.betAmount}" oninput="state.betAmount=+this.value;render()" class="flex-1" style="accent-color:#A855F7">
+                            <span class="text-xl font-mono font-bold text-consensus">${state.betAmount}</span>
+                        </div>
+                        <button onclick="placeBet()" ${!state.selectedSubmission?'disabled':''} class="btn btn-play w-full py-3 rounded-xl font-bold text-sm">BET ON #${state.selectedSubmission||'?'}</button>
+                    </div>`;
+            })()}
             ${state.isHost && r.bets.length >= 1 ? `
-                <button onclick="advancePhase()" class="btn btn-ghost w-full py-2 rounded-xl">⏭️ Skip to Judging</button>
+                <button onclick="advancePhase()" class="btn btn-ghost w-full py-2 rounded-xl text-xs">SKIP TO JUDGING</button>
             ` : ''}
         </div>
     `;
@@ -1857,17 +2098,18 @@ function renderJudging() {
 
     return `
         <div class="glow-card p-6 text-center" style="border-radius:20px">
-            <div class="w-24 h-24 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 ${consensusReached ? '' : 'animate-glow'}">
-                <span class="text-5xl">${consensusReached ? '✨' : '👁️'}</span>
+            <div class="w-24 h-24 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 ${consensusReached ? '' : 'animate-glow processing'}">
+                <span class="text-4xl" style="filter:brightness(1.5)">${consensusReached ? '✨' : '👁'}</span>
             </div>
-            <h2 class="text-2xl font-bold mb-2">${consensusReached ? 'Consensus Reached!' : 'The Oracle Judges...'}</h2>
-            <p class="text-purple-400 text-sm mb-1">⛓️ GenLayer Optimistic Democracy</p>
-            <p class="text-xs text-gray-500 mb-4">Multiple AI validators independently evaluate jokes, then reach consensus on-chain</p>
+            <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-1">${consensusReached ? 'FINALIZED' : 'PROCESSING'}</p>
+            <h2 class="text-2xl font-display font-bold mb-2 tracking-wider">${consensusReached ? 'CONSENSUS REACHED' : 'ORACLE JUDGING'}</h2>
+            <p class="text-wit text-xs font-mono mb-1 tracking-wider">GENLAYER OPTIMISTIC DEMOCRACY</p>
+            <p class="text-[10px] font-mono text-gray-600 mb-4 tracking-wider">INDEPENDENT VALIDATORS EVALUATE — CONSENSUS ON-CHAIN</p>
 
             <div class="glass-bright rounded-xl p-4 mb-4">
                 <div class="flex justify-between items-center mb-3">
-                    <span class="text-sm text-gray-400">Validators Voting</span>
-                    <span class="text-sm font-bold ${votedCount >= 3 ? 'text-green-400' : 'text-yellow-400'}">${votedCount}/5 voted</span>
+                    <span class="text-[10px] font-mono text-gray-500 tracking-widest">VALIDATORS</span>
+                    <span class="text-xs font-mono font-bold ${votedCount >= 3 ? 'text-green-400' : 'text-consensus'}">${votedCount}/5</span>
                 </div>
 
                 <div class="grid grid-cols-5 gap-2 mb-4">
@@ -1879,34 +2121,33 @@ function renderJudging() {
                         return `
                             <div class="flex flex-col items-center relative">
                                 ${isThinking ? `
-                                    <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-700/90 px-2 py-0.5 rounded-full text-[9px] text-gray-300 whitespace-nowrap animate-pulse border border-white/5">
+                                    <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-obsidian px-2 py-0.5 rounded-full text-[9px] text-gray-300 whitespace-nowrap animate-pulse border border-white/[0.06]">
                                         ${thought}
                                     </div>
                                 ` : ''}
-                                <div class="w-12 h-12 rounded-full ${hasVoted ? v.color : 'bg-slate-700'} flex items-center justify-center text-xl mb-1 transition-all duration-500 ${hasVoted ? 'scale-110 shadow-lg' : isThinking ? 'animate-glow' : 'opacity-50'}">
+                                <div class="w-12 h-12 rounded-full ${hasVoted ? v.color : 'bg-obsidian border border-white/[0.06]'} flex items-center justify-center text-xl mb-1 transition-all duration-500 ${hasVoted ? 'scale-110 shadow-lg' : isThinking ? 'animate-glow' : 'opacity-50'}">
                                     ${hasVoted ? '✓' : v.icon}
                                 </div>
-                                <span class="text-xs ${hasVoted ? 'text-white' : 'text-gray-500'}">${v.name}</span>
-                                <span class="text-[10px] text-gray-600">${v.taste}</span>
-                                ${hasVoted && vote ? `<span class="text-xs text-yellow-400">#${vote}</span>` : ''}
+                                <span class="text-[10px] font-mono ${hasVoted ? 'text-white' : 'text-gray-600'}">${v.name}</span>
+                                <span class="text-[9px] text-gray-700 hidden sm:block">${v.taste}</span>
+                                ${hasVoted && vote ? `<span class="text-[10px] font-mono text-consensus">#${vote}</span>` : ''}
                             </div>
                         `;
                     }).join('')}
                 </div>
 
-                <div class="h-2.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div class="h-full transition-all duration-500 rounded-full ${votedCount >= 3 ? 'bg-green-500' : 'bg-purple-500'}"
+                <div class="h-1.5 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
+                    <div class="h-full transition-all duration-500 rounded-full ${votedCount >= 3 ? 'bg-green-500' : 'bg-wit'}"
                          style="width: ${(votedCount / 5) * 100}%"></div>
                 </div>
-                <p class="text-xs mt-2 ${votedCount >= 3 ? 'text-green-400' : 'text-gray-400'}">
-                    ${votedCount >= 3 ? '✓ Majority consensus achieved!' : 'Waiting for majority (3/5)...'}
+                <p class="text-[10px] font-mono mt-2 tracking-wider ${votedCount >= 3 ? 'text-green-400' : 'text-gray-500'}">
+                    ${votedCount >= 3 ? 'MAJORITY CONSENSUS ACHIEVED' : 'AWAITING MAJORITY (3/5)'}
                 </p>
             </div>
 
             ${votedCount > 0 ? `
-            <!-- Vote Distribution Chart -->
             <div class="glass-bright rounded-xl p-3 mb-4">
-                <p class="text-xs text-gray-500 mb-2 text-left">Vote Distribution</p>
+                <p class="text-[10px] font-mono text-gray-600 mb-2 text-left tracking-widest">VOTE DISTRIBUTION</p>
                 <div class="space-y-1.5">
                     ${submissions.map((s, idx) => {
                         const sid = s.id || (idx + 1);
@@ -1915,11 +2156,11 @@ function renderJudging() {
                         const isLeading = count === maxVotes && count > 0;
                         return `
                             <div class="flex items-center gap-2">
-                                <span class="text-xs text-gray-400 w-6 text-right">#${sid}</span>
-                                <div class="flex-1 h-4 bg-slate-800 rounded-full overflow-hidden">
-                                    <div class="h-full rounded-full transition-all duration-700 ${isLeading ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 'bg-purple-500/60'}" style="width:${pct}%"></div>
+                                <span class="text-[10px] font-mono text-gray-500 w-6 text-right">#${sid}</span>
+                                <div class="flex-1 h-3 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
+                                    <div class="h-full rounded-full transition-all duration-700 ${isLeading ? 'bg-gradient-to-r from-consensus to-consensus-dim' : 'bg-wit/40'}" style="width:${pct}%"></div>
                                 </div>
-                                <span class="text-xs ${isLeading ? 'text-yellow-400 font-bold' : 'text-gray-500'} w-8">${count}v</span>
+                                <span class="text-[10px] font-mono ${isLeading ? 'text-consensus font-bold' : 'text-gray-600'} w-6">${count}v</span>
                             </div>
                         `;
                     }).join('')}
@@ -1928,41 +2169,40 @@ function renderJudging() {
             ` : ''}
 
             <div class="glass-bright rounded-xl p-3 text-left max-h-32 overflow-y-auto">
-                <p class="text-xs text-gray-500 mb-2">Live Validator Feed:</p>
-                <div id="validator-feed" class="space-y-1 text-xs">
+                <p class="text-[10px] font-mono text-gray-600 mb-2 tracking-widest">LIVE VALIDATOR FEED</p>
+                <div id="validator-feed" class="space-y-1 text-xs font-mono">
                     ${state.validatorVotes?.map((vote, i) => `
-                        <div class="flex items-center gap-2 text-gray-300 animate-fadeIn">
-                            <span class="text-green-400">✓</span>
-                            <span>${validators[i].name} voted for submission #${vote}</span>
+                        <div class="flex items-center gap-2 text-gray-400 animate-fadeIn">
+                            <span class="text-green-400">OK</span>
+                            <span>${validators[i].name} → #${vote}</span>
                         </div>
-                    `).join('') || '<div class="text-gray-500">Initializing validators...</div>'}
+                    `).join('') || '<div class="text-gray-600">Initializing validators...</div>'}
                     ${consensusReached ? `
-                        <div class="flex items-center gap-2 text-green-400 font-bold mt-2 animate-fadeIn">
-                            <span>⛓️</span>
-                            <span>Consensus reached! Recording on-chain...</span>
+                        <div class="flex items-center gap-2 text-green-400 font-bold mt-2 animate-fadeIn tracking-wider">
+                            <span>TX</span>
+                            <span>CONSENSUS — RECORDING ON-CHAIN</span>
                         </div>
                     ` : ''}
                 </div>
             </div>
 
             ${consensusReached ? `
-            <!-- Chain Confirmation -->
             <div class="mt-4 glass-bright rounded-xl p-3 animate-scaleIn">
                 <div class="flex items-center justify-center gap-3">
                     <div class="flex items-center gap-1">
-                        <div class="w-3 h-3 rounded-sm bg-purple-500 animate-pulse"></div>
-                        <div class="w-6 h-0.5 bg-purple-500/50"></div>
-                        <div class="w-3 h-3 rounded-sm bg-purple-500 animate-pulse" style="animation-delay:0.2s"></div>
+                        <div class="w-3 h-3 rounded-sm bg-wit animate-pulse"></div>
+                        <div class="w-6 h-0.5 bg-wit/50"></div>
+                        <div class="w-3 h-3 rounded-sm bg-wit animate-pulse" style="animation-delay:0.2s"></div>
                         <div class="w-6 h-0.5 bg-green-500/50"></div>
                         <div class="w-3 h-3 rounded-sm bg-green-500 animate-pulse" style="animation-delay:0.4s"></div>
                     </div>
                 </div>
-                <p class="text-[10px] text-green-400 mt-1.5 text-center">Block confirmed &middot; Tx finalized on GenLayer</p>
+                <p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider">BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p>
             </div>
             ` : `
-            <div class="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
+            <div class="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-600 tracking-wider">
                 <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span>Connected to GenLayer Intelligent Contracts</span>
+                <span>CONNECTED TO GENLAYER INTELLIGENT CONTRACTS</span>
             </div>
             `}
         </div>
@@ -1979,14 +2219,20 @@ function renderRoundResults() {
     const judgingMethod = result.judgingMethod || r.lastJudgingMethod || 'ai';
     const isOnChain = judgingMethod === 'genlayer_optimistic_democracy';
     const isAI = judgingMethod === 'claude_api';
-    
+    const isAudienceVote = judgingMethod === 'audience_vote' || judgingMethod === 'audience_vote_ai_tiebreak';
+
     const txHash = result.txHash || null;
     const explorerUrl = txHash ? `https://explorer-bradbury.genlayer.com/transactions/${txHash}` : null;
 
+    const isCoinFlip = judgingMethod === 'coin_flip';
     const methodBadge = isOnChain
         ? `<span class="text-xs bg-green-600 px-2 py-1 rounded-full font-medium">⛓️ On-Chain Verified (Bradbury Testnet)</span>${txHash ? `<a href="${explorerUrl}" target="_blank" class="block text-[10px] text-green-400/70 mt-1 hover:underline">tx: ${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}</a>` : ''}`
+        : isAudienceVote
+        ? `<span class="text-xs bg-cyan-600 px-2 py-1 rounded-full font-medium">🗳️ Audience Vote${result.totalVotes ? ` (${result.totalVotes} votes)` : ''}${judgingMethod === 'audience_vote_ai_tiebreak' ? ' + AI Tiebreak' : ''}</span>`
         : isAI
-        ? '<span class="text-xs bg-purple-600 px-2 py-1 rounded-full font-medium">🤖 AI Judged (Simulated OD)</span>'
+        ? '<span class="text-xs bg-purple-600 px-2 py-1 rounded-full font-medium">🤖 AI Judged</span>'
+        : isCoinFlip
+        ? '<span class="text-xs bg-amber-600 px-2 py-1 rounded-full font-medium">🎲 Oracle Coin Flip — couldn\'t decide!</span>'
         : '<span class="text-xs bg-gray-600 px-2 py-1 rounded-full font-medium">🎲 Fallback</span>';
     
     // Get winner ID
@@ -2016,19 +2262,18 @@ function renderRoundResults() {
         <div class="space-y-4">
             <!-- Winner Card -->
             <div class="glow-card glow-card-gold p-6 text-center">
-                <div class="text-5xl mb-3">👑</div>
-                <p class="text-yellow-400 text-sm">Round ${result.round} Winner!</p>
-                <p class="text-xl font-bold my-2">"${result.winningPunchline}"</p>
-                <p class="text-gray-400">by <span class="text-white font-bold">${result.winnerName}</span></p>
-                <p class="text-green-400 mt-1">+100 XP</p>
+                <p class="text-[10px] font-mono text-consensus/60 tracking-[0.3em] mb-2">ROUND ${result.round} WINNER</p>
+                <p class="text-xl font-display font-bold my-2">"${esc(result.winningPunchline)}"</p>
+                <p class="text-gray-400 text-sm font-mono">${esc(result.winnerName)}</p>
+                <p class="text-green-400 mt-1 font-mono text-sm font-bold">+100 XP</p>
                 <div class="mt-2">${methodBadge}</div>
             </div>
 
             <!-- Optimistic Democracy Summary -->
             <div class="glow-card glow-card-green p-4">
                 <div class="flex items-center justify-between mb-3">
-                    <span class="text-sm font-bold text-purple-400">⛓️ Optimistic Democracy Result</span>
-                    <span class="text-xs text-green-400">Consensus Reached</span>
+                    <span class="text-xs font-mono font-bold text-wit tracking-wider">OPTIMISTIC DEMOCRACY</span>
+                    <span class="text-[10px] font-mono text-green-400 tracking-wider">CONSENSUS</span>
                 </div>
                 <div class="flex justify-center gap-3 mb-3">
                     ${validators.map((v, i) => {
@@ -2036,58 +2281,58 @@ function renderRoundResults() {
                         const agreed = vote === winnerId;
                         return `
                             <div class="flex flex-col items-center">
-                                <div class="w-10 h-10 rounded-full ${agreed ? 'bg-green-500' : 'bg-orange-500'} flex items-center justify-center text-sm font-bold shadow-lg">
-                                    ${agreed ? '✓' : '✗'}
+                                <div class="w-10 h-10 rounded-full ${agreed ? 'bg-green-500' : 'bg-orange-500'} flex items-center justify-center text-sm font-mono font-bold shadow-lg">
+                                    ${agreed ? 'OK' : 'X'}
                                 </div>
-                                <span class="text-xs text-gray-400 mt-1">${v.split('-')[0]}</span>
+                                <span class="text-[10px] font-mono text-gray-500 mt-1">${v.split('-')[0]}</span>
                             </div>
                         `;
                     }).join('')}
                 </div>
-                <p class="text-xs text-center text-green-400 font-medium">
-                    ✓ ${agreedCount}/5 validators agreed on winner
+                <p class="text-[10px] font-mono text-center text-green-400 tracking-wider">
+                    ${agreedCount}/5 VALIDATORS AGREED
                 </p>
             </div>
 
             ${result.aiCommentary?.winnerComment ? `
                 <div class="glow-card glow-card-amber p-4">
-                    <p class="text-xs text-gray-400 mb-1">The Oracle says:</p>
-                    <p class="text-yellow-300 italic">"${esc(result.aiCommentary.winnerComment)}"</p>
+                    <p class="text-[10px] font-mono text-gray-600 mb-1 tracking-widest">ORACLE COMMENTARY</p>
+                    <p class="text-consensus/80 italic text-sm">"${esc(result.aiCommentary.winnerComment)}"</p>
                 </div>
             ` : ''}
 
             ${result.isComeback ? `
                 <div class="glow-card glow-card-cyan p-4 text-center animate-comeback">
-                    <span class="text-2xl font-bold text-cyan-400">⚡ COMEBACK! ⚡</span>
-                    <p class="text-sm text-gray-400 mt-1">${result.winnerName} came from last place!</p>
+                    <span class="text-lg font-display font-bold text-oracle tracking-wider">COMEBACK</span>
+                    <p class="text-xs font-mono text-gray-500 mt-1">${esc(result.winnerName)} from last place</p>
                 </div>
             ` : ''}
             ${result.streak >= 2 ? `
                 <div class="glow-card glow-card-amber p-3 text-center ${result.streak >= 3 ? 'animate-screenShake' : ''}">
-                    <span class="text-lg font-bold streak-fire text-orange-400">
-                        ${'🔥'.repeat(Math.min(result.streak, 5))} ${result.streak >= 3 ? 'UNSTOPPABLE!' : result.streak + '-WIN STREAK!'}
+                    <span class="text-sm font-mono font-bold streak-fire text-orange-400 tracking-wider">
+                        ${'🔥'.repeat(Math.min(result.streak, 5))} ${result.streak >= 3 ? 'UNSTOPPABLE' : result.streak + '-WIN STREAK'}
                     </span>
                 </div>
             ` : ''}
 
             <!-- Standings -->
             <div class="glow-card p-4">
-                <h3 class="font-bold mb-3">📊 Standings</h3>
+                <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-3">STANDINGS</p>
                 <div class="space-y-2">
                     ${[...r.players].sort((a,b)=>b.score-a.score).map((p,i) => {
                         const change = result.scores?.[p.name] || 0;
                         const streakCount = r.streaks?.[p.name] || 0;
                         return `
-                        <div class="flex justify-between items-center p-2.5 ${p.name===state.playerName?'bg-purple-500/20 ring-1 ring-purple-500':'bg-slate-800/60'} rounded-xl">
+                        <div class="flex justify-between items-center p-2.5 ${p.name===state.playerName?'bg-wit/10 border border-wit/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
                             <div class="flex items-center gap-2">
-                                <span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
-                                <span>${p.name}</span>
-                                ${p.isBot?'<span class="text-xs bg-slate-600 px-1.5 py-0.5 rounded-full">BOT</span>':''}
+                                <span class="text-sm font-mono">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
+                                <span class="text-sm">${esc(p.name)}</span>
+                                ${p.isBot?'<span class="text-[9px] font-mono text-oracle/60 bg-oracle/10 px-1 py-0.5 rounded">BOT</span>':''}
                                 ${streakCount >= 2 ? '<span class="text-xs">' + '🔥'.repeat(Math.min(streakCount, 3)) + '</span>' : ''}
                             </div>
                             <div class="flex items-center gap-2">
-                                ${change > 0 ? `<span class="text-green-400 text-xs font-bold">+${change}</span>` : change < 0 ? `<span class="text-red-400 text-xs font-bold">${change}</span>` : ''}
-                                <span class="text-yellow-400 font-bold">${p.score} XP</span>
+                                ${change > 0 ? `<span class="text-green-400 text-[10px] font-mono font-bold">+${change}</span>` : change < 0 ? `<span class="text-red-400 text-[10px] font-mono font-bold">${change}</span>` : ''}
+                                <span class="text-consensus font-mono font-bold text-sm">${p.score}</span>
                             </div>
                         </div>
                     `}).join('')}
@@ -2096,48 +2341,48 @@ function renderRoundResults() {
 
             <!-- Appeal Mechanic -->
             ${!result.appealed && !state.appealInProgress ? `
-                <button onclick="appealVerdict()" class="btn w-full py-3 rounded-xl font-bold text-white" style="background:linear-gradient(135deg,#b91c1c,#7f1d1d);box-shadow:0 4px 20px rgba(185,28,28,0.3)">
-                    ⚖️ Appeal Verdict (50 XP) — Challenge the Oracle!
+                <button onclick="appealVerdict()" class="btn w-full py-3 rounded-xl font-bold text-white text-xs" style="background:linear-gradient(135deg,#b91c1c,#7f1d1d);box-shadow:0 4px 20px rgba(185,28,28,0.3)">
+                    APPEAL VERDICT (50 XP) — CHALLENGE THE ORACLE
                 </button>
             ` : ''}
             ${state.appealInProgress ? `
                 <div class="glow-card glow-card-red p-6 text-center animate-glow">
-                    <div class="text-4xl mb-3 animate-float">⚖️</div>
-                    <p class="text-xl font-bold text-red-400">Democracy is Re-evaluating...</p>
-                    <p class="text-sm text-gray-400 mt-1">10 validators now judging with extra scrutiny</p>
+                    <div class="w-16 h-16 oracle-eye rounded-full flex items-center justify-center mx-auto mb-3 animate-float">
+                        <span class="text-2xl">⚖</span>
+                    </div>
+                    <p class="text-lg font-display font-bold text-red-400 tracking-wider">RE-EVALUATING</p>
+                    <p class="text-xs font-mono text-gray-500 mt-1 tracking-wider">10 VALIDATORS — EXTRA SCRUTINY</p>
                     <div class="spinner mx-auto mt-3"></div>
                 </div>
             ` : ''}
             ${state.appealResult ? `
                 <div class="glow-card ${state.appealResult.overturned ? 'glow-card-green' : 'glow-card-red'} p-6 text-center">
-                    <div class="text-4xl mb-2">${state.appealResult.overturned ? '🔄' : '🔒'}</div>
-                    <p class="text-xl font-bold ${state.appealResult.overturned ? 'text-green-400' : 'text-red-400'}">
-                        ${state.appealResult.overturned ? 'OVERTURNED! New winner!' : 'UPHELD! The Oracle stands.'}
+                    <p class="text-lg font-display font-bold tracking-wider ${state.appealResult.overturned ? 'text-green-400' : 'text-red-400'}">
+                        ${state.appealResult.overturned ? 'OVERTURNED' : 'UPHELD'}
                     </p>
-                    ${state.appealResult.overturned ? `<p class="text-gray-400 text-sm mt-1">50 XP refunded</p>` : `<p class="text-red-400 text-sm mt-1">50 XP lost</p>`}
+                    <p class="text-xs font-mono text-gray-500 mt-1">${state.appealResult.overturned ? '50 XP refunded' : '50 XP lost'}</p>
                     ${state.appealResult.onChain ? `
-                        <p class="text-[10px] text-green-400/70 mt-2">⛓️ Verified on GenLayer Bradbury Testnet</p>
-                        ${state.appealResult.txHash ? `<a href="https://explorer-bradbury.genlayer.com/transactions/${state.appealResult.txHash}" target="_blank" class="text-[10px] text-green-400/50 hover:underline">tx: ${state.appealResult.txHash.substring(0, 10)}...</a>` : ''}
+                        <p class="text-[10px] font-mono text-green-400/70 mt-2 tracking-wider">VERIFIED ON GENLAYER BRADBURY TESTNET</p>
+                        ${state.appealResult.txHash ? `<a href="https://explorer-bradbury.genlayer.com/transactions/${state.appealResult.txHash}" target="_blank" class="text-[10px] font-mono text-green-400/50 hover:underline">tx: ${state.appealResult.txHash.substring(0, 10)}...</a>` : ''}
                     ` : ''}
                 </div>
             ` : ''}
             ${result.appealed && !state.appealResult ? `
                 <div class="glow-card p-3 text-center">
-                    <p class="text-sm text-gray-500">${result.appealResult === 'overturned' ? '🔄 Verdict was overturned by appeal' : '🔒 Appeal upheld — Oracle stands'}</p>
+                    <p class="text-xs font-mono text-gray-500 tracking-wider">${result.appealResult === 'overturned' ? 'VERDICT OVERTURNED BY APPEAL' : 'APPEAL UPHELD — ORACLE STANDS'}</p>
                 </div>
             ` : ''}
 
-            <!-- Share Buttons -->
             <div class="flex gap-2">
-                <button id="challenge-btn" onclick="createChallengeLink()" class="btn btn-ghost flex-1 py-2.5 rounded-xl text-sm font-bold text-cyan-400 border-cyan-500/30">Challenge a Friend</button>
-                <button onclick="shareRoundResult()" class="btn btn-primary flex-1 py-2.5 rounded-xl text-sm font-bold text-white">Share Image</button>
+                <button id="challenge-btn" onclick="createChallengeLink()" class="btn btn-ghost flex-1 py-2.5 rounded-xl text-xs text-oracle">CHALLENGE</button>
+                <button onclick="shareRoundResult()" class="btn btn-primary flex-1 py-2.5 rounded-xl text-xs text-white">SHARE</button>
             </div>
 
             ${state.isHost ? `
-                <button onclick="nextRound()" class="btn btn-primary w-full py-4 rounded-xl font-bold text-lg text-white">
-                    ${r.currentRound >= r.totalRounds ? '🏆 Final Results' : '➡️ Next Round'}
+                <button onclick="nextRound()" class="btn btn-play w-full py-4 rounded-xl font-bold text-sm">
+                    ${r.currentRound >= r.totalRounds ? 'FINAL RESULTS' : 'NEXT ROUND'}
                 </button>
-            ` : '<div class="text-center py-4 text-gray-400"><div class="spinner mx-auto mb-2"></div>Waiting for host...</div>'}
+            ` : '<div class="text-center py-4 text-gray-500 font-mono text-xs tracking-wider"><div class="spinner mx-auto mb-2"></div>WAITING FOR HOST</div>'}
         </div>
     `;
 }
@@ -2167,36 +2412,36 @@ function renderFinalResults() {
 
     return `
         <div class="space-y-4">
-            <div class="text-center py-4">
-                <div class="text-7xl mb-3">${isWinner?'🎉':'🏆'}</div>
-                <h2 class="text-3xl font-bold"><span class="gradient-text">Game Over!</span></h2>
+            <div class="text-center py-6">
+                <h2 class="text-3xl font-display font-bold tracking-wider"><span class="gradient-text">GAME COMPLETE</span></h2>
+                <p class="text-[10px] font-mono tracking-widest text-gray-500 mt-1 uppercase">${r.totalRounds} rounds played</p>
             </div>
             <div class="glow-card glow-card-gold p-6 text-center">
-                <p class="text-yellow-400 text-sm font-medium">Winner!</p>
-                <p class="text-3xl font-bold">${esc(winner.name)}</p>
-                <p class="text-2xl text-yellow-400 mt-1">${winner.score} XP</p>
-                ${winner.isBot ? '<p class="text-gray-400 text-sm">(Bot)</p>' : ''}
+                <p class="text-[10px] font-mono tracking-widest text-consensus uppercase">Winner</p>
+                <p class="text-3xl font-display font-bold mt-1">${esc(winner.name)}</p>
+                <p class="text-2xl text-consensus font-mono font-bold mt-1">${winner.score} XP</p>
+                ${winner.isBot ? '<p class="text-gray-500 text-[10px] font-mono tracking-wider uppercase mt-1">Autonomous Agent</p>' : ''}
             </div>
 
             <!-- Session Recap -->
             <div class="glow-card p-4">
-                <h3 class="font-bold mb-3 text-center text-purple-400">📊 Session Recap</h3>
+                <h3 class="font-display font-bold mb-3 text-center text-wit tracking-wider uppercase text-sm">Session Recap</h3>
                 <div class="grid grid-cols-4 gap-3 text-center">
-                    <div class="stat-count" style="animation-delay:0.1s">
-                        <p class="text-2xl font-bold text-yellow-400">${totalXP}</p>
-                        <p class="text-xs text-gray-400">XP Earned</p>
+                    <div class="stat-count bg-obsidian border border-white/[0.04] rounded-xl p-2" style="animation-delay:0.1s">
+                        <p class="text-2xl font-mono font-bold text-consensus">${totalXP}</p>
+                        <p class="text-[10px] font-mono tracking-wider text-gray-500">XP EARNED</p>
                     </div>
-                    <div class="stat-count" style="animation-delay:0.2s">
-                        <p class="text-2xl font-bold text-green-400">${roundsWon}/${r.totalRounds}</p>
-                        <p class="text-xs text-gray-400">Rounds Won</p>
+                    <div class="stat-count bg-obsidian border border-white/[0.04] rounded-xl p-2" style="animation-delay:0.2s">
+                        <p class="text-2xl font-mono font-bold text-green-400">${roundsWon}/${r.totalRounds}</p>
+                        <p class="text-[10px] font-mono tracking-wider text-gray-500">ROUNDS WON</p>
                     </div>
-                    <div class="stat-count" style="animation-delay:0.3s">
-                        <p class="text-2xl font-bold text-blue-400">#${playerRank}</p>
-                        <p class="text-xs text-gray-400">Finish</p>
+                    <div class="stat-count bg-obsidian border border-white/[0.04] rounded-xl p-2" style="animation-delay:0.3s">
+                        <p class="text-2xl font-mono font-bold text-blue-400">#${playerRank}</p>
+                        <p class="text-[10px] font-mono tracking-wider text-gray-500">FINISH</p>
                     </div>
-                    <div class="stat-count" style="animation-delay:0.4s">
-                        <p class="text-2xl font-bold text-purple-400">${gamesToday}</p>
-                        <p class="text-xs text-gray-400">Games Today</p>
+                    <div class="stat-count bg-obsidian border border-white/[0.04] rounded-xl p-2" style="animation-delay:0.4s">
+                        <p class="text-2xl font-mono font-bold text-wit">${gamesToday}</p>
+                        <p class="text-[10px] font-mono tracking-wider text-gray-500">GAMES TODAY</p>
                     </div>
                 </div>
                 ${bestJoke ? `<p class="text-center text-sm text-gray-400 mt-3 italic">Best joke: "${esc(bestJoke)}"</p>` : ''}
@@ -2204,48 +2449,48 @@ function renderFinalResults() {
 
             <!-- Profile Update -->
             ${state.profile ? `
-                <div class="glow-card p-4">
+                <div class="glow-card p-4 bg-obsidian border border-white/[0.04]">
                     <div class="flex items-center gap-3 mb-2">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center font-bold shadow-lg shadow-purple-500/20">${state.profile.level}</div>
+                        <div class="w-10 h-10 oracle-eye rounded-full flex items-center justify-center font-mono font-bold text-sm">${state.profile.level}</div>
                         <div class="flex-1">
-                            <p class="text-sm font-bold">${esc(state.profile.title)}</p>
-                            <div class="h-2.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+                            <p class="text-sm font-display font-bold">${esc(state.profile.title)}</p>
+                            <div class="h-2.5 bg-obsidian rounded-full overflow-hidden mt-1 border border-white/[0.04]">
                                 <div class="h-full xp-bar" style="width:${state.nextLevelXP ? Math.min(100, ((state.profile.lifetimeXP) / state.nextLevelXP) * 100) : 100}%"></div>
                             </div>
                         </div>
-                        <p class="text-yellow-400 font-bold text-sm">${state.profile.lifetimeXP?.toLocaleString()} XP</p>
+                        <p class="text-consensus font-mono font-bold text-sm">${state.profile.lifetimeXP?.toLocaleString()} XP</p>
                     </div>
                 </div>
             ` : ''}
 
             <div class="glow-card p-4">
-                <h3 class="font-bold mb-3">🏅 Final Standings</h3>
+                <h3 class="font-display font-bold mb-3 tracking-wider uppercase text-sm">Final Standings</h3>
                 <div class="space-y-2">
                     ${standings.map((p,i) => `
-                        <div class="flex justify-between items-center p-2.5 ${p.name===state.playerName?'bg-purple-500/20 ring-1 ring-purple-500':i<3?'bg-yellow-500/10 border border-yellow-500/10':'bg-slate-800/60'} rounded-xl">
+                        <div class="flex justify-between items-center p-2.5 ${p.name===state.playerName?'bg-wit/10 border border-wit/20':i<3?'bg-consensus/10 border border-consensus/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
                             <div class="flex items-center gap-2">
-                                <span class="text-lg">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
-                                <span>${esc(p.name)}</span>
-                                ${p.isBot?'<span class="text-xs bg-slate-600 px-1.5 py-0.5 rounded-full">BOT</span>':''}
-                                ${p.name===state.playerName?'<span class="text-xs bg-purple-500 px-1.5 py-0.5 rounded-full">YOU</span>':''}
+                                <span class="font-mono font-bold text-sm ${i===0?'text-consensus':i===1?'text-gray-300':i===2?'text-amber-700':'text-gray-500'}">${i<3?['I','II','III'][i]:'#'+(i+1)}</span>
+                                <span class="font-display">${esc(p.name)}</span>
+                                ${p.isBot?'<span class="text-[10px] font-mono tracking-wider bg-obsidian border border-white/[0.04] px-1.5 py-0.5 rounded-full text-gray-500">BOT</span>':''}
+                                ${p.name===state.playerName?'<span class="text-[10px] font-mono tracking-wider bg-wit/20 border border-wit/30 px-1.5 py-0.5 rounded-full text-wit">YOU</span>':''}
                             </div>
-                            <span class="text-yellow-400 font-bold">${p.score} XP</span>
+                            <span class="text-consensus font-mono font-bold">${p.score} XP</span>
                         </div>
                     `).join('')}
                 </div>
             </div>
-            ${isWinner && !winner.isBot ? '<p class="text-center text-2xl animate-pulse">🎉 You Won! 🎉</p>' : `<p class="text-center text-gray-400">You finished #${playerRank}</p>`}
+            ${isWinner && !winner.isBot ? '<p class="text-center font-display font-bold tracking-wider text-lg text-consensus">VICTORY</p>' : `<p class="text-center text-gray-500 font-mono text-xs tracking-wider uppercase">Finished #${playerRank}</p>`}
 
             <!-- Share Buttons -->
             <div class="grid grid-cols-3 gap-2">
-                <button id="copy-share-btn" onclick="copyShareText(${playerScore},${roundsWon},${r.totalRounds})" class="btn btn-ghost py-3 rounded-xl text-sm font-bold">📋 Copy</button>
-                <button onclick="shareFinalResult()" class="btn btn-primary py-3 rounded-xl text-sm font-bold text-white">🖼️ Share</button>
-                <button onclick="tweetResult(${playerScore},${roundsWon},${r.totalRounds})" class="btn py-3 rounded-xl text-sm font-bold text-white" style="background:linear-gradient(135deg,#0284c7,#0369a1);box-shadow:0 4px 15px rgba(2,132,199,0.3)">🐦 Tweet</button>
+                <button id="copy-share-btn" onclick="copyShareText(${playerScore},${roundsWon},${r.totalRounds})" class="btn btn-ghost py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider">Copy</button>
+                <button onclick="shareFinalResult()" class="btn btn-primary py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white">Share</button>
+                <button onclick="tweetResult(${playerScore},${roundsWon},${r.totalRounds})" class="btn py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white" style="background:linear-gradient(135deg,#0284c7,#0369a1);box-shadow:0 4px 15px rgba(2,132,199,0.3)">Tweet</button>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
-                <button onclick="createRoom('${r.category}',${r.isSinglePlayer})" class="btn btn-play py-4 rounded-xl font-bold text-lg text-white">🔄 Rematch</button>
-                <button onclick="leaveRoom()" class="btn btn-primary py-4 rounded-xl font-bold text-lg text-white">🎮 Play Again</button>
+                <button onclick="createRoom('${r.category}',${r.isSinglePlayer})" class="btn btn-play py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Rematch</button>
+                <button onclick="leaveRoom()" class="btn btn-primary py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Play Again</button>
             </div>
         </div>
     `;
@@ -2259,22 +2504,21 @@ function renderDailyChallenge() {
     if (dc.alreadyPlayed && !dr) {
         return `
             <div class="space-y-4">
-                <button onclick="state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-sm">&larr; Back to Lobby</button>
+                <button onclick="state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-xs">&larr; Back to Lobby</button>
                 <div class="glow-card glow-card-amber p-8 text-center">
-                    <div class="text-6xl mb-4">📅</div>
-                    <h2 class="text-2xl font-bold mb-2">Already Played Today!</h2>
+                    <h2 class="text-2xl font-display font-bold mb-2 tracking-wider uppercase">ALREADY COMPLETED</h2>
                     <p class="text-gray-400">Come back tomorrow for a new challenge.</p>
-                    ${state.profile?.dailyChallengeStreak > 0 ? `<p class="text-orange-400 font-bold mt-3">${'🔥'.repeat(Math.min(state.profile.dailyChallengeStreak,5))} ${state.profile.dailyChallengeStreak}-day streak!</p>` : ''}
-                    <div class="mt-4 text-sm text-gray-500" id="daily-countdown"></div>
+                    ${state.profile?.dailyChallengeStreak > 0 ? `<p class="text-consensus font-mono font-bold mt-3">${state.profile.dailyChallengeStreak}-day streak</p>` : ''}
+                    <div class="mt-4 text-[10px] font-mono tracking-wider text-gray-500 uppercase" id="daily-countdown"></div>
                 </div>
                 ${dc.leaderboard.length > 0 ? `
                     <div class="glow-card p-4">
-                        <h3 class="font-bold mb-3">Today's Leaderboard</h3>
+                        <h3 class="font-display font-bold mb-3 tracking-wider uppercase text-sm">TODAY'S LEADERBOARD</h3>
                         <div class="space-y-2">
                             ${dc.leaderboard.slice(0,10).map((e,i) => `
-                                <div class="flex justify-between items-center p-2.5 ${i<3?'bg-yellow-500/10 border border-yellow-500/10':'bg-slate-800/60'} rounded-xl">
-                                    <span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)} ${esc(e.name)}</span>
-                                    <span class="text-yellow-400 font-bold">${e.score} XP</span>
+                                <div class="flex justify-between items-center p-2.5 ${i<3?'bg-consensus/10 border border-consensus/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
+                                    <span class="font-mono text-sm">${i<3?['I','II','III'][i]:'#'+(i+1)} ${esc(e.name)}</span>
+                                    <span class="text-consensus font-mono font-bold">${e.score} XP</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2286,62 +2530,60 @@ function renderDailyChallenge() {
     if (dr) {
         return `
             <div class="space-y-4">
-                <button onclick="state.screen='lobby';state.dailyResult=null;state.dailyChallenge=null;fetchProfile();render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-sm">&larr; Back to Lobby</button>
+                <button onclick="state.screen='lobby';state.dailyResult=null;state.dailyChallenge=null;fetchProfile();render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-xs">&larr; Back to Lobby</button>
                 <div class="glow-card ${dr.won ? 'glow-card-gold' : ''} p-6 text-center">
-                    <div class="text-5xl mb-3">${dr.won ? '👑' : '😢'}</div>
-                    <h2 class="text-2xl font-bold mb-1">${dr.won ? 'You Won!' : 'Not This Time...'}</h2>
+                    <h2 class="text-2xl font-display font-bold mb-1 tracking-wider uppercase">${dr.won ? 'VICTORY' : 'DEFEATED'}</h2>
                     <p class="text-sm text-gray-400 mb-2">"${esc(dc.prompt)}"</p>
                     <p class="text-lg font-medium">"${esc(dr.winningPunchline)}"</p>
-                    <p class="text-sm text-gray-400">by ${esc(dr.winnerName)}</p>
-                    ${dr.aiCommentary?.winnerComment ? `<p class="text-yellow-300 text-sm mt-2 italic">"${esc(dr.aiCommentary.winnerComment)}"</p>` : ''}
-                    <p class="text-2xl font-bold text-yellow-400 mt-3">+${dr.score} XP</p>
-                    ${dr.streak > 0 ? `<p class="text-orange-400 font-bold mt-1">${'🔥'.repeat(Math.min(dr.streak,5))} ${dr.streak}-day streak!</p>` : ''}
+                    <p class="text-[10px] font-mono tracking-wider text-gray-400 uppercase mt-1">by ${esc(dr.winnerName)}</p>
+                    ${dr.aiCommentary?.winnerComment ? `<p class="text-consensus/80 text-sm mt-2 italic">"${esc(dr.aiCommentary.winnerComment)}"</p>` : ''}
+                    <p class="text-2xl font-display font-bold text-consensus mt-3">+<span class="font-mono">${dr.score}</span> XP</p>
+                    ${dr.streak > 0 ? `<p class="text-consensus font-mono font-bold mt-1">${dr.streak}-day streak</p>` : ''}
                 </div>
                 ${dr.leaderboard?.length > 0 ? `
                     <div class="glow-card p-4">
-                        <h3 class="font-bold mb-3">Today's Leaderboard</h3>
+                        <h3 class="font-display font-bold mb-3 tracking-wider uppercase text-sm">TODAY'S LEADERBOARD</h3>
                         <div class="space-y-2">
                             ${dr.leaderboard.slice(0,10).map((e,i) => `
-                                <div class="flex justify-between items-center p-2.5 ${e.name===state.playerName?'bg-purple-500/20 ring-1 ring-purple-500':i<3?'bg-yellow-500/10 border border-yellow-500/10':'bg-slate-800/60'} rounded-xl">
-                                    <span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)} ${esc(e.name)}</span>
-                                    <span class="text-yellow-400 font-bold">${e.score} XP</span>
+                                <div class="flex justify-between items-center p-2.5 ${e.name===state.playerName?'bg-wit/10 border border-wit/20':i<3?'bg-consensus/10 border border-consensus/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
+                                    <span class="font-mono text-sm">${i<3?['I','II','III'][i]:'#'+(i+1)} ${esc(e.name)}</span>
+                                    <span class="text-consensus font-mono font-bold">${e.score} XP</span>
                                 </div>
                             `).join('')}
                         </div>
                     </div>
                 ` : ''}
-                <p class="text-center text-gray-500 text-sm">Come back tomorrow!</p>
+                <p class="text-center text-[10px] font-mono tracking-wider text-gray-500 uppercase">Next challenge tomorrow</p>
             </div>`;
     }
 
     return `
         <div class="space-y-4">
-            <button onclick="state.screen='lobby';state.dailyChallenge=null;render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-sm">&larr; Back to Lobby</button>
+            <button onclick="state.screen='lobby';state.dailyChallenge=null;render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-xs">&larr; Back to Lobby</button>
             <div class="glow-card glow-card-amber p-6">
                 <div class="text-center mb-4">
-                    <div class="text-5xl mb-2">📅</div>
-                    <h2 class="text-2xl font-bold">Daily Challenge</h2>
-                    <p class="text-sm text-gray-400">${dc.date}</p>
-                    ${state.profile?.dailyChallengeStreak > 0 ? `<p class="text-orange-400 font-bold mt-1">${'🔥'.repeat(Math.min(state.profile.dailyChallengeStreak,5))} ${state.profile.dailyChallengeStreak}-day streak</p>` : ''}
+                    <h2 class="text-2xl font-display font-bold tracking-wider uppercase">DAILY ORACLE</h2>
+                    <p class="text-[10px] font-mono tracking-wider text-gray-400 uppercase mt-1">${dc.date}</p>
+                    ${state.profile?.dailyChallengeStreak > 0 ? `<p class="text-consensus font-mono font-bold mt-2">${state.profile.dailyChallengeStreak}-day streak</p>` : ''}
                 </div>
                 <div class="glow-card p-4 mb-4" style="background:linear-gradient(135deg,rgba(88,28,135,0.2),rgba(157,23,77,0.15),rgba(15,20,35,0.9))">
-                    <p class="text-sm text-purple-300 mb-1">Complete this joke:</p>
+                    <p class="text-[10px] font-mono tracking-wider text-wit uppercase mb-1">Complete this joke</p>
                     <p class="text-lg font-medium">"${esc(dc.prompt)}"</p>
                 </div>
                 <textarea id="daily-punchline" maxlength="200" placeholder="Write your funniest punchline..."
                     class="w-full h-28 px-4 py-3 rounded-xl text-lg resize-none mb-3"></textarea>
-                <button onclick="submitDailyChallenge()" ${state.dailySubmitting ? 'disabled' : ''} class="btn btn-play w-full py-4 rounded-xl font-bold text-lg text-white">
-                    ${state.dailySubmitting ? '<span class="spinner inline-block w-5 h-5 mr-2 align-middle"></span>Judging...' : '📤 Submit to the Oracle'}
+                <button onclick="submitDailyChallenge()" ${state.dailySubmitting ? 'disabled' : ''} class="btn btn-play w-full py-4 rounded-xl font-bold text-sm tracking-wider uppercase text-white">
+                    ${state.dailySubmitting ? '<span class="spinner inline-block w-5 h-5 mr-2 align-middle"></span>JUDGING...' : 'SUBMIT TO THE ORACLE'}
                 </button>
             </div>
             ${dc.leaderboard.length > 0 ? `
                 <div class="glow-card p-4">
-                    <h3 class="font-bold mb-3">Today's Leaderboard</h3>
+                    <h3 class="font-display font-bold mb-3 tracking-wider uppercase text-sm">TODAY'S LEADERBOARD</h3>
                     <div class="space-y-2">
                         ${dc.leaderboard.slice(0,10).map((e,i) => `
-                            <div class="flex justify-between items-center p-2.5 ${i<3?'bg-yellow-500/10 border border-yellow-500/10':'bg-slate-800/60'} rounded-xl">
-                                <span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)} ${esc(e.name)}</span>
-                                <span class="text-yellow-400 font-bold">${e.score} XP</span>
+                            <div class="flex justify-between items-center p-2.5 ${i<3?'bg-consensus/10 border border-consensus/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
+                                <span class="font-mono text-sm">${i<3?['I','II','III'][i]:'#'+(i+1)} ${esc(e.name)}</span>
+                                <span class="text-consensus font-mono font-bold">${e.score} XP</span>
                             </div>
                         `).join('')}
                     </div>
@@ -2360,66 +2602,66 @@ function renderProfileScreen() {
 
     return `
         <div class="space-y-4">
-            <button onclick="state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-sm">&larr; Back to Lobby</button>
+            <button onclick="state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-xs">&larr; Back to Lobby</button>
             <div class="glow-card p-6 text-center">
-                <div class="w-20 h-20 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mx-auto mb-3 text-3xl font-bold shadow-lg shadow-purple-500/30">${p.level}</div>
-                <h2 class="text-2xl font-bold">${esc(p.name)}</h2>
-                <p class="text-purple-400 font-medium">${esc(p.title)}</p>
-                <p class="text-yellow-400 text-xl font-bold mt-2">${p.lifetimeXP.toLocaleString()} XP</p>
+                <div class="w-20 h-20 rounded-full oracle-eye flex items-center justify-center mx-auto mb-3 text-3xl font-bold">${p.level}</div>
+                <h2 class="text-2xl font-display font-bold">${esc(p.name)}</h2>
+                <p class="text-wit font-mono font-medium">${esc(p.title)}</p>
+                <p class="text-consensus font-mono text-xl font-bold mt-2">${p.lifetimeXP.toLocaleString()} XP</p>
                 <div class="max-w-xs mx-auto mt-3">
-                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                    <div class="flex justify-between text-[10px] font-mono tracking-wider text-gray-400 mb-1">
                         <span>Lv.${p.level}</span>
                         <span>${nextXP ? 'Lv.' + (p.level + 1) : 'MAX'}</span>
                     </div>
-                    <div class="h-3 bg-slate-800 rounded-full overflow-hidden">
+                    <div class="h-3 bg-obsidian border border-white/[0.04] rounded-full overflow-hidden">
                         <div class="h-full xp-bar" style="width:${progress}%"></div>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">${nextXP ? (nextXP - p.lifetimeXP).toLocaleString() + ' XP to next level' : 'Maximum level reached!'}</p>
+                    <p class="text-[10px] font-mono text-gray-500 mt-1">${nextXP ? (nextXP - p.lifetimeXP).toLocaleString() + ' XP to next level' : 'Maximum level reached!'}</p>
                 </div>
             </div>
 
             <div class="glow-card p-4">
-                <h3 class="font-bold mb-3">📊 Statistics</h3>
+                <h3 class="text-[10px] font-mono tracking-widest uppercase text-gray-400 mb-3">Statistics</h3>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center">
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center">
                         <p class="text-xl font-bold text-white">${p.gamesPlayed}</p>
-                        <p class="text-xs text-gray-400">Games Played</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Games Played</p>
                     </div>
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center">
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center">
                         <p class="text-xl font-bold text-green-400">${p.gamesWon}</p>
-                        <p class="text-xs text-gray-400">Games Won</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Games Won</p>
                     </div>
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center">
-                        <p class="text-xl font-bold text-yellow-400">${p.roundsWon}</p>
-                        <p class="text-xs text-gray-400">Rounds Won</p>
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center">
+                        <p class="text-xl font-bold text-consensus">${p.roundsWon}</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Rounds Won</p>
                     </div>
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center">
-                        <p class="text-xl font-bold text-purple-400">${winRate}%</p>
-                        <p class="text-xs text-gray-400">Win Rate</p>
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center">
+                        <p class="text-xl font-bold text-wit">${winRate}%</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Win Rate</p>
                     </div>
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center">
-                        <p class="text-xl font-bold text-orange-400">${'🔥'.repeat(Math.min(p.bestStreak,5))} ${p.bestStreak}</p>
-                        <p class="text-xs text-gray-400">Best Streak</p>
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center">
+                        <p class="text-xl font-bold text-orange-400">${p.bestStreak}</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Best Streak</p>
                     </div>
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center">
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center">
                         <p class="text-xl font-bold text-blue-400">${p.totalCorrectBets}</p>
-                        <p class="text-xs text-gray-400">Correct Bets</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Correct Bets</p>
                     </div>
-                    <div class="bg-slate-800/60 rounded-xl p-3 text-center col-span-2">
-                        <p class="text-xl font-bold text-amber-400">${'🔥'.repeat(Math.min(p.dailyChallengeStreak,5))} ${p.dailyChallengeStreak}</p>
-                        <p class="text-xs text-gray-400">Daily Challenge Streak</p>
+                    <div class="bg-obsidian border border-white/[0.04] rounded-xl p-3 text-center col-span-2">
+                        <p class="text-xl font-bold text-amber-400">${p.dailyChallengeStreak}</p>
+                        <p class="text-[10px] font-mono text-gray-500 tracking-wider">Daily Challenge Streak</p>
                     </div>
                 </div>
             </div>
 
             ${p.achievements.length > 0 ? `
                 <div class="glow-card p-4">
-                    <h3 class="font-bold mb-3">🏅 Achievements (${p.achievements.length}/${state.allAchievements.length})</h3>
+                    <h3 class="text-[10px] font-mono tracking-widest uppercase text-gray-400 mb-3">Achievements (${p.achievements.length}/${state.allAchievements.length})</h3>
                     <div class="grid grid-cols-3 gap-2">
                         ${state.allAchievements.map(a => {
                             const unlocked = p.achievements.includes(a.id);
                             return `
-                                <div class="rounded-xl p-2.5 text-center ${unlocked ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-slate-800/40 opacity-40'}">
+                                <div class="rounded-xl p-2.5 text-center ${unlocked ? 'bg-consensus/10 border border-consensus/30' : 'bg-obsidian/80 border border-white/[0.04] opacity-40'}">
                                     <span class="text-2xl">${a.icon}</span>
                                     <p class="text-xs ${unlocked ? 'text-white' : 'text-gray-500'} mt-1">${a.name}</p>
                                 </div>`;
@@ -2428,10 +2670,10 @@ function renderProfileScreen() {
                 </div>
             ` : `
                 <div class="glow-card p-4">
-                    <h3 class="font-bold mb-3">🏅 Achievements</h3>
+                    <h3 class="text-[10px] font-mono tracking-widest uppercase text-gray-400 mb-3">Achievements</h3>
                     <div class="grid grid-cols-3 gap-2">
                         ${state.allAchievements.map(a => `
-                            <div class="rounded-xl p-2.5 text-center bg-slate-800/40 opacity-40">
+                            <div class="rounded-xl p-2.5 text-center bg-obsidian/80 border border-white/[0.04] opacity-40">
                                 <span class="text-2xl">${a.icon}</span>
                                 <p class="text-xs text-gray-500 mt-1">${a.name}</p>
                             </div>
@@ -2448,9 +2690,8 @@ function renderHallOfFame() {
         <div class="space-y-4">
             <button onclick="state.screen='lobby';state.showHallOfFame=false;render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-sm">&larr; Back to Lobby</button>
             <div class="text-center">
-                <div class="text-5xl mb-2">🎭</div>
-                <h2 class="text-2xl font-bold"><span class="gradient-text">Hall of Fame</span></h2>
-                <p class="text-gray-400 text-sm">The Oracle's finest judgments</p>
+                <h2 class="text-2xl font-display font-bold tracking-wider"><span class="gradient-text">HALL OF FAME</span></h2>
+                <p class="text-xs font-mono text-gray-500 tracking-wider">The Oracle's finest judgments</p>
             </div>
             ${state.hallOfFame.length > 0 ? `
                 <div class="space-y-3">
@@ -2462,7 +2703,7 @@ function renderHallOfFame() {
                                     <p class="text-sm text-gray-400">"${esc(j.prompt)}"</p>
                                     <p class="text-white font-medium mt-1">"${esc(j.punchline)}"</p>
                                     <div class="flex justify-between items-center mt-2">
-                                        <span class="text-xs text-yellow-400">by ${esc(j.author)}</span>
+                                        <span class="text-xs text-consensus">by ${esc(j.author)}</span>
                                         ${j.commentary ? `<span class="text-xs text-gray-500 italic">${esc(j.commentary)}</span>` : ''}
                                     </div>
                                 </div>
@@ -2474,258 +2715,19 @@ function renderHallOfFame() {
         </div>`;
 }
 
-// --- Render: Spectating (watch-only game view) ---
-function renderSpectating() {
-    const r = state.room;
-    if (!r) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
-    const phase = r.phase || r.status || 'waiting';
-    const round = r.currentRound || 1;
-    const total = r.totalRounds || 5;
-    const players = r.players || [];
-    const standings = [...players].sort((a,b) => b.score - a.score);
-
-    return `
-        <div class="space-y-4">
-            <div class="flex items-center justify-between">
-                <button onclick="state.isSpectator=false;state.roomId=null;state.room=null;stopPolling();state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 text-sm">&larr; Leave</button>
-                <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                    <span class="text-xs text-red-400 font-bold uppercase tracking-wider">Spectating</span>
-                </div>
-            </div>
-
-            <div class="glow-card p-5 text-center">
-                <p class="text-xs text-gray-500 mb-1">Round ${round} / ${total}</p>
-                <h2 class="text-xl font-bold mb-2"><span class="gradient-text">${esc(r.jokePrompt || 'Waiting for round...')}</span></h2>
-                <p class="text-sm text-purple-400">${r.category || ''} ${r.singlePlayer ? '(Solo)' : ''}</p>
-            </div>
-
-            <div class="glow-card p-4">
-                <p class="text-xs text-gray-400 mb-2 uppercase tracking-wider">Phase: <span class="text-white font-bold">${phase}</span></p>
-                ${phase === 'submitting' ? `
-                    <div class="space-y-2">
-                        <p class="text-sm text-gray-300">Players are writing punchlines...</p>
-                        <div class="grid grid-cols-2 gap-2">
-                            ${players.map(p => `
-                                <div class="flex items-center gap-2 bg-slate-800/60 rounded-lg p-2">
-                                    <span class="w-2 h-2 rounded-full ${r.submissions?.some(s => s.playerName === p.name) ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}"></span>
-                                    <span class="text-sm">${esc(p.name)}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-                ${phase === 'betting' ? `
-                    <div class="space-y-2">
-                        <p class="text-sm text-gray-300">Players are placing bets on who'll win...</p>
-                        ${(r.submissions || []).map((s, i) => `
-                            <div class="bg-slate-800/60 rounded-lg p-3">
-                                <p class="text-xs text-gray-500">#${i+1} by ${esc(s.playerName)}</p>
-                                <p class="text-white text-sm">"${esc(s.punchline)}"</p>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : ''}
-                ${phase === 'judging' ? renderJudging() : ''}
-                ${phase === 'results' || phase === 'roundResults' ? `
-                    <div class="space-y-2">
-                        ${r.roundResults?.length > 0 ? (() => {
-                            const last = r.roundResults[r.roundResults.length - 1];
-                            return `
-                                <div class="glow-card glow-card-gold p-4 text-center">
-                                    <p class="text-xs text-yellow-400 mb-1">Round Winner</p>
-                                    <p class="text-xl font-bold">${esc(last.winnerName || '')}</p>
-                                    <p class="text-sm text-gray-300 mt-1">"${esc(last.winningPunchline || '')}"</p>
-                                </div>
-                            `;
-                        })() : '<p class="text-gray-500 text-sm">Waiting for results...</p>'}
-                    </div>
-                ` : ''}
-                ${phase === 'waiting' ? '<p class="text-sm text-gray-400">Waiting for players to join...</p>' : ''}
-                ${phase === 'finished' ? `
-                    <div class="text-center">
-                        <div class="text-4xl mb-2">🏆</div>
-                        <p class="text-xl font-bold text-yellow-400">${standings[0]?.name || ''} Wins!</p>
-                        <p class="text-sm text-gray-400">Final score: ${standings[0]?.score || 0} XP</p>
-                    </div>
-                ` : ''}
-            </div>
-
-            <!-- Live Scoreboard -->
-            <div class="glow-card p-4">
-                <p class="text-xs text-gray-400 mb-2 uppercase tracking-wider">Scoreboard</p>
-                <div class="space-y-1.5">
-                    ${standings.map((p, i) => `
-                        <div class="flex justify-between items-center p-2 ${i === 0 ? 'bg-yellow-500/10' : 'bg-slate-800/40'} rounded-lg">
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
-                                <span class="text-sm">${esc(p.name)}</span>
-                            </div>
-                            <span class="text-yellow-400 font-bold text-sm">${p.score} XP</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-// --- Render: Tournament ---
-function renderTournament() {
-    const t = state.tournament;
-    // If no tournament selected, show list
-    if (!t) {
-        return `
-            <div class="space-y-4">
-                <button onclick="state.screen='lobby';state.showTournaments=false;render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 text-sm">&larr; Back to Lobby</button>
-                <div class="text-center">
-                    <div class="text-5xl mb-2">⚔️</div>
-                    <h2 class="text-2xl font-bold"><span class="gradient-text">Tournaments</span></h2>
-                    <p class="text-gray-400 text-sm">Bracket elimination. Last comedian standing.</p>
-                </div>
-
-                <!-- Create tournament -->
-                <div class="glow-card glow-card-red p-5">
-                    <h3 class="font-bold mb-3">Create Tournament</h3>
-                    <div class="grid grid-cols-3 gap-2 mb-3">
-                        <button onclick="document.getElementById('t-cat').value='tech'" class="btn cat-btn p-2 bg-slate-800 rounded-lg text-sm" id="t-cat-tech">🤖 Tech</button>
-                        <button onclick="document.getElementById('t-cat').value='crypto'" class="btn cat-btn p-2 bg-slate-800 rounded-lg text-sm">💎 Crypto</button>
-                        <button onclick="document.getElementById('t-cat').value='general'" class="btn cat-btn p-2 bg-slate-800 rounded-lg text-sm">😂 General</button>
-                    </div>
-                    <input type="text" id="t-cat" value="general" class="hidden">
-                    <div class="flex gap-2">
-                        <select id="t-size" class="flex-1 bg-slate-800 text-white rounded-lg px-3 py-2 text-sm border border-white/10">
-                            <option value="8">8 players</option>
-                            <option value="16">16 players</option>
-                            <option value="32">32 players</option>
-                        </select>
-                        <button onclick="createTournament(document.getElementById('t-cat').value, parseInt(document.getElementById('t-size').value))" class="btn btn-play px-6 py-2 rounded-lg font-bold text-white text-sm">Create</button>
-                    </div>
-                </div>
-
-                <!-- Tournament list -->
-                ${state.tournaments.length > 0 ? `
-                    <div class="space-y-2">
-                        ${state.tournaments.map(tr => `
-                            <div class="glow-card p-4">
-                                <div class="flex justify-between items-center">
-                                    <div>
-                                        <p class="font-bold text-sm">${tr.category || 'General'} Tournament</p>
-                                        <p class="text-xs text-gray-400">${tr.players?.length || 0} / ${tr.size} players &middot; ${tr.status}</p>
-                                        <p class="text-xs text-gray-500">Host: ${esc(tr.host || '')}</p>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        ${tr.status === 'registration' ? `
-                                            <button onclick="joinTournament('${tr.id}')" class="btn btn-primary px-3 py-1.5 rounded-lg text-xs text-white">Join</button>
-                                        ` : `
-                                            <button onclick="joinTournament('${tr.id}', true)" class="btn btn-ghost px-3 py-1.5 rounded-lg text-xs">Watch</button>
-                                        `}
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : '<p class="text-gray-500 text-center py-4">No active tournaments. Create one!</p>'}
-            </div>
-        `;
-    }
-
-    // Tournament detail view
-    const isHost = t.host === state.playerName;
-    const bracket = t.bracket || [];
-    const currentRoundIdx = (t.currentRound || 1) - 1;
-
-    return `
-        <div class="space-y-4">
-            <div class="flex items-center justify-between">
-                <button onclick="state.tournament=null;state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 text-sm">&larr; Leave</button>
-                <span class="text-xs text-gray-400 font-mono">${t.id}</span>
-            </div>
-
-            <div class="glow-card glow-card-red p-5 text-center">
-                <div class="text-4xl mb-2">⚔️</div>
-                <h2 class="text-xl font-bold">${esc(t.category || 'General')} Tournament</h2>
-                <p class="text-sm text-gray-400">${t.size}-player bracket &middot; <span class="text-white font-bold">${t.status}</span></p>
-                <p class="text-xs text-gray-500 mt-1">${(t.players || []).length} / ${t.size} players</p>
-            </div>
-
-            ${t.status === 'registration' ? `
-                <!-- Registration phase -->
-                <div class="glow-card p-4">
-                    <p class="text-sm text-gray-400 mb-2">Players</p>
-                    <div class="grid grid-cols-2 gap-2">
-                        ${(t.players || []).map(p => `
-                            <div class="bg-slate-800/60 rounded-lg p-2 text-center">
-                                <span class="text-sm">${esc(p.name || p)}</span>
-                            </div>
-                        `).join('')}
-                        ${Array(Math.max(0, t.size - (t.players||[]).length)).fill(0).map(() => `
-                            <div class="bg-slate-800/30 rounded-lg p-2 text-center border border-dashed border-white/10">
-                                <span class="text-xs text-gray-600">empty</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                    ${isHost ? `
-                        <button onclick="startTournament()" class="btn btn-play w-full mt-4 py-3 rounded-xl font-bold text-white" ${(t.players||[]).length < 2 ? 'disabled' : ''}>
-                            Start Tournament (${(t.players||[]).length} players)
-                        </button>
-                    ` : '<p class="text-xs text-gray-500 mt-3 text-center">Waiting for host to start...</p>'}
-                </div>
-            ` : ''}
-
-            ${t.status === 'active' || t.status === 'finished' ? `
-                <!-- Bracket view -->
-                <div class="space-y-3">
-                    ${bracket.map((round, ri) => `
-                        <div class="glow-card ${ri === currentRoundIdx ? 'glow-card-gold' : ''} p-4">
-                            <p class="text-xs text-gray-400 mb-2 uppercase tracking-wider">${round.name || 'Round ' + (ri+1)}</p>
-                            <div class="space-y-2">
-                                ${(round.matches || []).map(m => {
-                                    const p1 = m.player1 || 'TBD';
-                                    const p2 = m.player2 || 'BYE';
-                                    const winner = m.winner || null;
-                                    return `
-                                        <div class="flex items-center gap-2 bg-slate-800/60 rounded-lg p-2.5">
-                                            <div class="flex-1 text-sm ${winner === p1 ? 'text-yellow-400 font-bold' : winner ? 'text-gray-600 line-through' : 'text-white'}">${esc(p1)}</div>
-                                            <span class="text-xs text-gray-600">vs</span>
-                                            <div class="flex-1 text-right text-sm ${winner === p2 ? 'text-yellow-400 font-bold' : winner ? 'text-gray-600 line-through' : p2 === 'BYE' ? 'text-gray-600 italic' : 'text-white'}">${esc(p2)}</div>
-                                            ${winner ? `<span class="text-xs text-green-400 ml-1">✓</span>` : m.player1 && m.player2 && m.player2 !== 'BYE' ? `<span class="text-xs text-yellow-400 animate-pulse ml-1">⏳</span>` : ''}
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-
-                ${t.winner ? `
-                    <div class="glow-card glow-card-gold p-5 text-center animate-winnerScale">
-                        <div class="text-5xl mb-2">🏆</div>
-                        <h3 class="text-2xl font-bold text-yellow-400">${esc(t.winner)}</h3>
-                        <p class="text-gray-400">Tournament Champion!</p>
-                    </div>
-                ` : ''}
-            ` : ''}
-
-            <button onclick="fetchTournament(state.tournament?.id)" class="btn btn-ghost w-full py-2 rounded-xl text-xs text-gray-400">Refresh</button>
-        </div>
-    `;
-}
-
 // --- Render: Community Prompts ---
 function renderCommunityPrompts() {
     return `
         <div class="space-y-4">
             <button onclick="state.screen='lobby';state.showCommunityPrompts=false;render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 text-sm">&larr; Back to Lobby</button>
             <div class="text-center">
-                <div class="text-5xl mb-2">💡</div>
-                <h2 class="text-2xl font-bold"><span class="gradient-text">Community Prompts</span></h2>
-                <p class="text-gray-400 text-sm">Submit joke setups. Top-voted enter the game rotation!</p>
+                <h2 class="text-2xl font-display font-bold tracking-wider"><span class="gradient-text">COMMUNITY PROMPTS</span></h2>
+                <p class="text-xs font-mono text-gray-500 tracking-wider">Submit joke setups. Top-voted enter the game rotation!</p>
             </div>
 
             <!-- Submit form -->
             <div class="glow-card glow-card-cyan p-5">
-                <h3 class="font-bold text-sm mb-2">Submit a Joke Setup</h3>
+                <h3 class="text-[10px] font-mono tracking-widest text-gray-400 mb-2">SUBMIT A JOKE SETUP</h3>
                 <textarea id="community-prompt-input" rows="2" maxlength="150" placeholder="e.g. Why do blockchain developers..." class="w-full px-3 py-2 rounded-xl text-sm resize-none"></textarea>
                 <div class="flex justify-between items-center mt-2">
                     <span class="text-xs text-gray-500">10-150 characters</span>
@@ -2744,7 +2746,7 @@ function renderCommunityPrompts() {
                                     <div class="flex items-center gap-2 mt-1">
                                         <span class="text-xs text-gray-500">by ${esc(p.author || 'Anon')}</span>
                                         ${p.status === 'approved' ? '<span class="text-xs text-green-400 font-bold">IN ROTATION</span>' : ''}
-                                        ${p.status === 'pending' ? '<span class="text-xs text-yellow-400">needs ' + (5 - (p.votes || 0)) + ' more votes</span>' : ''}
+                                        ${p.status === 'pending' ? '<span class="text-[10px] font-mono text-consensus tracking-wider">NEEDS ' + (5 - (p.votes || 0)) + ' MORE</span>' : ''}
                                     </div>
                                 </div>
                                 <button onclick="voteCommunityPrompt('${p.id}')" class="btn btn-ghost px-3 py-2 rounded-lg text-center shrink-0" ${p.status === 'approved' ? 'disabled' : ''}>
@@ -2756,53 +2758,6 @@ function renderCommunityPrompts() {
                     `).join('')}
                 </div>
             ` : '<p class="text-gray-500 text-center py-8">No submissions yet. Be the first!</p>'}
-        </div>
-    `;
-}
-
-// --- Render: Seasonal Leaderboard ---
-function renderSeasons() {
-    const seasons = state.availableSeasons || [];
-    const selected = state.selectedSeason || state.currentSeason;
-    const lb = state.seasonalLeaderboard || [];
-
-    return `
-        <div class="space-y-4">
-            <button onclick="state.screen='lobby';render()" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 text-sm">&larr; Back to Lobby</button>
-            <div class="text-center">
-                <div class="text-5xl mb-2">📅</div>
-                <h2 class="text-2xl font-bold"><span class="gradient-text">Past Seasons</span></h2>
-                <p class="text-gray-400 text-sm">Monthly leaderboard archives</p>
-            </div>
-
-            <!-- Season selector -->
-            <div class="flex flex-wrap gap-2 justify-center">
-                ${seasons.map(s => `
-                    <button onclick="fetchSeasonalLeaderboard('${s.key}')" class="btn ${s.key === selected ? 'btn-primary' : 'btn-ghost'} px-4 py-2 rounded-lg text-sm text-white">
-                        ${s.label || s.key}
-                        ${s.key === state.currentSeason ? ' (Current)' : ''}
-                    </button>
-                `).join('')}
-                ${seasons.length === 0 ? '<p class="text-gray-500 text-sm">No past seasons yet.</p>' : ''}
-            </div>
-
-            <!-- Leaderboard -->
-            ${lb.length > 0 ? `
-                <div class="glow-card p-5">
-                    <p class="text-sm text-gray-400 mb-3">${selected === state.currentSeason ? 'Current Season' : 'Season: ' + (selected || '')}</p>
-                    <div class="space-y-2">
-                        ${lb.map((p, i) => `
-                            <div class="flex justify-between items-center p-2.5 ${i < 3 ? 'bg-yellow-500/10 border border-yellow-500/10' : 'bg-slate-800/60'} rounded-xl">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-lg">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
-                                    <span class="text-sm">${esc(p.name)}</span>
-                                </div>
-                                <span class="text-yellow-400 font-bold text-sm">${p.score || p.totalScore || 0} XP</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            ` : selected ? '<p class="text-gray-500 text-center py-8">No data for this season.</p>' : ''}
         </div>
     `;
 }
@@ -2831,47 +2786,6 @@ function getNextLevelXPClient(xp) {
     return null;
 }
 
-// --- Spectator Mode ---
-async function joinAsSpectator(roomId) {
-    try {
-        const res = await api('joinRoom', { roomId, playerName: state.playerName, spectator: true });
-        if (res.success) {
-            state.roomId = roomId;
-            state.room = res.room;
-            state.isSpectator = true;
-            startPolling();
-            render(true);
-        }
-    } catch(e) {}
-}
-
-// --- Seasonal Leaderboard ---
-async function fetchSeasonalLeaderboard(season) {
-    try {
-        const res = await fetch(`${API_URL}?action=getSeasonalLeaderboard`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ season })
-        });
-        const data = await res.json();
-        if (data.success) {
-            state.seasonalLeaderboard = data.leaderboard;
-            state.selectedSeason = data.season;
-            render();
-        }
-    } catch(e) {}
-}
-
-async function fetchSeasons() {
-    try {
-        const res = await fetch(`${API_URL}?action=getSeasons`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const data = await res.json();
-        if (data.success) {
-            state.availableSeasons = data.seasons;
-            state.currentSeason = data.currentSeason;
-        }
-    } catch(e) {}
-}
-
 // --- Community Prompts ---
 async function fetchCommunityPrompts() {
     try {
@@ -2880,6 +2794,7 @@ async function fetchCommunityPrompts() {
         if (data.success) {
             state.communityPrompts = data.prompts;
             state.showCommunityPrompts = true;
+            state.screen = 'communityPrompts';
             render();
         }
     } catch(e) {}
@@ -2899,63 +2814,6 @@ async function voteCommunityPrompt(promptId) {
     try {
         await api('votePrompt', { promptId, playerId: state.playerId });
         fetchCommunityPrompts();
-    } catch(e) {}
-}
-
-// --- Tournament Mode ---
-async function fetchTournaments() {
-    try {
-        const res = await fetch(`${API_URL}?action=listTournaments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const data = await res.json();
-        if (data.success) {
-            state.tournaments = data.tournaments;
-            state.showTournaments = true;
-            render();
-        }
-    } catch(e) {}
-}
-
-async function createTournament(category, size) {
-    try {
-        const res = await api('createTournament', { hostName: state.playerName, category, size });
-        if (res.success) {
-            state.tournament = res.tournament;
-            state.screen = 'tournament';
-            render();
-        }
-    } catch(e) {}
-}
-
-async function joinTournament(tournamentId, asSpectator = false) {
-    try {
-        const res = await api('joinTournament', { tournamentId, playerName: state.playerName, spectator: asSpectator });
-        if (res.success) {
-            state.tournament = res.tournament;
-            state.screen = 'tournament';
-            render();
-        }
-    } catch(e) {}
-}
-
-async function startTournament() {
-    if (!state.tournament) return;
-    try {
-        const res = await api('startTournament', { tournamentId: state.tournament.id, hostName: state.playerName });
-        if (res.success) {
-            state.tournament = res.tournament;
-            render();
-        }
-    } catch(e) {}
-}
-
-async function fetchTournament(tid) {
-    try {
-        const res = await fetch(`${API_URL}?action=getTournament&id=${tid}`);
-        const data = await res.json();
-        if (data.success) {
-            state.tournament = data.tournament;
-            render();
-        }
     } catch(e) {}
 }
 
