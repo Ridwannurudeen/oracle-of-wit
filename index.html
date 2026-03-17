@@ -589,6 +589,23 @@ function updateTimerDisplay() {
     }
 }
 
+// Lightweight DOM patches for polls — avoids full innerHTML rebuild while typing
+function updateHUDPartials(subCount, playerCount, betCount) {
+    // Update submission/bet counters if visible
+    const submittedEl = document.querySelector('[data-hud="submitted"]');
+    if (submittedEl) {
+        const humanPlayers = state.room?.players?.filter(p => !p.isBot).length || 0;
+        submittedEl.textContent = `${subCount}/${humanPlayers} SUBMITTED`;
+    }
+    const betEl = document.querySelector('[data-hud="bets"]');
+    if (betEl) betEl.textContent = `${betCount} BETS PLACED`;
+    // Update wing content (player list, activity)
+    const leftWing = document.querySelector('[data-hud="left-wing"]');
+    if (leftWing) leftWing.innerHTML = renderLeftWingContent();
+    const rightWing = document.querySelector('[data-hud="right-wing"]');
+    if (rightWing) rightWing.innerHTML = renderRightWingContent();
+}
+
 // Update character count without re-rendering
 function updateCharCount() {
     const charCount = document.getElementById('char-count');
@@ -711,7 +728,8 @@ let state = {
 };
 
 let pollInterval = null;
-let timerInterval = null;
+let timerRAF = null;
+let lastTimerSecond = -1;
 let renderPending = false;
 let lastRenderTime = 0;
 const MIN_RENDER_INTERVAL = 100; // Minimum ms between renders
@@ -723,19 +741,27 @@ function syncTimer() {
 
 function startTimer() {
     stopTimer();
-    timerInterval = setInterval(() => {
-        if (state.timeLeft > 0) {
-            state.timeLeft--;
+    lastTimerSecond = -1;
+    function tick() {
+        // Always recalculate from phaseEndsAt — no drift, no freeze
+        if (state.room?.phaseEndsAt) {
+            state.timeLeft = Math.max(0, Math.floor((state.room.phaseEndsAt - Date.now()) / 1000));
+        }
+        // Only update DOM + play sounds when the second actually changes
+        if (state.timeLeft !== lastTimerSecond) {
+            lastTimerSecond = state.timeLeft;
             if (state.timeLeft <= 5 && state.timeLeft > 0) playSound('tick');
             if (state.timeLeft === 10) playSound('warning');
-            // ALWAYS use targeted update - NEVER full render from timer
             updateTimerDisplay();
         }
-    }, 1000);
+        timerRAF = requestAnimationFrame(tick);
+    }
+    timerRAF = requestAnimationFrame(tick);
 }
 
 function stopTimer() {
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    if (timerRAF) { cancelAnimationFrame(timerRAF); timerRAF = null; }
+    lastTimerSecond = -1;
 }
 
 function formatTime(s) {
@@ -790,15 +816,19 @@ async function fetchRoom() {
             const newSubmissionCount = state.room?.submissions?.length || 0;
             const newBetCount = state.room?.bets?.length || 0;
             const newPlayerCount = state.room?.players?.length || 0;
-            
-            const hasImportantChange = 
+
+            const hasImportantChange =
                 newSubmissionCount !== oldSubmissionCount ||
                 newBetCount !== oldBetCount ||
                 newPlayerCount !== oldPlayerCount;
-            
-            // Only render if something important changed AND user is not typing
-            if (hasImportantChange && !isTyping) {
-                render();
+
+            if (hasImportantChange) {
+                // During active input phases, do lightweight DOM patches instead of full rebuild
+                if (isTyping || document.activeElement?.id === 'punchline') {
+                    updateHUDPartials(newSubmissionCount, newPlayerCount, newBetCount);
+                } else {
+                    render();
+                }
             }
             // Always update timer display
             updateTimerDisplay();
@@ -1529,11 +1559,9 @@ function addGameEvent(type, text) {
     if (gameEvents.length > 8) gameEvents.pop();
 }
 
-function renderLeftWing() {
+function renderLeftWingContent() {
     const events = gameEvents.slice(0, 5);
     return `
-        <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
-            <div class="glass-panel p-4 rounded-2xl">
                 <div class="flex items-center gap-2 mb-3">
                     <div class="w-2 h-2 rounded-full bg-wit animate-pulse"></div>
                     <span class="text-[10px] font-mono text-gray-500 tracking-[0.2em]">LIVE ACTIVITY</span>
@@ -1562,20 +1590,23 @@ function renderLeftWing() {
                         ${(state.room.players || []).length > 4 ? `<p class="text-[9px] text-gray-700 font-mono">+${state.room.players.length - 4} more</p>` : ''}
                     </div>
                 ` : ''}
-            </div>
+    `;
+}
+
+function renderLeftWing() {
+    return `
+        <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
+            <div data-hud="left-wing" class="glass-panel p-4 rounded-2xl">${renderLeftWingContent()}</div>
         </aside>
     `;
 }
 
-function renderRightWing() {
+function renderRightWingContent() {
     const r = state.room;
     const budget = r?.betBudgets?.[state.playerName];
     const players = r?.players || [];
     const topPlayers = [...players].sort((a, b) => b.score - a.score).slice(0, 5);
-
     return `
-        <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
-            <div class="glass-panel p-4 rounded-2xl">
                 <!-- Network Status -->
                 <div class="flex items-center gap-2 mb-3">
                     <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
@@ -1661,7 +1692,13 @@ function renderRightWing() {
                         </div>
                     </div>
                 ` : ''}
-            </div>
+    `;
+}
+
+function renderRightWing() {
+    return `
+        <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
+            <div data-hud="right-wing" class="glass-panel p-4 rounded-2xl">${renderRightWingContent()}</div>
         </aside>
     `;
 }
@@ -1676,7 +1713,9 @@ function formatEventTime(ts) {
 
 function render(force = false) {
     // Skip render completely while typing (unless forced)
-    if (isTyping && !force) {
+    // Also check if textarea is focused — isTyping timeout may have expired while user is still in the field
+    const textareaFocused = document.activeElement?.id === 'punchline';
+    if ((isTyping || textareaFocused) && !force) {
         updateTimerDisplay();
         return;
     }
@@ -2213,7 +2252,7 @@ function renderSubmitting() {
                     <span class="font-mono text-wit text-xs font-bold tracking-wider">ROUND ${r.currentRound}/${r.totalRounds}</span>
                     ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
                 </div>
-                <span class="text-[10px] font-mono text-gray-500 tracking-wider">${submitted}/${humanPlayers} SUBMITTED</span>
+                <span data-hud="submitted" class="text-[10px] font-mono text-gray-500 tracking-wider">${submitted}/${humanPlayers} SUBMITTED</span>
             </div>
             <div class="glow-card p-5" style="background:linear-gradient(135deg,rgba(168,85,247,0.08),rgba(45,212,191,0.04),rgba(10,10,18,0.95))">
                 <p class="text-[10px] font-mono text-oracle/60 tracking-widest mb-2">COMPLETE THIS JOKE</p>
