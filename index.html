@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oracle of Wit - GenLayer Community Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
     tailwind.config = {
@@ -38,9 +39,9 @@
         /* === LIQUID GLASSMORPHISM === */
         .glass { background: rgba(255,255,255,0.02); backdrop-filter: blur(20px) saturate(1.2); border: 1px solid rgba(255,255,255,0.04); border-radius: 16px; }
         .glass-bright { background: rgba(255,255,255,0.04); backdrop-filter: blur(24px) saturate(1.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; }
-        .glow-card { position: relative; background: rgba(10,10,18,0.85); backdrop-filter: blur(16px) saturate(1.1); border-radius: 16px; overflow: hidden; transition: transform 0.1s ease, box-shadow 0.2s ease; }
-        .glow-card:hover { transform: translateY(-1px); }
-        .glow-card::before { content:''; position:absolute; inset:-1px; border-radius:17px; padding:1px; background:linear-gradient(135deg,rgba(168,85,247,0.3),rgba(45,212,191,0.15),rgba(168,85,247,0.3)); -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events:none; }
+        .glow-card { position: relative; background: rgba(10,10,18,0.5); backdrop-filter: blur(20px) saturate(1.3); border-radius: 16px; overflow: hidden; transition: transform 0.15s ease, box-shadow 0.3s ease; }
+        .glow-card:hover { transform: translateY(-1px); box-shadow: 0 8px 40px rgba(168,85,247,0.15); }
+        .glow-card::before { content:''; position:absolute; inset:-1px; border-radius:17px; padding:1px; background:linear-gradient(135deg,rgba(168,85,247,0.5),rgba(45,212,191,0.3),rgba(168,85,247,0.5)); -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events:none; }
         .glow-card-gold::before { background:linear-gradient(135deg,rgba(251,191,36,0.5),rgba(245,158,11,0.25),rgba(251,191,36,0.5)); }
         .glow-card-red::before { background:linear-gradient(135deg,rgba(239,68,68,0.4),rgba(185,28,28,0.2),rgba(239,68,68,0.4)); }
         .glow-card-cyan::before { background:linear-gradient(135deg,rgba(45,212,191,0.4),rgba(20,184,166,0.2),rgba(45,212,191,0.4)); }
@@ -64,8 +65,7 @@
         .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.1); }
         .btn:active:not(:disabled) { transform: translateY(1px); filter: brightness(0.95); }
         .btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .btn-primary { background: linear-gradient(135deg, #7c3aed, #A855F7); border: 1px solid rgba(168,85,247,0.3); box-shadow: 0 4px 20px rgba(168,85,247,0.25); }
-        .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 30px rgba(168,85,247,0.4); border-color: rgba(168,85,247,0.5); }
+        /* btn-primary defined in enhanced buttons section below */
         .btn-play { background: linear-gradient(135deg, #FBBF24, #f59e0b); border: 1px solid rgba(251,191,36,0.3); box-shadow: 0 4px 20px rgba(251,191,36,0.2); color: #0A0A12; }
         .btn-play:hover:not(:disabled) { box-shadow: 0 6px 30px rgba(251,191,36,0.4); }
         .btn-ghost { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
@@ -164,6 +164,68 @@
         @keyframes dataStream { 0% { transform: translateY(-100%); opacity: 0; } 10% { opacity: 0.3; } 90% { opacity: 0.3; } 100% { transform: translateY(100%); opacity: 0; } }
         .data-stream { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
         .data-stream span { position: absolute; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(45,212,191,0.4); animation: dataStream 2s linear infinite; white-space: nowrap; }
+
+        /* === GLASS PANEL (HUD Wings) === */
+        .glass-panel { background: rgba(10,10,18,0.6); backdrop-filter: blur(24px) saturate(1.3); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; border-top-color: rgba(255,255,255,0.08); border-left-color: rgba(255,255,255,0.08); }
+        .hud-wing { position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; }
+
+        /* === NEON BORDER UTILITIES === */
+        @keyframes neonShift { 0%,100% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(15deg); } }
+        .neon-border-wit { border: 1px solid rgba(168,85,247,0.4); box-shadow: 0 0 15px rgba(168,85,247,0.1), inset 0 0 15px rgba(168,85,247,0.05); }
+        .neon-border-oracle { border: 1px solid rgba(45,212,191,0.4); box-shadow: 0 0 15px rgba(45,212,191,0.1), inset 0 0 15px rgba(45,212,191,0.05); }
+        .neon-border-consensus { border: 1px solid rgba(251,191,36,0.4); box-shadow: 0 0 15px rgba(251,191,36,0.1), inset 0 0 15px rgba(251,191,36,0.05); }
+
+        /* === ENHANCED BUTTONS === */
+        .btn-primary { background: linear-gradient(135deg, #7c3aed, #A855F7); border: 1px solid rgba(168,85,247,0.3); box-shadow: 0 4px 20px rgba(168,85,247,0.25), inset 0 1px 0 rgba(255,255,255,0.1); }
+        .btn-primary:hover:not(:disabled) { box-shadow: 0 8px 40px rgba(168,85,247,0.5), inset 0 1px 0 rgba(255,255,255,0.15); border-color: rgba(168,85,247,0.5); }
+        .btn-danger { background: linear-gradient(135deg, #b91c1c, #dc2626); border: 1px solid rgba(239,68,68,0.3); box-shadow: 0 4px 20px rgba(239,68,68,0.2); color: white; }
+        .btn-danger:hover:not(:disabled) { box-shadow: 0 8px 40px rgba(239,68,68,0.4); }
+
+        /* === FLOATING NAV === */
+        .header-float { border-radius: 16px; margin: 12px 16px 0; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .header-transition { transition: all 0.3s ease; }
+
+        /* === BOOT SEQUENCE === */
+        @keyframes bootType { from { width: 0; } to { width: 100%; } }
+        .boot-text { font-family: 'JetBrains Mono', monospace; overflow: hidden; white-space: nowrap; border-right: 2px solid rgba(168,85,247,0.8); animation: bootType 0.5s steps(20) forwards, blink-caret 0.5s step-end infinite; }
+        @keyframes blink-caret { from,to { border-color: transparent; } 50% { border-color: rgba(168,85,247,0.8); } }
+        .boot-progress { height: 3px; background: linear-gradient(90deg, #7c3aed, #A855F7, #2DD4BF); border-radius: 999px; transition: width 0.4s ease; }
+
+        /* === DATA CARD (Onboarding) === */
+        .data-card { position: relative; padding: 1.25rem; border-radius: 16px; background: rgba(255,255,255,0.04); backdrop-filter: blur(24px) saturate(1.3); border: 1px solid rgba(255,255,255,0.08); transition: transform 0.2s ease, box-shadow 0.3s ease; }
+        .data-card:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 12px 40px rgba(168,85,247,0.15); }
+        .data-card-wit { border-color: rgba(168,85,247,0.3); }
+        .data-card-wit:hover { box-shadow: 0 12px 40px rgba(168,85,247,0.2); }
+        .data-card-oracle { border-color: rgba(45,212,191,0.3); }
+        .data-card-oracle:hover { box-shadow: 0 12px 40px rgba(45,212,191,0.2); }
+        .data-card-consensus { border-color: rgba(251,191,36,0.3); }
+        .data-card-consensus:hover { box-shadow: 0 12px 40px rgba(251,191,36,0.2); }
+
+        /* === 3D EYE CANVAS === */
+        .oracle-eye-3d { border-radius: 50%; overflow: hidden; }
+
+        /* === HUD WING EVENT ITEM === */
+        .wing-event { animation: fadeIn 0.3s ease-out; border-left: 2px solid rgba(168,85,247,0.3); padding-left: 8px; }
+
+        /* === SCREEN TRANSITIONS === */
+        @keyframes screenFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .screen-enter { animation: screenFadeIn 0.3s ease-out; }
+
+        /* === SKELETON LOADING === */
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        .skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.02) 75%); background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite; border-radius: 8px; }
+        .skeleton-text { height: 12px; margin-bottom: 8px; }
+        .skeleton-card { height: 80px; margin-bottom: 12px; }
+        .skeleton-circle { border-radius: 50%; }
+
+        /* === BUTTON LOADING STATE === */
+        .btn-loading { position: relative; color: transparent !important; pointer-events: none; }
+        .btn-loading::after { content: ''; position: absolute; width: 16px; height: 16px; top: 50%; left: 50%; margin: -8px 0 0 -8px; border: 2px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; }
+
+        /* === CUSTOM RANGE SLIDER === */
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: rgba(10,10,18,0.9); border-radius: 3px; border: 1px solid rgba(255,255,255,0.06); outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #A855F7, #7c3aed); border: 2px solid rgba(255,255,255,0.15); cursor: pointer; box-shadow: 0 0 10px rgba(168,85,247,0.4); }
+        input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, #A855F7, #7c3aed); border: 2px solid rgba(255,255,255,0.15); cursor: pointer; box-shadow: 0 0 10px rgba(168,85,247,0.4); }
     </style>
 </head>
 <body class="min-h-screen text-white">
@@ -222,7 +284,241 @@
     draw();
 })();
 
-// === ORACLE EYE CURSOR TRACKING ===
+// === 3D ORACLE EYE (Three.js) ===
+class OracleEye3D {
+    constructor() {
+        this.instances = [];
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.targetX = 0;
+        this.targetY = 0;
+        this.gameColor = { r: 0.66, g: 0.33, b: 0.97 }; // wit purple
+        this.targetColor = { r: 0.66, g: 0.33, b: 0.97 };
+        this.pupilDilation = 0.3;
+        this.targetDilation = 0.3;
+        this.pulseSpeed = 1.0;
+        this.available = typeof THREE !== 'undefined';
+
+        if (this.available) {
+            document.addEventListener('mousemove', e => {
+                this.mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+                this.mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+        }
+    }
+
+    mount(container, size = 160) {
+        if (!this.available) return null;
+        try {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+            camera.position.z = 3;
+
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(size, size);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(0x000000, 0);
+
+            // Outer eye sphere (sclera glow)
+            const outerGeo = new THREE.SphereGeometry(1, 64, 64);
+            const outerMat = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uMouse: { value: new THREE.Vector2(0, 0) },
+                    uColor: { value: new THREE.Vector3(0.66, 0.33, 0.97) },
+                    uDilation: { value: 0.3 },
+                    uPulseSpeed: { value: 1.0 }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    varying vec3 vNormal;
+                    varying vec3 vPosition;
+                    void main() {
+                        vUv = uv;
+                        vNormal = normalize(normalMatrix * normal);
+                        vPosition = position;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float uTime;
+                    uniform vec2 uMouse;
+                    uniform vec3 uColor;
+                    uniform float uDilation;
+                    uniform float uPulseSpeed;
+                    varying vec2 vUv;
+                    varying vec3 vNormal;
+                    varying vec3 vPosition;
+
+                    void main() {
+                        vec2 center = vec2(0.5) + uMouse * 0.08;
+                        float dist = distance(vUv, center);
+
+                        // Iris
+                        float irisRadius = 0.35;
+                        float iris = smoothstep(irisRadius + 0.02, irisRadius - 0.02, dist);
+
+                        // Pupil
+                        float pupilRadius = uDilation;
+                        float pupil = smoothstep(pupilRadius + 0.02, pupilRadius - 0.02, dist);
+
+                        // Specular highlight
+                        vec2 specPos = center + vec2(-0.1, 0.12);
+                        float spec = smoothstep(0.08, 0.0, distance(vUv, specPos));
+
+                        // Iris color with animated rings
+                        float rings = sin(dist * 40.0 + uTime * 0.5) * 0.1 + 0.9;
+                        vec3 irisColor = uColor * rings;
+                        irisColor += vec3(0.1, 0.3, 0.3) * sin(uTime * 0.3 + dist * 10.0) * 0.15;
+
+                        // Compose
+                        vec3 scleraColor = vec3(0.04, 0.04, 0.07);
+                        float pulse = sin(uTime * uPulseSpeed) * 0.15 + 0.85;
+
+                        // Fresnel rim glow
+                        float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 3.0);
+                        vec3 rimColor = uColor * fresnel * 0.6 * pulse;
+
+                        vec3 color = scleraColor;
+                        color = mix(color, irisColor * pulse, iris);
+                        color = mix(color, vec3(0.01), pupil);
+                        color += vec3(1.0) * spec * 0.8;
+                        color += rimColor;
+
+                        // Outer glow falloff
+                        float alpha = smoothstep(0.5, 0.35, length(vPosition.xy));
+                        alpha = max(alpha, fresnel * 0.3);
+
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `,
+                transparent: true
+            });
+
+            const eyeMesh = new THREE.Mesh(outerGeo, outerMat);
+            scene.add(eyeMesh);
+
+            // Outer glow sprite
+            const spriteMat = new THREE.SpriteMaterial({
+                color: 0xa855f7,
+                transparent: true,
+                opacity: 0.15,
+                blending: THREE.AdditiveBlending
+            });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(3, 3, 1);
+            scene.add(sprite);
+
+            container.appendChild(renderer.domElement);
+            renderer.domElement.style.borderRadius = '50%';
+
+            const instance = { scene, camera, renderer, eyeMesh, outerMat, sprite, spriteMat, size, active: true };
+            this.instances.push(instance);
+
+            return instance;
+        } catch(e) {
+            return null;
+        }
+    }
+
+    setGameState(stateName) {
+        switch(stateName) {
+            case 'idle': case 'welcome': case 'lobby':
+                this.targetColor = { r: 0.66, g: 0.33, b: 0.97 }; // wit purple
+                this.pulseSpeed = 1.0;
+                this.targetDilation = 0.3;
+                break;
+            case 'judging': case 'curating':
+                this.targetColor = { r: 0.18, g: 0.83, b: 0.75 }; // oracle teal
+                this.pulseSpeed = 2.0;
+                this.targetDilation = 0.25;
+                break;
+            case 'roundResults': case 'finished':
+                this.targetColor = { r: 0.98, g: 0.75, b: 0.14 }; // consensus gold
+                this.pulseSpeed = 0.5;
+                this.targetDilation = 0.35;
+                break;
+            case 'submitting':
+                this.targetColor = { r: 0.66, g: 0.33, b: 0.97 };
+                this.pulseSpeed = 1.2;
+                this.targetDilation = 0.28;
+                break;
+            case 'betting':
+                this.targetColor = { r: 0.96, g: 0.62, b: 0.04 };
+                this.pulseSpeed = 1.5;
+                this.targetDilation = 0.22;
+                break;
+            default:
+                this.targetColor = { r: 0.66, g: 0.33, b: 0.97 };
+                this.pulseSpeed = 1.0;
+                this.targetDilation = 0.3;
+        }
+    }
+
+    dilate() { this.targetDilation = 0.45; }
+    undilate() { this.targetDilation = 0.3; }
+
+    animate() {
+        // Smooth lerp mouse
+        this.targetX += (this.mouseX - this.targetX) * 0.08;
+        this.targetY += (this.mouseY - this.targetY) * 0.08;
+
+        // Smooth lerp color
+        this.gameColor.r += (this.targetColor.r - this.gameColor.r) * 0.03;
+        this.gameColor.g += (this.targetColor.g - this.gameColor.g) * 0.03;
+        this.gameColor.b += (this.targetColor.b - this.gameColor.b) * 0.03;
+
+        // Smooth lerp dilation
+        this.pupilDilation += (this.targetDilation - this.pupilDilation) * 0.05;
+
+        const time = performance.now() * 0.001;
+
+        for (const inst of this.instances) {
+            if (!inst.active || !inst.renderer.domElement.isConnected) {
+                inst.active = false;
+                continue;
+            }
+
+            inst.outerMat.uniforms.uTime.value = time;
+            inst.outerMat.uniforms.uMouse.value.set(this.targetX, this.targetY);
+            inst.outerMat.uniforms.uColor.value.set(this.gameColor.r, this.gameColor.g, this.gameColor.b);
+            inst.outerMat.uniforms.uDilation.value = this.pupilDilation;
+            inst.outerMat.uniforms.uPulseSpeed.value = this.pulseSpeed;
+
+            // Subtle mesh rotation following mouse
+            inst.eyeMesh.rotation.y = this.targetX * 0.15;
+            inst.eyeMesh.rotation.x = -this.targetY * 0.15;
+
+            // Glow sprite pulse
+            const pulse = Math.sin(time * this.pulseSpeed) * 0.05 + 0.15;
+            inst.spriteMat.opacity = pulse;
+            inst.spriteMat.color.setRGB(this.gameColor.r, this.gameColor.g, this.gameColor.b);
+
+            inst.renderer.render(inst.scene, inst.camera);
+        }
+
+        // Clean up disconnected instances
+        this.instances = this.instances.filter(i => i.active);
+
+        requestAnimationFrame(() => this.animate());
+    }
+
+    start() {
+        if (this.available) this.animate();
+    }
+}
+
+const oracleEye3D = new OracleEye3D();
+oracleEye3D.start();
+
+// Mount 3D eye to a container element (called after render)
+function mountOracleEye(containerId, size) {
+    const el = document.getElementById(containerId);
+    if (!el || el.querySelector('canvas')) return; // already mounted or missing
+    oracleEye3D.mount(el, size);
+}
+
+// === ORACLE EYE CURSOR TRACKING (CSS fallback) ===
 document.addEventListener('mousemove', e => {
     document.querySelectorAll('.oracle-eye').forEach(el => {
         const rect = el.getBoundingClientRect();
@@ -297,7 +593,9 @@ function updateTimerDisplay() {
 function updateCharCount() {
     const charCount = document.getElementById('char-count');
     if (charCount) {
-        charCount.textContent = `${state.punchlineText.length}/200`;
+        const len = state.punchlineText.length;
+        charCount.textContent = `${len}/200`;
+        charCount.className = `text-[10px] font-mono tracking-wider ${len >= 180 ? 'text-red-400 font-bold' : len >= 140 ? 'text-consensus' : 'text-gray-600'}`;
     }
 }
 
@@ -516,6 +814,12 @@ function handlePhaseChange(oldStatus, newStatus) {
     if (typingTimeout) clearTimeout(typingTimeout);
 
     state.screen = newStatus === 'roundResults' ? 'roundResults' : newStatus;
+    // Track game events for HUD wings
+    if (newStatus === 'submitting') addGameEvent('round', 'Round ' + (state.room?.currentRound || '?') + ' started');
+    if (newStatus === 'betting') addGameEvent('phase', 'Betting phase opened');
+    if (newStatus === 'judging') addGameEvent('oracle', 'Oracle judging in progress');
+    if (newStatus === 'roundResults') addGameEvent('result', 'Round results revealed');
+    if (newStatus === 'finished') addGameEvent('end', 'Game complete!');
     if (newStatus === 'submitting') {
         playSound('start');
         state.hasSubmitted = false;
@@ -798,10 +1102,54 @@ async function loadWeeklyTheme() {
     } catch(e) {}
 }
 
-function goToLobby() {
+function startBootSequence() {
     if (!state.playerName.trim()) { state.error = 'Enter your name'; render(); return; }
     initAudio();
     playSound('click');
+
+    const container = document.getElementById('boot-container');
+    if (!container) { goToLobby(); return; }
+
+    const steps = ['CONNECTING...', 'VALIDATING IDENTITY...', 'LOADING PROTOCOL...', 'SESSION ACTIVE'];
+    let step = 0;
+
+    container.innerHTML = `
+        <div class="text-left">
+            <div id="boot-steps" class="space-y-1 mb-3"></div>
+            <div class="h-[3px] bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
+                <div id="boot-bar" class="boot-progress" style="width:0%"></div>
+            </div>
+        </div>
+    `;
+
+    const stepsEl = document.getElementById('boot-steps');
+    const barEl = document.getElementById('boot-bar');
+
+    function showStep() {
+        if (step >= steps.length) {
+            playSound('start');
+            setTimeout(goToLobby, 300);
+            return;
+        }
+        playSound('tick');
+        const isLast = step === steps.length - 1;
+        const stepEl = document.createElement('div');
+        stepEl.className = 'flex items-center gap-2';
+        stepEl.innerHTML = `
+            <span class="text-[10px] font-mono ${isLast ? 'text-green-400' : 'text-wit'}">${isLast ? '&#10003;' : '&gt;'}</span>
+            <span class="text-[11px] font-mono ${isLast ? 'text-green-400' : 'text-gray-400'} boot-text">${steps[step]}</span>
+        `;
+        stepsEl.appendChild(stepEl);
+        if (barEl) barEl.style.width = ((step + 1) / steps.length * 100) + '%';
+        step++;
+        setTimeout(showStep, 400);
+    }
+    showStep();
+}
+
+function goToLobby() {
+    if (!state.playerName.trim()) { state.error = 'Enter your name'; render(); return; }
+    initAudio();
     state.screen = 'lobby';
     localStorage.setItem('playerName', state.playerName);
     // Init playerId
@@ -1173,6 +1521,159 @@ function stopValidatorVoting() {
     }
 }
 
+// === HUD WING PANELS ===
+let gameEvents = []; // Track live game events for left wing
+
+function addGameEvent(type, text) {
+    gameEvents.unshift({ type, text, time: Date.now() });
+    if (gameEvents.length > 8) gameEvents.pop();
+}
+
+function renderLeftWing() {
+    const events = gameEvents.slice(0, 5);
+    return `
+        <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
+            <div class="glass-panel p-4 rounded-2xl">
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-2 h-2 rounded-full bg-wit animate-pulse"></div>
+                    <span class="text-[10px] font-mono text-gray-500 tracking-[0.2em]">LIVE ACTIVITY</span>
+                </div>
+                ${events.length > 0 ? events.map(ev => `
+                    <div class="wing-event mb-2 py-1.5">
+                        <p class="text-[11px] font-mono text-gray-400">${esc(ev.text)}</p>
+                        <p class="text-[9px] font-mono text-gray-700">${formatEventTime(ev.time)}</p>
+                    </div>
+                `).join('') : `
+                    <div class="text-center py-6">
+                        <p class="text-[11px] font-mono text-gray-700">No activity yet</p>
+                        <p class="text-[9px] font-mono text-gray-800 mt-1">Join a game to see live events</p>
+                    </div>
+                `}
+                ${state.room ? `
+                    <div class="mt-3 pt-3 border-t border-white/[0.04]">
+                        <p class="text-[9px] font-mono text-gray-600 tracking-wider mb-2">ROOM LOG</p>
+                        ${(state.room.players || []).slice(0, 4).map(p => `
+                            <div class="flex items-center gap-1.5 mb-1">
+                                <div class="w-1.5 h-1.5 rounded-full ${p.isBot ? 'bg-oracle/50' : 'bg-wit/50'}"></div>
+                                <span class="text-[10px] font-mono text-gray-500 truncate">${esc(p.name)}</span>
+                                ${p.isBot ? '<span class="text-[8px] text-oracle/40">BOT</span>' : ''}
+                            </div>
+                        `).join('')}
+                        ${(state.room.players || []).length > 4 ? `<p class="text-[9px] text-gray-700 font-mono">+${state.room.players.length - 4} more</p>` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        </aside>
+    `;
+}
+
+function renderRightWing() {
+    const r = state.room;
+    const budget = r?.betBudgets?.[state.playerName];
+    const players = r?.players || [];
+    const topPlayers = [...players].sort((a, b) => b.score - a.score).slice(0, 5);
+
+    return `
+        <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
+            <div class="glass-panel p-4 rounded-2xl">
+                <!-- Network Status -->
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <span class="text-[10px] font-mono text-gray-500 tracking-[0.2em]">NETWORK STATUS</span>
+                </div>
+                <div class="space-y-2 mb-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] font-mono text-gray-600">PROTOCOL</span>
+                        <span class="text-[10px] font-mono text-oracle">GenLayer</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] font-mono text-gray-600">NETWORK</span>
+                        <div class="flex items-center gap-1">
+                            <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                            <span class="text-[10px] font-mono text-green-400">TESTNET</span>
+                        </div>
+                    </div>
+                    ${r ? `
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-mono text-gray-600">ROOM</span>
+                            <span class="text-[10px] font-mono text-wit">${r.id || '—'}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-mono text-gray-600">PLAYERS</span>
+                            <span class="text-[10px] font-mono text-white">${players.length}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-mono text-gray-600">ROUND</span>
+                            <span class="text-[10px] font-mono text-white">${r.currentRound || 0}/${r.totalRounds || 5}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-mono text-gray-600">STATUS</span>
+                            <span class="text-[10px] font-mono ${r.status === 'judging' ? 'text-oracle' : r.status === 'submitting' ? 'text-wit' : 'text-gray-400'}">${(r.status || 'IDLE').toUpperCase()}</span>
+                        </div>
+                    ` : `
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-mono text-gray-600">STATUS</span>
+                            <span class="text-[10px] font-mono text-gray-500">IDLE</span>
+                        </div>
+                    `}
+                </div>
+
+                ${r && topPlayers.length > 0 ? `
+                    <!-- Mini Leaderboard -->
+                    <div class="border-t border-white/[0.04] pt-3 mb-3">
+                        <p class="text-[9px] font-mono text-gray-600 tracking-wider mb-2">LEADERBOARD</p>
+                        <div class="space-y-1.5">
+                            ${topPlayers.map((p, i) => `
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-[10px] font-mono ${i === 0 ? 'text-consensus' : 'text-gray-600'}">${i + 1}.</span>
+                                        <span class="text-[10px] font-mono ${p.name === state.playerName ? 'text-wit' : 'text-gray-400'} truncate max-w-[120px]">${esc(p.name)}</span>
+                                    </div>
+                                    <span class="text-[10px] font-mono font-bold ${i === 0 ? 'text-consensus' : 'text-gray-500'}">${p.score}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${budget !== undefined ? `
+                    <!-- Betting Budget -->
+                    <div class="border-t border-white/[0.04] pt-3">
+                        <p class="text-[9px] font-mono text-gray-600 tracking-wider mb-2">BET BUDGET</p>
+                        <div class="flex items-center justify-between">
+                            <div class="h-2 flex-1 bg-obsidian rounded-full overflow-hidden border border-white/[0.04] mr-3">
+                                <div class="h-full rounded-full ${budget <= 50 ? 'bg-red-500' : 'bg-gradient-to-r from-consensus to-consensus-dim'}" style="width:${Math.min(100, (budget / 300) * 100)}%"></div>
+                            </div>
+                            <span class="text-xs font-mono font-bold ${budget <= 50 ? 'text-red-400' : 'text-consensus'}">${budget}</span>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${state.profile ? `
+                    <!-- Player Info -->
+                    <div class="border-t border-white/[0.04] pt-3 mt-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-wit/20 flex items-center justify-center text-[10px] font-mono font-bold text-wit">${state.profile.level}</div>
+                            <div>
+                                <p class="text-[10px] font-mono text-gray-400">${esc(state.profile.title)}</p>
+                                <p class="text-[9px] font-mono text-gray-600">${state.profile.lifetimeXP?.toLocaleString()} XP</p>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        </aside>
+    `;
+}
+
+function formatEventTime(ts) {
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 5) return 'just now';
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    return 'earlier';
+}
+
 function render(force = false) {
     // Skip render completely while typing (unless forced)
     if (isTyping && !force) {
@@ -1203,30 +1704,45 @@ function render(force = false) {
         selectionEnd = activeEl.selectionEnd;
     }
     
+    // Track screen transitions for sound + tab title
+    const prevScreen = document.getElementById('app')?.dataset?.screen;
+    if (prevScreen && prevScreen !== state.screen) {
+        playScreenTransition(prevScreen, state.screen);
+    }
+    // Update tab title
+    const phaseLabel = state.room ? `[R${state.room.currentRound || 0}] ${(state.screen || '').toUpperCase()}` : '';
+    document.title = phaseLabel ? `${phaseLabel} - Oracle of Wit` : 'Oracle of Wit - GenLayer Community Game';
+
     const isHighStakes = state.room?.betBudgets?.[state.playerName] !== undefined && (state.room.betBudgets[state.playerName] ?? 300) <= 50;
-    document.getElementById('app').innerHTML = `
+    const appEl = document.getElementById('app');
+    appEl.dataset.screen = state.screen;
+    appEl.innerHTML = `
         <div class="${isHighStakes ? 'high-stakes' : ''}">
-        <header class="py-2.5 px-4 border-b border-white/[0.04] sticky top-0 z-50" style="background:rgba(5,5,5,0.88);backdrop-filter:blur(24px) saturate(1.2)">
-            <div class="max-w-lg mx-auto flex justify-between items-center">
+        <header id="main-header" class="py-2.5 px-4 border-b border-white/[0.04] sticky top-0 z-50 header-transition" style="background:rgba(5,5,5,0.88);backdrop-filter:blur(24px) saturate(1.2)">
+            <div class="w-full flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 oracle-eye rounded-full flex items-center justify-center shrink-0">
-                        <span class="text-sm">👁</span>
-                    </div>
+                    <div id="header-eye" class="w-8 h-8 oracle-eye rounded-full flex items-center justify-center shrink-0"></div>
                     <div>
                         <h1 class="text-sm font-display font-bold gradient-text leading-tight tracking-wider">ORACLE OF WIT</h1>
                         <p class="text-[9px] font-mono text-gray-600 tracking-widest">GENLAYER PROTOCOL</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5">
-                    <button onclick="toggleSound()" class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '🔊' : '🔇'}</button>
-                    ${state.profile ? `<span class="px-2 py-1 bg-wit/10 border border-wit/20 rounded-lg text-xs font-mono">Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span></span>` : state.playerName ? `<span class="px-2 py-1 bg-wit/10 border border-wit/20 rounded-lg text-xs font-mono">${esc(state.playerName)}</span>` : ''}
-                    ${state.roomId ? `<span class="px-1.5 py-1 bg-obsidian border border-white/[0.04] rounded text-[10px] font-mono text-gray-500">${state.roomId}</span>` : ''}
+                    <div class="hidden sm:flex items-center gap-1.5 mr-2">
+                        <div class="flex items-center gap-1 px-2 py-1 bg-green-500/10 border border-green-500/20 rounded-lg">
+                            <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                            <span class="text-[9px] font-mono text-green-400 tracking-wider">TESTNET</span>
+                        </div>
+                    </div>
+                    <button onclick="toggleSound()" class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'}</button>
+                    ${state.profile ? `<span class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)">Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span></span>` : state.playerName ? `<span class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)">${esc(state.playerName)}</span>` : ''}
+                    ${state.roomId ? `<span class="px-1.5 py-1 bg-obsidian border border-white/[0.06] rounded text-[10px] font-mono text-gray-400">${state.roomId}</span>` : ''}
                 </div>
             </div>
         </header>
         ${state.room ? `
         <div class="consensus-hud border-b border-white/[0.03] py-1 px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
-            <div class="max-w-lg mx-auto flex items-center justify-between text-gray-500">
+            <div class="w-full flex items-center justify-between text-gray-500">
                 <div class="flex items-center gap-3">
                     <div class="flex items-center gap-1"><div class="hud-dot bg-green-500"></div><span>GenLayer</span></div>
                     <span class="text-white/10">|</span>
@@ -1240,10 +1756,21 @@ function render(force = false) {
             </div>
         </div>
         ` : ''}
-        <main class="px-4 py-5 max-w-lg mx-auto pb-20 relative z-10">
-            ${state.error ? `<div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">⚠ ${esc(state.error)} <button onclick="state.error=null;render()" class="ml-3 text-red-400 hover:text-white">×</button></div>` : ''}
+        ${state.room ? `
+        <div class="w-full px-4 lg:px-6 py-5 pb-20 relative z-10 flex gap-6" style="max-width:1600px;margin:0 auto">
+            ${renderLeftWing()}
+            <main class="flex-1 min-w-0 screen-enter" style="max-width:900px">
+                ${state.error ? `<div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">⚠ ${esc(state.error)} <button onclick="state.error=null;render()" class="ml-3 text-red-400 hover:text-white">×</button></div>` : ''}
+                ${renderScreen()}
+            </main>
+            ${renderRightWing()}
+        </div>
+        ` : `
+        <main class="w-full relative z-10 screen-enter">
+            ${state.error ? `<div class="mx-auto px-4 py-2" style="max-width:1400px"><div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">⚠ ${esc(state.error)} <button onclick="state.error=null;render()" class="ml-3 text-red-400 hover:text-white">×</button></div></div>` : ''}
             ${renderScreen()}
         </main>
+        `}
         </div>
     `;
     
@@ -1255,6 +1782,13 @@ function render(force = false) {
             textarea.setSelectionRange(selectionStart, selectionEnd);
         }
     }
+
+    // Mount 3D oracle eyes after render
+    requestAnimationFrame(() => {
+        mountOracleEye('welcome-eye-3d', 160);
+        mountOracleEye('header-eye', 32);
+        oracleEye3D.setGameState(state.screen);
+    });
 }
 
 function renderTimer() {
@@ -1300,90 +1834,87 @@ function renderScreen() {
 
 function renderWelcome() {
     return `
-        <div class="text-center py-6">
-            <div class="w-32 h-32 oracle-eye rounded-full flex items-center justify-center mx-auto mb-8 animate-float processing">
-                <span class="text-5xl" style="filter:brightness(1.5)">👁</span>
+        <!-- HERO SECTION — full width -->
+        <div class="text-center pt-16 pb-12 px-4">
+            <div id="welcome-eye-3d" class="oracle-eye-3d mx-auto mb-10 animate-float oracle-eye rounded-full flex items-center justify-center processing" style="width:200px;height:200px"></div>
+            <p class="font-mono text-sm text-oracle/60 tracking-[0.3em] mb-3">WELCOME TO</p>
+            <h1 class="font-display font-bold mb-4 tracking-wider" style="font-size:clamp(2.5rem,6vw,4.5rem)"><span class="gradient-text">ORACLE OF WIT</span></h1>
+            <p class="text-gray-400 text-base font-mono max-w-xl mx-auto mb-4">Decentralized humor arbitration protocol powered by GenLayer Intelligent Contracts</p>
+            <div class="flex gap-3 flex-wrap justify-center mb-12">
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-oracle/10 border border-oracle/25 rounded-full">
+                    <div class="w-2 h-2 rounded-full bg-oracle"></div>
+                    <span class="text-[11px] font-mono text-oracle">Optimistic Democracy</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-oracle/10 border border-oracle/25 rounded-full">
+                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span class="text-[11px] font-mono text-gray-300">On-Chain Consensus</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-oracle/10 border border-oracle/25 rounded-full">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2DD4BF" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span class="text-[11px] font-mono text-gray-300">Verifiable Results</span>
+                </div>
             </div>
-            <p class="font-mono text-xs text-oracle/60 tracking-[0.3em] mb-2">WELCOME TO</p>
-            <h1 class="text-5xl font-display font-bold mb-3 tracking-wider"><span class="gradient-text">ORACLE OF WIT</span></h1>
-            <p class="text-gray-500 text-sm font-mono mb-8">Decentralized humor arbitration protocol</p>
+        </div>
 
-            <!-- How to Play Section -->
-            <div class="glow-card mb-6 overflow-hidden">
-                <button onclick="toggleHelp()" class="w-full p-4 flex justify-between items-center hover:bg-white/[0.02] transition-colors">
-                    <span class="text-consensus font-mono font-bold text-xs tracking-wider">HOW IT WORKS</span>
-                    <span id="help-toggle-icon" class="text-gray-600 transition-transform text-xs ${state.showHelp ? 'rotate-180' : ''}">▼</span>
-                </button>
-                <div id="help-content" class="${state.showHelp ? '' : 'hidden'} border-t border-white/[0.04] p-4 text-left">
-                    <div class="space-y-4 text-sm">
-                        <div class="flex gap-3">
-                            <div class="w-8 h-8 rounded-lg bg-wit/20 border border-wit/30 flex items-center justify-center font-mono font-bold text-wit text-xs shrink-0">01</div>
-                            <div>
-                                <p class="font-display font-bold text-white text-sm">Complete the Joke</p>
-                                <p class="text-gray-500 text-xs">You'll see a joke setup. Write the funniest punchline you can think of.</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="w-8 h-8 rounded-lg bg-oracle/20 border border-oracle/30 flex items-center justify-center font-mono font-bold text-oracle text-xs shrink-0">02</div>
-                            <div>
-                                <p class="font-display font-bold text-white text-sm">Bet on the Winner</p>
-                                <p class="text-gray-500 text-xs">See all submissions anonymously. Bet XP on which one the Oracle will pick.</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="w-8 h-8 rounded-lg bg-consensus/20 border border-consensus/30 flex items-center justify-center font-mono font-bold text-consensus text-xs shrink-0">03</div>
-                            <div>
-                                <p class="font-display font-bold text-white text-sm">Oracle Judges</p>
-                                <p class="text-gray-500 text-xs">AI validators vote via GenLayer Optimistic Democracy. Consensus is recorded on-chain.</p>
-                            </div>
-                        </div>
-
-                        <div class="mt-4 pt-4 border-t border-white/[0.04]">
-                            <p class="font-mono text-xs text-gray-500 tracking-wider mb-2">SCORING</p>
-                            <div class="grid grid-cols-3 gap-2 text-xs font-mono">
-                                <div class="bg-obsidian rounded-lg p-2.5 border border-white/[0.04]">
-                                    <span class="text-green-400/80 text-[10px]">JOKE WINS</span>
-                                    <span class="block text-consensus font-bold mt-1">+100 XP</span>
-                                </div>
-                                <div class="bg-obsidian rounded-lg p-2.5 border border-white/[0.04]">
-                                    <span class="text-oracle/80 text-[10px]">CORRECT BET</span>
-                                    <span class="block text-consensus font-bold mt-1">+BET×2</span>
-                                </div>
-                                <div class="bg-obsidian rounded-lg p-2.5 border border-white/[0.04]">
-                                    <span class="text-red-400/80 text-[10px]">WRONG BET</span>
-                                    <span class="block text-red-400 font-bold mt-1">-BET XP</span>
-                                </div>
-                            </div>
-                        </div>
+        <!-- HOW IT WORKS + LOGIN — contained width -->
+        <div class="mx-auto px-4 pb-20" style="max-width:1100px">
+            <!-- How It Works — 3 Column Data Cards -->
+            <p class="text-consensus font-mono font-bold text-xs tracking-[0.2em] mb-5 text-center">HOW IT WORKS</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div class="data-card data-card-wit text-center py-8 px-6">
+                    <div class="w-14 h-14 rounded-2xl bg-wit/15 border border-wit/25 flex items-center justify-center mx-auto mb-4">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="1.5" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    </div>
+                    <p class="font-display font-bold text-white text-lg mb-2 tracking-wider">WRITE</p>
+                    <p class="text-gray-500 text-sm font-mono leading-relaxed">Complete the joke setup with your funniest punchline</p>
+                    <div class="mt-4 pt-4 border-t border-white/[0.04]">
+                        <span class="text-green-400 font-mono font-bold text-sm">+100 XP</span>
+                        <span class="text-gray-600 font-mono text-[10px] block mt-1">WINNING JOKE</span>
+                    </div>
+                </div>
+                <div class="data-card data-card-oracle text-center py-8 px-6">
+                    <div class="w-14 h-14 rounded-2xl bg-oracle/15 border border-oracle/25 flex items-center justify-center mx-auto mb-4">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2DD4BF" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
+                    </div>
+                    <p class="font-display font-bold text-white text-lg mb-2 tracking-wider">BET</p>
+                    <p class="text-gray-500 text-sm font-mono leading-relaxed">Stake XP on which punchline the Oracle will choose</p>
+                    <div class="mt-4 pt-4 border-t border-white/[0.04]">
+                        <span class="text-consensus font-mono font-bold text-sm">+BET x2</span>
+                        <span class="text-gray-600 font-mono text-[10px] block mt-1">CORRECT PREDICTION</span>
+                    </div>
+                </div>
+                <div class="data-card data-card-consensus text-center py-8 px-6">
+                    <div class="w-14 h-14 rounded-2xl bg-consensus/15 border border-consensus/25 flex items-center justify-center mx-auto mb-4">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="1.5" stroke-linecap="round"><path d="M12 2v4"/><path d="m6.34 6.34 2.83 2.83"/><path d="M2 12h4"/><circle cx="12" cy="12" r="4"/><path d="m14.83 9.17 2.83-2.83"/><path d="M18 12h4"/></svg>
+                    </div>
+                    <p class="font-display font-bold text-white text-lg mb-2 tracking-wider">JUDGE</p>
+                    <p class="text-gray-500 text-sm font-mono leading-relaxed">AI validators reach on-chain consensus via GenLayer</p>
+                    <div class="mt-4 pt-4 border-t border-white/[0.04]">
+                        <span class="text-wit font-mono font-bold text-sm">5 VALIDATORS</span>
+                        <span class="text-gray-600 font-mono text-[10px] block mt-1">OPTIMISTIC DEMOCRACY</span>
                     </div>
                 </div>
             </div>
 
-            <!-- GenLayer Protocol -->
-            <div class="glow-card-cyan p-4 mb-6 text-left glow-card">
-                <div class="flex items-center gap-2 mb-3">
-                    <div class="hud-dot bg-oracle"></div>
-                    <p class="font-mono text-oracle text-xs tracking-wider font-bold">GENLAYER INTELLIGENT CONTRACTS</p>
+            <!-- Login Card — centered, wide -->
+            <div class="mx-auto" style="max-width:520px">
+                <div class="glow-card p-8">
+                    <label class="text-[10px] font-mono text-gray-500 tracking-[0.15em] block mb-3 text-left">PLAYER IDENTITY</label>
+                    <input type="text" placeholder="Enter your name..." value="${esc(state.playerName)}"
+                        oninput="state.playerName=this.value;if(typeof oracleEye3D!=='undefined')oracleEye3D.dilate()"
+                        onblur="if(typeof oracleEye3D!=='undefined')oracleEye3D.undilate()"
+                        onfocus="if(typeof oracleEye3D!=='undefined')oracleEye3D.dilate()"
+                        onkeypress="if(event.key==='Enter')startBootSequence()"
+                        class="w-full px-5 py-4 rounded-xl mb-5 text-base">
+                    <div id="boot-container">
+                        <button id="boot-btn" onclick="startBootSequence()" class="btn btn-primary w-full py-4 rounded-xl text-sm text-white" style="box-shadow: 0 4px 30px rgba(168,85,247,0.3), inset 0 1px 0 rgba(255,255,255,0.1);font-size:0.9rem">
+                            INITIALIZE SESSION
+                        </button>
+                    </div>
                 </div>
-                <div class="text-xs text-gray-500 space-y-2 font-mono">
-                    <p><span class="text-oracle">&#9632;</span> <span class="text-gray-300">Optimistic Democracy</span> — independent validator judgment</p>
-                    <p><span class="text-oracle">&#9632;</span> <span class="text-gray-300">On-Chain Consensus</span> — protocol-level agreement</p>
-                    <p><span class="text-oracle">&#9632;</span> <span class="text-gray-300">Verifiable Results</span> — transparent, immutable record</p>
+                <div class="mt-4 text-center">
+                    <a href="https://www.genlayer.com" target="_blank" class="text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider">POWERED BY GENLAYER &rarr;</a>
                 </div>
-                <div class="mt-3 pt-3 border-t border-white/[0.04] text-center">
-                    <a href="https://www.genlayer.com" target="_blank" class="text-[10px] font-mono text-oracle/60 hover:text-oracle transition-colors tracking-wider">GENLAYER.COM →</a>
-                </div>
-            </div>
-
-            <div class="glow-card p-6">
-                <label class="text-[10px] font-mono text-gray-600 tracking-wider block mb-2 text-left">IDENTITY</label>
-                <input type="text" placeholder="Enter your name..." value="${esc(state.playerName)}"
-                    oninput="state.playerName=this.value"
-                    onkeypress="if(event.key==='Enter')goToLobby()"
-                    class="w-full px-4 py-3 rounded-xl mb-4">
-                <button onclick="goToLobby()" class="btn btn-play w-full py-4 rounded-xl text-sm">
-                    INITIALIZE SESSION
-                </button>
             </div>
         </div>
     `;
@@ -1429,131 +1960,145 @@ function renderProfileCard() {
 function renderLobby() {
     const gamesPlayedToday = parseInt(localStorage.getItem('gamesToday_' + getTodayKeyClient()) || '0');
     return `
-        <div class="space-y-5">
-            <div class="text-center">
-                <h2 class="text-2xl font-display font-bold mb-1 tracking-wider"><span class="gradient-text">GAME LOBBY</span></h2>
+        <div class="mx-auto px-4 lg:px-8 py-8 pb-20" style="max-width:1200px">
+            <!-- Lobby Header -->
+            <div class="text-center mb-8">
+                <h2 class="text-3xl md:text-4xl font-display font-bold mb-2 tracking-wider"><span class="gradient-text">GAME LOBBY</span></h2>
                 ${gamesPlayedToday > 0 ? `<p class="text-[10px] font-mono text-gray-600 tracking-wider">SESSIONS TODAY: ${gamesPlayedToday}</p>` : ''}
             </div>
 
-            <!-- Profile Card -->
-            ${renderProfileCard()}
-
-            ${state.currentWeeklyTheme ? `
-            <!-- Weekly Theme Banner -->
-            <div class="glow-card glow-card-amber p-4">
-                <div class="flex items-center gap-3">
-                    <span class="text-3xl">${state.currentWeeklyTheme.emoji}</span>
-                    <div class="flex-1">
-                        <p class="text-xs font-mono text-wit tracking-wider">This Week's Theme</p>
-                        <p class="font-display font-bold text-lg tracking-wider">${state.currentWeeklyTheme.name}</p>
-                        <p class="text-xs text-gray-400">${state.currentWeeklyTheme.description}</p>
+            <!-- Row 1: Profile + Weekly Theme -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+                <div>${renderProfileCard()}</div>
+                ${state.currentWeeklyTheme ? `
+                <div class="glow-card glow-card-amber p-5 flex items-center">
+                    <div class="flex items-center gap-4 w-full">
+                        <span class="text-4xl">${state.currentWeeklyTheme.emoji}</span>
+                        <div class="flex-1">
+                            <p class="text-[10px] font-mono text-wit tracking-widest mb-1">THIS WEEK'S THEME</p>
+                            <p class="font-display font-bold text-xl tracking-wider">${state.currentWeeklyTheme.name}</p>
+                            <p class="text-sm text-gray-400 mt-1">${state.currentWeeklyTheme.description}</p>
+                        </div>
                     </div>
                 </div>
-            </div>
-            ` : ''}
-
-            <!-- Single Player -->
-            <div class="glow-card glow-card-gold p-5">
-                <div class="flex items-center gap-2 mb-1">
-                    <h3 class="text-lg font-display font-bold tracking-wider">SOLO MODE</h3>
-                    <span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">VS AI</span>
+                ` : `
+                <div class="glow-card p-5 flex flex-col justify-center items-center text-center" style="border:1px dashed rgba(168,85,247,0.2)">
+                    <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">NO WEEKLY THEME</p>
+                    <p class="text-xs text-gray-500">Check back soon for themed rounds</p>
                 </div>
-                <p class="text-gray-500 text-xs font-mono mb-4">Practice against oracle-calibrated bots</p>
-                <div class="grid grid-cols-3 gap-2">
-                    <button onclick="createRoom('tech',true)" class="btn cat-btn p-3.5 bg-gradient-to-br from-blue-900/80 to-cyan-900/80 rounded-xl text-white border border-cyan-500/20">
-                        <span class="text-xl block mb-1">🤖</span><span class="text-[10px] font-mono tracking-wider">TECH</span>
-                    </button>
-                    <button onclick="createRoom('crypto',true)" class="btn cat-btn p-3.5 bg-gradient-to-br from-amber-900/80 to-orange-900/80 rounded-xl text-white border border-amber-500/20">
-                        <span class="text-xl block mb-1">💎</span><span class="text-[10px] font-mono tracking-wider">CRYPTO</span>
-                    </button>
-                    <button onclick="createRoom('general',true)" class="btn cat-btn p-3.5 bg-gradient-to-br from-purple-900/80 to-pink-900/80 rounded-xl text-white border border-purple-500/20">
-                        <span class="text-xl block mb-1">😂</span><span class="text-[10px] font-mono tracking-wider">GENERAL</span>
-                    </button>
-                </div>
+                `}
             </div>
 
-            <!-- Multiplayer -->
-            <div class="glow-card p-5">
-                <div class="flex items-center gap-2 mb-1">
-                    <h3 class="text-lg font-display font-bold tracking-wider">MULTIPLAYER</h3>
-                    <span class="text-[9px] font-mono text-wit/60 bg-wit/10 px-1.5 py-0.5 rounded border border-wit/20">2-100</span>
-                </div>
-                <p class="text-gray-500 text-xs font-mono mb-4">Create a room and invite players</p>
-                <div class="grid grid-cols-3 gap-2 mb-4">
-                    <button onclick="createRoom('tech',false)" class="btn cat-btn p-3 bg-obsidian rounded-xl text-white border border-white/[0.04]">
-                        <span class="text-lg block">🤖</span><span class="text-[10px] font-mono text-gray-400">TECH</span>
-                    </button>
-                    <button onclick="createRoom('crypto',false)" class="btn cat-btn p-3 bg-obsidian rounded-xl text-white border border-white/[0.04]">
-                        <span class="text-lg block">💎</span><span class="text-[10px] font-mono text-gray-400">CRYPTO</span>
-                    </button>
-                    <button onclick="createRoom('general',false)" class="btn cat-btn p-3 bg-obsidian rounded-xl text-white border border-white/[0.04]">
-                        <span class="text-lg block">😂</span><span class="text-[10px] font-mono text-gray-400">GENERAL</span>
-                    </button>
-                </div>
-
-                <div class="flex gap-2">
-                    <input type="text" id="room-code" placeholder="Enter room code..."
-                        onkeypress="if(event.key==='Enter')joinRoom(this.value)"
-                        class="flex-1 px-4 py-2.5 rounded-xl uppercase">
-                    <button onclick="joinRoom(document.getElementById('room-code').value)" class="btn btn-primary px-6 py-2.5 rounded-xl font-bold text-white">Join</button>
+            <!-- Row 2: Solo Mode + Multiplayer side by side -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+                <!-- Solo Mode -->
+                <div class="glow-card glow-card-gold p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <h3 class="text-xl font-display font-bold tracking-wider">SOLO MODE</h3>
+                        <span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-2 py-0.5 rounded border border-consensus/20">VS AI</span>
+                    </div>
+                    <p class="text-gray-500 text-xs font-mono mb-5">Practice against oracle-calibrated bots</p>
+                    <div class="grid grid-cols-3 gap-3">
+                        <button onclick="createRoom('tech',true)" class="btn cat-btn p-4 bg-gradient-to-br from-blue-900/80 to-cyan-900/80 rounded-xl text-white border border-cyan-500/30 hover:border-cyan-400/50 transition-all hover:scale-[1.03]">
+                            <span class="text-2xl block mb-1.5">🤖</span><span class="text-[10px] font-mono tracking-wider font-bold">TECH</span>
+                        </button>
+                        <button onclick="createRoom('crypto',true)" class="btn cat-btn p-4 bg-gradient-to-br from-amber-900/80 to-orange-900/80 rounded-xl text-white border border-amber-500/30 hover:border-amber-400/50 transition-all hover:scale-[1.03]">
+                            <span class="text-2xl block mb-1.5">💎</span><span class="text-[10px] font-mono tracking-wider font-bold">CRYPTO</span>
+                        </button>
+                        <button onclick="createRoom('general',true)" class="btn cat-btn p-4 bg-gradient-to-br from-purple-900/80 to-pink-900/80 rounded-xl text-white border border-purple-500/30 hover:border-purple-400/50 transition-all hover:scale-[1.03]">
+                            <span class="text-2xl block mb-1.5">😂</span><span class="text-[10px] font-mono tracking-wider font-bold">GENERAL</span>
+                        </button>
+                    </div>
                 </div>
 
-                ${state.publicRooms.length > 0 ? `
-                    <div class="mt-4 space-y-2">
-                        <p class="text-[10px] font-mono text-gray-600 tracking-widest">OPEN ROOMS</p>
-                        ${state.publicRooms.map(r => `
-                            <div class="flex justify-between items-center p-2.5 bg-obsidian border border-white/[0.04] rounded-xl">
-                                <div>
-                                    <span class="font-mono text-wit">${r.id}</span>
-                                    ${r.status !== 'waiting' ? `<span class="text-xs ml-1 ${r.status === 'finished' ? 'text-gray-500' : 'text-green-400'}">R${r.currentRound}/${r.totalRounds}</span>` : ''}
+                <!-- Multiplayer -->
+                <div class="glow-card p-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <h3 class="text-xl font-display font-bold tracking-wider">MULTIPLAYER</h3>
+                        <span class="text-[9px] font-mono text-wit/60 bg-wit/10 px-2 py-0.5 rounded border border-wit/20">2-100</span>
+                    </div>
+                    <p class="text-gray-500 text-xs font-mono mb-5">Create a room and invite players</p>
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <button onclick="createRoom('tech',false)" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all hover:scale-[1.03]">
+                            <span class="text-2xl block mb-1.5">🤖</span><span class="text-[10px] font-mono text-gray-400 font-bold">TECH</span>
+                        </button>
+                        <button onclick="createRoom('crypto',false)" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all hover:scale-[1.03]">
+                            <span class="text-2xl block mb-1.5">💎</span><span class="text-[10px] font-mono text-gray-400 font-bold">CRYPTO</span>
+                        </button>
+                        <button onclick="createRoom('general',false)" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all hover:scale-[1.03]">
+                            <span class="text-2xl block mb-1.5">😂</span><span class="text-[10px] font-mono text-gray-400 font-bold">GENERAL</span>
+                        </button>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <input type="text" id="room-code" placeholder="Enter room code..."
+                            onkeypress="if(event.key==='Enter')joinRoom(this.value)"
+                            class="flex-1 px-4 py-2.5 rounded-xl uppercase">
+                        <button onclick="joinRoom(document.getElementById('room-code').value)" class="btn btn-primary px-6 py-2.5 rounded-xl font-bold text-white">Join</button>
+                    </div>
+
+                    ${state.publicRooms.length > 0 ? `
+                        <div class="mt-4 space-y-2">
+                            <p class="text-[10px] font-mono text-gray-600 tracking-widest">OPEN ROOMS</p>
+                            ${state.publicRooms.map(r => `
+                                <div class="flex justify-between items-center p-2.5 bg-obsidian border border-white/[0.04] rounded-xl">
+                                    <div>
+                                        <span class="font-mono text-wit">${r.id}</span>
+                                        ${r.status !== 'waiting' ? `<span class="text-xs ml-1 ${r.status === 'finished' ? 'text-gray-500' : 'text-green-400'}">R${r.currentRound}/${r.totalRounds}</span>` : ''}
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-gray-400">${r.players}p${r.spectators ? ' '+r.spectators+'s' : ''}</span>
+                                        ${r.status === 'waiting' ? `
+                                            <button onclick="joinRoom('${r.id}')" class="btn btn-primary px-3 py-1 rounded-lg text-sm text-white">Join</button>
+                                        ` : ''}
+                                    </div>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">${r.players}p${r.spectators ? ' '+r.spectators+'s' : ''}</span>
-                                    ${r.status === 'waiting' ? `
-                                        <button onclick="joinRoom('${r.id}')" class="btn btn-primary px-3 py-1 rounded-lg text-sm text-white">Join</button>
-                                    ` : ''}
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : ''}
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
             </div>
 
-            <!-- Daily Challenge -->
-            <div class="glow-card glow-card-amber p-5">
-                <div class="flex items-center justify-between mb-3">
-                    <div>
-                        <h3 class="text-lg font-display font-bold tracking-wider">DAILY ORACLE</h3>
-                        <p class="text-gray-500 text-xs font-mono">One prompt. One shot. Global leaderboard.</p>
+            <!-- Row 3: Daily Challenge + Community Prompts side by side -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+                <div class="glow-card glow-card-amber p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 class="text-lg font-display font-bold tracking-wider">DAILY ORACLE</h3>
+                            <p class="text-gray-500 text-xs font-mono">One prompt. One shot. Global leaderboard.</p>
+                        </div>
+                        ${state.profile?.dailyChallengeStreak > 0 ? `<span class="text-consensus font-mono text-sm font-bold">${'🔥'.repeat(Math.min(state.profile.dailyChallengeStreak, 5))} ${state.profile.dailyChallengeStreak}d</span>` : ''}
                     </div>
-                    ${state.profile?.dailyChallengeStreak > 0 ? `<span class="text-consensus font-mono text-xs font-bold">${'🔥'.repeat(Math.min(state.profile.dailyChallengeStreak, 5))} ${state.profile.dailyChallengeStreak}d</span>` : ''}
+                    <button onclick="fetchDailyChallenge()" class="btn btn-play w-full py-3 rounded-xl text-sm">
+                        ENTER DAILY CHALLENGE
+                    </button>
                 </div>
-                <button onclick="fetchDailyChallenge()" class="btn btn-play w-full py-3 rounded-xl text-sm">
-                    ENTER DAILY CHALLENGE
-                </button>
+
+                <div class="glow-card glow-card-cyan p-5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <p class="font-mono text-oracle text-[10px] tracking-wider font-bold mb-0.5">COMMUNITY PROMPTS</p>
+                            <p class="text-gray-500 text-xs font-mono">Submit joke setups — top-voted enter rotation</p>
+                        </div>
+                    </div>
+                    <button onclick="fetchCommunityPrompts()" class="btn btn-teal w-full py-3 rounded-xl text-sm text-white">SUBMIT PROMPT</button>
+                </div>
             </div>
 
             <!-- Challenge link notification -->
             ${state.challengeData ? `
-                <div class="glow-card glow-card-cyan p-4">
-                    <p class="text-oracle font-display font-bold text-sm tracking-wider mb-1">FRIEND CHALLENGE</p>
-                    <p class="text-xs font-mono text-gray-400">${esc(state.challengeData.creatorName)} scored ${state.challengeData.creatorScore} XP — can you beat them?</p>
-                    <button onclick="createRoom('${state.challengeData.category}', true)" class="btn btn-teal mt-2 px-4 py-2 rounded-xl text-xs text-white">ACCEPT</button>
+                <div class="glow-card glow-card-cyan p-4 mb-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-oracle font-display font-bold text-sm tracking-wider mb-1">FRIEND CHALLENGE</p>
+                            <p class="text-xs font-mono text-gray-400">${esc(state.challengeData.creatorName)} scored ${state.challengeData.creatorScore} XP — can you beat them?</p>
+                        </div>
+                        <button onclick="createRoom('${state.challengeData.category}', true)" class="btn btn-teal px-5 py-2.5 rounded-xl text-xs text-white font-bold">ACCEPT</button>
+                    </div>
                 </div>
             ` : ''}
 
-            <!-- Community Prompts -->
-            <div class="glow-card glow-card-cyan p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="font-mono text-oracle text-[10px] tracking-wider font-bold mb-0.5">COMMUNITY PROMPTS</p>
-                        <p class="text-gray-500 text-xs font-mono">Submit joke setups — top-voted enter rotation</p>
-                    </div>
-                    <button onclick="fetchCommunityPrompts()" class="btn btn-teal px-3 py-1.5 rounded-lg text-[10px] text-white">SUBMIT</button>
-                </div>
-            </div>
-
-            <!-- Leaderboard Tabs -->
+            <!-- Leaderboard / Hall of Fame -->
             <div class="flex gap-1 mb-0">
                 <button onclick="state.showHallOfFame=false;render()" class="btn flex-1 py-2.5 ${!state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">LEADERBOARD</button>
                 <button onclick="fetchHallOfFame()" class="btn flex-1 py-2.5 ${state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">HALL OF FAME</button>
@@ -1603,7 +2148,7 @@ function getTodayKeyClient() {
 }
 
 function renderWaiting() {
-    if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     return `
         <div class="glow-card p-6">
@@ -1655,7 +2200,7 @@ function renderWaiting() {
 }
 
 function renderSubmitting() {
-    if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const submitted = r.submissions?.filter(s => !r.players.find(p => p.name === s.playerName)?.isBot).length || 0;
     const humanPlayers = r.players.filter(p => !p.isBot).length;
@@ -1830,7 +2375,7 @@ function renderRevealing() {
             ${revealed.length === 0 ? `
                 <div class="glow-card p-8 text-center animate-glow" style="border-radius:20px">
                     <div class="w-20 h-20 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 animate-float processing">
-                        <span class="text-3xl" style="filter:brightness(1.5)">👁</span>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="1.5" style="filter:brightness(1.5)"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3" fill="#A855F7" stroke="none"/></svg>
                     </div>
                     <p class="text-xl font-display font-bold gradient-text tracking-wider">ORACLE REVIEWING</p>
                     <p class="text-gray-500 mt-2 text-xs font-mono tracking-wider">PREPARING JUDGMENT</p>
@@ -1906,14 +2451,14 @@ function renderRevealing() {
 
 function renderCurating() {
     const r = state.room;
-    if (!r) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const total = r.submissions?.length || 0;
 
     return `
         <div class="space-y-6">
             <div class="glow-card p-6 text-center" style="border-radius:20px">
                 <div class="w-20 h-20 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 animate-glow processing">
-                    <span class="text-3xl" style="filter:brightness(1.5)">👁</span>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="1.5" style="filter:brightness(1.5)"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3" fill="#A855F7" stroke="none"/></svg>
                 </div>
                 <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-2">PROCESSING</p>
                 <h2 class="text-2xl font-display font-bold mb-2 tracking-wider">ORACLE CURATING</h2>
@@ -1935,7 +2480,7 @@ function renderCurating() {
 
 function renderVoting() {
     const r = state.room;
-    if (!r) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
 
     const curatedIds = r.curatedIds || [];
     const curated = r.submissions?.filter(s => curatedIds.includes(s.id)) || [];
@@ -1987,7 +2532,7 @@ function renderVoting() {
 }
 
 function renderBetting() {
-    if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const humanBets = r.bets?.filter(b => !r.players.find(p => p.name === b.playerName)?.isBot).length || 0;
     const humanPlayers = r.players.filter(p => !p.isBot).length;
@@ -2021,7 +2566,7 @@ function renderBetting() {
                                 <p class="flex-1 text-sm">${esc(s.punchline)}</p>
                             </div>
                             ${Object.keys(emojiCounts).length > 0 ? `
-                                <div class="flex gap-1 mt-2 ml-13">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-obsidian px-1.5 py-0.5 rounded-full border border-white/[0.04]">${e}${c>1?' x'+c:''}</span>`).join('')}</div>
+                                <div class="flex gap-1 mt-2 ml-12">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-obsidian px-1.5 py-0.5 rounded-full border border-white/[0.04]">${e}${c>1?' x'+c:''}</span>`).join('')}</div>
                             ` : ''}
                         </div>
                         <div class="flex gap-1 mt-1 justify-end">
@@ -2057,7 +2602,7 @@ function renderBetting() {
                         </div>
                         <div class="flex items-center gap-3 mb-3">
                             <span class="text-[10px] font-mono text-gray-500 tracking-wider">BET</span>
-                            <input type="range" min="10" max="${sliderMax}" step="10" value="${state.betAmount}" oninput="state.betAmount=+this.value;render()" class="flex-1" style="accent-color:#A855F7">
+                            <input type="range" min="10" max="${sliderMax}" step="10" value="${state.betAmount}" oninput="state.betAmount=+this.value;render()" class="flex-1">
                             <span class="text-xl font-mono font-bold text-consensus">${state.betAmount}</span>
                         </div>
                         <button onclick="placeBet()" ${!state.selectedSubmission?'disabled':''} class="btn btn-play w-full py-3 rounded-xl font-bold text-sm">BET ON #${state.selectedSubmission||'?'}</button>
@@ -2099,7 +2644,7 @@ function renderJudging() {
     return `
         <div class="glow-card p-6 text-center" style="border-radius:20px">
             <div class="w-24 h-24 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 ${consensusReached ? '' : 'animate-glow processing'}">
-                <span class="text-4xl" style="filter:brightness(1.5)">${consensusReached ? '✨' : '👁'}</span>
+                <span class="text-4xl" style="filter:brightness(1.5)">${consensusReached ? '✨' : ''}</span>${!consensusReached ? '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="1.5" style="filter:brightness(1.5)"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3" fill="#A855F7" stroke="none"/></svg>' : ''}
             </div>
             <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-1">${consensusReached ? 'FINALIZED' : 'PROCESSING'}</p>
             <h2 class="text-2xl font-display font-bold mb-2 tracking-wider">${consensusReached ? 'CONSENSUS REACHED' : 'ORACLE JUDGING'}</h2>
@@ -2210,7 +2755,7 @@ function renderJudging() {
 }
 
 function renderRoundResults() {
-    if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const result = r.roundResults[r.roundResults.length - 1];
     if (!result) return renderJudging();
@@ -2388,7 +2933,7 @@ function renderRoundResults() {
 }
 
 function renderFinalResults() {
-    if (!state.room) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const standings = [...r.players].sort((a,b)=>b.score-a.score);
     const winner = standings[0];
@@ -2455,7 +3000,7 @@ function renderFinalResults() {
                         <div class="flex-1">
                             <p class="text-sm font-display font-bold">${esc(state.profile.title)}</p>
                             <div class="h-2.5 bg-obsidian rounded-full overflow-hidden mt-1 border border-white/[0.04]">
-                                <div class="h-full xp-bar" style="width:${state.nextLevelXP ? Math.min(100, ((state.profile.lifetimeXP) / state.nextLevelXP) * 100) : 100}%"></div>
+                                <div class="h-full xp-bar" style="width:${(() => { const lvlXP = [0,0,500,1500,3000,6000,10000,20000,40000,75000,150000][state.profile.level] || 0; return state.nextLevelXP ? Math.min(100, ((state.profile.lifetimeXP - lvlXP) / (state.nextLevelXP - lvlXP)) * 100) : 100; })()}%"></div>
                             </div>
                         </div>
                         <p class="text-consensus font-mono font-bold text-sm">${state.profile.lifetimeXP?.toLocaleString()} XP</p>
@@ -2498,7 +3043,7 @@ function renderFinalResults() {
 
 function renderDailyChallenge() {
     const dc = state.dailyChallenge;
-    if (!dc) return '<div class="text-center py-20"><div class="spinner mx-auto"></div></div>';
+    if (!dc) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const dr = state.dailyResult;
 
     if (dc.alreadyPlayed && !dr) {
@@ -2594,7 +3139,7 @@ function renderDailyChallenge() {
 
 function renderProfileScreen() {
     const p = state.profile;
-    if (!p) return '<div class="text-center py-20"><div class="spinner mx-auto"></div><p class="text-gray-400 mt-2">Loading profile...</p></div>';
+    if (!p) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-circle mx-auto" style="width:80px;height:80px"></div><div class="skeleton skeleton-text mx-auto" style="width:40%"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:140px"></div></div>';
     const nextXP = state.nextLevelXP;
     const currentLevelXP = [0,0,500,1500,3000,6000,10000,20000,40000,75000,150000][p.level] || 0;
     const progress = nextXP ? Math.min(100, ((p.lifetimeXP - currentLevelXP) / (nextXP - currentLevelXP)) * 100) : 100;
@@ -2814,6 +3359,59 @@ async function voteCommunityPrompt(promptId) {
     try {
         await api('votePrompt', { promptId, playerId: state.playerId });
         fetchCommunityPrompts();
+    } catch(e) {}
+}
+
+// === FLOATING NAV ON SCROLL ===
+let headerFloating = false;
+window.addEventListener('scroll', () => {
+    const header = document.getElementById('main-header');
+    if (!header) return;
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    if (scrollY > 50 && !headerFloating) {
+        headerFloating = true;
+        header.classList.add('header-float');
+        header.style.borderBottom = 'none';
+    } else if (scrollY <= 50 && headerFloating) {
+        headerFloating = false;
+        header.classList.remove('header-float');
+        header.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+    }
+}, { passive: true });
+
+// === ENHANCED SOUND FX ===
+// Add hover tick sound to buttons (very quiet)
+document.addEventListener('mouseenter', e => {
+    if (!soundEnabled || !audioCtx) return;
+    const btn = e.target.closest?.('.btn');
+    if (!btn) return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.frequency.value = 2000; osc.type = 'sine';
+        gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + 0.05);
+    } catch(e) {}
+}, true);
+
+// Add whoosh sound for screen transitions
+const _originalRender = null;
+function playScreenTransition(oldScreen, newScreen) {
+    if (!soundEnabled || !audioCtx || oldScreen === newScreen) return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + 0.2);
     } catch(e) {}
 }
 
