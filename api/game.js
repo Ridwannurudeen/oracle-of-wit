@@ -64,10 +64,21 @@ const ACHIEVEMENTS = [
 // Uses genlayer-js SDK to submit judge_round on-chain via Optimistic Democracy.
 // Testnet Bradbury receipts don't expose decoded return values (gen_call unavailable),
 // so we run GenLayer for on-chain proof + Claude for winner determination in parallel.
+// Track last GenLayer submission to avoid nonce conflicts on testnet
+let _lastGLSubmit = 0;
+const GL_COOLDOWN = 15000; // 15s between on-chain submissions
+
 async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
     const client = await getGenLayerClient();
     if (!client) {
         console.log('[GenLayer] Not configured (missing key or address)');
+        return null;
+    }
+
+    // Cooldown to prevent testnet nonce conflicts
+    const now = Date.now();
+    if (now - _lastGLSubmit < GL_COOLDOWN) {
+        console.log('[GenLayer] Cooldown active, skipping (last submit was', now - _lastGLSubmit, 'ms ago)');
         return null;
     }
 
@@ -79,6 +90,7 @@ async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
         })));
 
         console.log(`[GenLayer] Submitting judge_round for ${gameId} (${submissions.length} submissions)`);
+        _lastGLSubmit = now;
 
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
@@ -87,9 +99,6 @@ async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
             value: 0n,
         });
 
-        // Don't wait for receipt — consensus takes 10-30s, serverless functions time out.
-        // The txHash is proof the judgment was submitted to Optimistic Democracy.
-        // Validators will independently evaluate and reach consensus in the background.
         console.log(`[GenLayer] judge_round submitted to OD: ${txHash}`);
         return { txHash, onChain: true };
     } catch (error) {
