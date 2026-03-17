@@ -1980,8 +1980,11 @@ function renderRoundResults() {
     const isOnChain = judgingMethod === 'genlayer_optimistic_democracy';
     const isAI = judgingMethod === 'claude_api';
     
+    const txHash = result.txHash || null;
+    const explorerUrl = txHash ? `https://explorer-bradbury.genlayer.com/transactions/${txHash}` : null;
+
     const methodBadge = isOnChain
-        ? '<span class="text-xs bg-green-600 px-2 py-1 rounded-full font-medium">⛓️ On-Chain Verified (GenLayer)</span>'
+        ? `<span class="text-xs bg-green-600 px-2 py-1 rounded-full font-medium">⛓️ On-Chain Verified (Bradbury Testnet)</span>${txHash ? `<a href="${explorerUrl}" target="_blank" class="block text-[10px] text-green-400/70 mt-1 hover:underline">tx: ${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}</a>` : ''}`
         : isAI
         ? '<span class="text-xs bg-purple-600 px-2 py-1 rounded-full font-medium">🤖 AI Judged (Simulated OD)</span>'
         : '<span class="text-xs bg-gray-600 px-2 py-1 rounded-full font-medium">🎲 Fallback</span>';
@@ -2112,6 +2115,10 @@ function renderRoundResults() {
                         ${state.appealResult.overturned ? 'OVERTURNED! New winner!' : 'UPHELD! The Oracle stands.'}
                     </p>
                     ${state.appealResult.overturned ? `<p class="text-gray-400 text-sm mt-1">50 XP refunded</p>` : `<p class="text-red-400 text-sm mt-1">50 XP lost</p>`}
+                    ${state.appealResult.onChain ? `
+                        <p class="text-[10px] text-green-400/70 mt-2">⛓️ Verified on GenLayer Bradbury Testnet</p>
+                        ${state.appealResult.txHash ? `<a href="https://explorer-bradbury.genlayer.com/transactions/${state.appealResult.txHash}" target="_blank" class="text-[10px] text-green-400/50 hover:underline">tx: ${state.appealResult.txHash.substring(0, 10)}...</a>` : ''}
+                    ` : ''}
                 </div>
             ` : ''}
             ${result.appealed && !state.appealResult ? `

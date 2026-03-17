@@ -5,10 +5,27 @@ const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
-// GenLayer Configuration
-const GENLAYER_RPC_URL = process.env.GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
+// GenLayer Configuration (Testnet Bradbury)
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
 const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
+
+// Lazy-init GenLayer SDK client (ESM dynamic import)
+let _glClient = null;
+async function getGenLayerClient() {
+    if (_glClient) return _glClient;
+    if (!GENLAYER_PRIVATE_KEY || !GENLAYER_CONTRACT_ADDRESS) return null;
+    try {
+        const { createClient, createAccount } = await import('genlayer-js');
+        const { testnetBradbury } = await import('genlayer-js/chains');
+        const account = createAccount(GENLAYER_PRIVATE_KEY);
+        _glClient = createClient({ chain: testnetBradbury, account });
+        console.log('[GenLayer] SDK client initialized for Bradbury testnet, account:', account.address);
+        return _glClient;
+    } catch (e) {
+        console.error('[GenLayer] SDK init failed:', e.message);
+        return null;
+    }
+}
 
 const SUBMISSION_TIME = 40000;
 const BETTING_TIME = 30000;
@@ -44,11 +61,12 @@ const ACHIEVEMENTS = [
 ];
 
 // GenLayer Intelligent Contract Integration
-// This calls the on-chain Oracle of Wit contract which uses
-// Optimistic Democracy for decentralized AI consensus
+// Uses genlayer-js SDK to call on-chain Oracle of Wit contract via
+// Optimistic Democracy for decentralized AI consensus on Testnet Bradbury
 async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
-    if (!GENLAYER_CONTRACT_ADDRESS || !GENLAYER_RPC_URL) {
-        console.log('GenLayer not configured, using fallback');
+    const client = await getGenLayerClient();
+    if (!client) {
+        console.log('[GenLayer] Not configured, using fallback');
         return null;
     }
 
@@ -61,65 +79,54 @@ async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
 
         console.log(`[GenLayer] Calling judge_round for game ${gameId} with ${submissions.length} submissions`);
 
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
-
-        // judge_round is @gl.public.write — use gen_sendTransaction
-        const response = await fetch(`${GENLAYER_RPC_URL}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'gen_sendTransaction',
-                params: [{
-                    to: GENLAYER_CONTRACT_ADDRESS,
-                    function: 'judge_round',
-                    args: [gameId, jokePrompt, category, submissionsJson],
-                    ...(GENLAYER_PRIVATE_KEY ? { from: GENLAYER_PRIVATE_KEY } : {})
-                }],
-                id: 1
-            })
+        // writeContract sends an ETH tx to the consensus main contract
+        // which triggers Optimistic Democracy (multiple validators evaluate independently)
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'judge_round',
+            args: [gameId, jokePrompt, category, submissionsJson],
+            value: 0n,
         });
 
-        clearTimeout(timeout);
-        const result = await response.json();
+        console.log(`[GenLayer] judge_round tx submitted: ${txHash}`);
 
-        if (result.error) {
-            console.error('[GenLayer] RPC error:', result.error);
-            return null;
-        }
+        // Wait for OD consensus (validators vote, majority must agree)
+        const { TransactionStatus } = await import('genlayer-js/types');
+        const receipt = await client.waitForTransactionReceipt({
+            hash: txHash,
+            status: TransactionStatus.ACCEPTED,
+            retries: 40,     // ~2 min max wait
+            interval: 3000,  // poll every 3s
+        });
 
-        if (result.result) {
-            console.log('[GenLayer] Optimistic Democracy result:', JSON.stringify(result.result));
+        console.log('[GenLayer] Optimistic Democracy receipt:', JSON.stringify(receipt));
+
+        // Extract result from receipt
+        const data = receipt?.data || receipt?.result || receipt;
+        if (data) {
             return {
-                winnerId: result.result.winner_id,
-                winnerName: result.result.winner_name,
-                winningPunchline: result.result.winning_punchline,
-                consensusMethod: result.result.consensus_method || 'optimistic_democracy',
-                validatorsAgreed: result.result.validators_agreed || true,
-                validatorCount: result.result.validator_count || 5,
+                winnerId: data.winner_id ?? data.winnerId,
+                winnerName: data.winner_name ?? data.winnerName,
+                winningPunchline: data.winning_punchline ?? data.winningPunchline,
+                consensusMethod: data.consensus_method || 'optimistic_democracy',
+                validatorsAgreed: data.validators_agreed ?? true,
+                txHash: txHash,
                 onChain: true
             };
         }
 
-        console.log('[GenLayer] No result returned from judge_round');
-        return null;
+        console.log('[GenLayer] No result in receipt, tx:', txHash);
+        return { txHash, onChain: true, winnerId: null };
     } catch (error) {
-        if (error.name === 'AbortError') {
-            console.error('[GenLayer] judge_round timed out after 30s');
-        } else {
-            console.error('[GenLayer] judge_round failed:', error.message);
-        }
+        console.error('[GenLayer] judge_round failed:', error.message);
         return null;
     }
 }
 
 // Record game results on GenLayer blockchain
 async function recordOnChain(gameId, finalScores) {
-    if (!GENLAYER_CONTRACT_ADDRESS || !GENLAYER_RPC_URL) {
-        return false;
-    }
+    const client = await getGenLayerClient();
+    if (!client) return false;
 
     try {
         const scoresJson = JSON.stringify(finalScores.map(p => ({
@@ -129,44 +136,67 @@ async function recordOnChain(gameId, finalScores) {
 
         console.log(`[GenLayer] Recording game ${gameId} results on-chain`);
 
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
-
-        // record_game_result is @gl.public.write — use gen_sendTransaction
-        const response = await fetch(`${GENLAYER_RPC_URL}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'gen_sendTransaction',
-                params: [{
-                    to: GENLAYER_CONTRACT_ADDRESS,
-                    function: 'record_game_result',
-                    args: [gameId, scoresJson],
-                    ...(GENLAYER_PRIVATE_KEY ? { from: GENLAYER_PRIVATE_KEY } : {})
-                }],
-                id: 1
-            })
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'record_game_result',
+            args: [gameId, scoresJson],
+            value: 0n,
         });
 
-        clearTimeout(timeout);
-        const result = await response.json();
-
-        if (result.error) {
-            console.error('[GenLayer] record_game_result RPC error:', result.error);
-            return false;
-        }
-
-        console.log('[GenLayer] Game results recorded on-chain:', result.result);
-        return result.result?.recorded || false;
+        console.log(`[GenLayer] record_game_result tx: ${txHash}`);
+        // Fire-and-forget — don't block game flow waiting for finalization
+        return txHash;
     } catch (error) {
-        if (error.name === 'AbortError') {
-            console.error('[GenLayer] record_game_result timed out after 30s');
-        } else {
-            console.error('[GenLayer] record_game_result failed:', error.message);
-        }
+        console.error('[GenLayer] record_game_result failed:', error.message);
         return false;
+    }
+}
+
+// Appeal judgment on GenLayer blockchain using Optimistic Democracy re-evaluation
+async function appealWithGenLayer(gameId, jokePrompt, category, submissions, originalWinnerId) {
+    const client = await getGenLayerClient();
+    if (!client) return null;
+
+    try {
+        const submissionsJson = JSON.stringify(submissions.map(s => ({
+            id: s.id,
+            playerName: s.playerName,
+            punchline: s.punchline
+        })));
+
+        console.log(`[GenLayer] Calling appeal_judgment for game ${gameId}`);
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'appeal_judgment',
+            args: [gameId, jokePrompt, category, submissionsJson, originalWinnerId],
+            value: 0n,
+        });
+
+        console.log(`[GenLayer] appeal_judgment tx submitted: ${txHash}`);
+
+        const { TransactionStatus } = await import('genlayer-js/types');
+        const receipt = await client.waitForTransactionReceipt({
+            hash: txHash,
+            status: TransactionStatus.ACCEPTED,
+            retries: 40,
+            interval: 3000,
+        });
+
+        const data = receipt?.data || receipt?.result || receipt;
+        if (data) {
+            return {
+                newWinnerId: data.new_winner_id ?? data.newWinnerId,
+                overturned: data.overturned ?? false,
+                txHash: txHash,
+                onChain: true
+            };
+        }
+
+        return { txHash, onChain: true, newWinnerId: null };
+    } catch (error) {
+        console.error('[GenLayer] appeal_judgment failed:', error.message);
+        return null;
     }
 }
 
@@ -1239,20 +1269,22 @@ async function autoJudge(room) {
     let winnerId = null;
     let judgingMethod = 'random'; // Default fallback
     let onChain = false;
-    
+    let txHash = null;
+
     // STEP 1: Try GenLayer Optimistic Democracy (Real decentralized AI consensus)
     const genLayerResult = await judgeWithGenLayer(
-        room.submissions, 
-        room.jokePrompt, 
+        room.submissions,
+        room.jokePrompt,
         room.category,
         room.id
     );
-    
-    if (genLayerResult) {
+
+    if (genLayerResult && genLayerResult.winnerId) {
         winnerId = parseInt(genLayerResult.winnerId);
         judgingMethod = 'genlayer_optimistic_democracy';
         onChain = true;
-        console.log(`✓ GenLayer consensus reached: Winner #${winnerId}`);
+        txHash = genLayerResult.txHash || null;
+        console.log(`✓ GenLayer consensus reached: Winner #${winnerId} (tx: ${txHash})`);
     }
     
     // STEP 2: Fallback to Claude API (centralized but still AI-powered)
@@ -1281,11 +1313,11 @@ async function autoJudge(room) {
         return createRoundResult(room, fallbackWinner.id, now, 'fallback', false, null);
     }
 
-    return createRoundResult(room, winnerId, now, judgingMethod, onChain, aiCommentary);
+    return createRoundResult(room, winnerId, now, judgingMethod, onChain, aiCommentary, txHash);
 }
 
 // Helper to create round result and update scores
-async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false, aiCommentary = null) {
+async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false, aiCommentary = null, txHash = null) {
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
 
     const roundResult = {
@@ -1295,6 +1327,7 @@ async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown',
         winningPunchline: winningSubmission.punchline,
         judgingMethod: judgingMethod,
         onChain: onChain,
+        txHash: txHash,
         aiCommentary: aiCommentary,
         scores: {}
     };
@@ -2146,10 +2179,28 @@ export default async function handler(req, res) {
                     if (profile && profile.lifetimeXP < 50) return res.status(400).json({ error: 'Need 50 XP to appeal' });
                 }
 
-                // Re-judge with stricter prompt
+                // STEP 1: Try GenLayer Optimistic Democracy appeal (on-chain re-evaluation)
                 const submissions = room.submissions;
-                const reJudgeResult = await pickWinnerWithAI(submissions, room.jokePrompt, room.category);
-                const newWinnerId = reJudgeResult.winnerId;
+                let newWinnerId = null;
+                let appealOnChain = false;
+                let appealTxHash = null;
+
+                const glAppeal = await appealWithGenLayer(
+                    room.id, room.jokePrompt, room.category, submissions, result.winnerId
+                );
+                if (glAppeal && glAppeal.newWinnerId) {
+                    newWinnerId = parseInt(glAppeal.newWinnerId);
+                    appealOnChain = true;
+                    appealTxHash = glAppeal.txHash;
+                    console.log(`[Appeal] GenLayer OD re-evaluated: new winner #${newWinnerId}`);
+                }
+
+                // STEP 2: Fallback to Claude API
+                if (!newWinnerId) {
+                    const reJudgeResult = await pickWinnerWithAI(submissions, room.jokePrompt, room.category);
+                    newWinnerId = reJudgeResult.winnerId;
+                }
+
                 const overturned = newWinnerId && newWinnerId !== result.winnerId;
 
                 result.appealed = true;
@@ -2180,11 +2231,12 @@ export default async function handler(req, res) {
                     }
                 }
 
-                result.appealCommentary = reJudgeResult.aiCommentary;
+                result.appealOnChain = appealOnChain;
+                result.appealTxHash = appealTxHash;
                 await setRoom(roomId, room);
                 return res.status(200).json({
                     success: true,
-                    appeal: { overturned, newWinnerId, oldWinnerId: result.winnerId, commentary: reJudgeResult.aiCommentary },
+                    appeal: { overturned, newWinnerId, oldWinnerId: result.winnerId, onChain: appealOnChain, txHash: appealTxHash },
                     room
                 });
             }
