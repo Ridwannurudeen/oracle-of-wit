@@ -1953,6 +1953,28 @@ export default async function handler(req, res) {
     const { action } = req.query;
     const body = req.body || {};
 
+    // Pre-flight Redis check for game-critical actions (cached 60s)
+    const GAME_ACTIONS = ['createRoom', 'startGame', 'submitPunchline', 'placeBet', 'castVote', 'advancePhase'];
+    if (GAME_ACTIONS.includes(action) && UPSTASH_URL && UPSTASH_TOKEN) {
+        const now = Date.now();
+        if (!handler._redisOk || now - handler._redisCheckedAt > 60000) {
+            try {
+                const ping = await fetch(`${UPSTASH_URL}/ping`, {
+                    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+                    signal: AbortSignal.timeout(3000)
+                });
+                handler._redisOk = ping.ok;
+                handler._redisCheckedAt = now;
+            } catch (e) {
+                handler._redisOk = false;
+                handler._redisCheckedAt = now;
+            }
+        }
+        if (!handler._redisOk) {
+            return res.status(503).json({ error: 'Game server storage is temporarily unavailable. Please try again in a moment.' });
+        }
+    }
+
     try {
         switch (action) {
             case 'createRoom': {
