@@ -13,6 +13,36 @@ const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
 const SUBMISSION_TIME = 40000;
 const BETTING_TIME = 30000;
 
+// Level system
+const LEVEL_THRESHOLDS = [
+    { xp: 0, level: 1, title: 'Joke Rookie' },
+    { xp: 500, level: 2, title: 'Pun Apprentice' },
+    { xp: 1500, level: 3, title: 'Comedy Cadet' },
+    { xp: 3000, level: 4, title: 'Wit Warrior' },
+    { xp: 6000, level: 5, title: 'Humor Hero' },
+    { xp: 10000, level: 6, title: 'Roast General' },
+    { xp: 20000, level: 7, title: 'Laugh Legend' },
+    { xp: 40000, level: 8, title: 'Comedy King' },
+    { xp: 75000, level: 9, title: 'Oracle Ascendant' },
+    { xp: 150000, level: 10, title: 'Supreme Oracle' }
+];
+
+const ACHIEVEMENTS = [
+    { id: 'first_win', name: 'First Blood', icon: '\u{1F5E1}\u{FE0F}' },
+    { id: 'five_wins', name: 'Funny Five', icon: '\u{270B}' },
+    { id: 'perfect_game', name: 'Perfect Oracle', icon: '\u{1F441}\u{FE0F}' },
+    { id: 'streak_3', name: 'Hot Streak', icon: '\u{1F525}' },
+    { id: 'streak_5', name: 'Unstoppable', icon: '\u{26A1}' },
+    { id: 'comeback', name: 'Comeback King', icon: '\u{1F451}' },
+    { id: 'bet_master', name: 'Oracle Mind', icon: '\u{1F52E}' },
+    { id: 'daily_7', name: 'Dedicated', icon: '\u{1F4C5}' },
+    { id: 'daily_30', name: 'Devoted', icon: '\u{1F3C6}' },
+    { id: 'level_5', name: 'Rising Star', icon: '\u{2B50}' },
+    { id: 'level_10', name: 'Supreme Oracle', icon: '\u{1F48E}' },
+    { id: 'games_10', name: 'Regular', icon: '\u{1F3AE}' },
+    { id: 'games_50', name: 'Addicted', icon: '\u{1F3B0}' }
+];
+
 // GenLayer Intelligent Contract Integration
 // This calls the on-chain Oracle of Wit contract which uses
 // Optimistic Democracy for decentralized AI consensus
@@ -993,6 +1023,116 @@ async function setLeaderboard(lb) {
     await redisSet('leaderboard', lb);
 }
 
+// Player profile helpers
+function getLevelForXP(xp) {
+    let result = LEVEL_THRESHOLDS[0];
+    for (const t of LEVEL_THRESHOLDS) {
+        if (xp >= t.xp) result = t;
+    }
+    return result;
+}
+
+function getNextLevelXP(xp) {
+    for (const t of LEVEL_THRESHOLDS) {
+        if (xp < t.xp) return t.xp;
+    }
+    return null;
+}
+
+async function getProfile(playerId) {
+    return await redisGet(`player:${playerId}`);
+}
+
+async function saveProfile(profile) {
+    const level = getLevelForXP(profile.lifetimeXP);
+    profile.level = level.level;
+    profile.title = level.title;
+    await redisSet(`player:${profile.id}`, profile, 86400 * 365);
+}
+
+function createDefaultProfile(playerId, playerName) {
+    return {
+        id: playerId, name: playerName, createdAt: Date.now(),
+        lifetimeXP: 0, level: 1, title: 'Joke Rookie',
+        gamesPlayed: 0, gamesWon: 0, roundsWon: 0,
+        bestStreak: 0, totalCorrectBets: 0,
+        achievements: [], dailyChallengeStreak: 0,
+        lastDailyDate: null, lastPlayedAt: Date.now()
+    };
+}
+
+function checkAchievements(profile, extraContext = {}) {
+    const newAchievements = [];
+    const has = id => profile.achievements.includes(id);
+    if (!has('first_win') && profile.roundsWon >= 1) newAchievements.push('first_win');
+    if (!has('five_wins') && profile.roundsWon >= 5) newAchievements.push('five_wins');
+    if (!has('streak_3') && profile.bestStreak >= 3) newAchievements.push('streak_3');
+    if (!has('streak_5') && profile.bestStreak >= 5) newAchievements.push('streak_5');
+    if (!has('bet_master') && profile.totalCorrectBets >= 10) newAchievements.push('bet_master');
+    if (!has('daily_7') && profile.dailyChallengeStreak >= 7) newAchievements.push('daily_7');
+    if (!has('daily_30') && profile.dailyChallengeStreak >= 30) newAchievements.push('daily_30');
+    if (!has('level_5') && profile.level >= 5) newAchievements.push('level_5');
+    if (!has('level_10') && profile.level >= 10) newAchievements.push('level_10');
+    if (!has('games_10') && profile.gamesPlayed >= 10) newAchievements.push('games_10');
+    if (!has('games_50') && profile.gamesPlayed >= 50) newAchievements.push('games_50');
+    if (!has('perfect_game') && extraContext.perfectGame) newAchievements.push('perfect_game');
+    if (!has('comeback') && extraContext.comeback) newAchievements.push('comeback');
+    profile.achievements.push(...newAchievements);
+    return newAchievements;
+}
+
+// Daily challenge helpers
+function getTodayKey() {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+
+function getDailyPrompt() {
+    // Use base prompts only (no weekly shuffle) for deterministic daily prompt
+    const basePrompts = {
+        tech: [
+            "Why do programmers prefer dark mode? Because...",
+            "How many programmers does it take to change a light bulb?",
+            "Why do Java developers wear glasses? Because...",
+            "A SQL query walks into a bar, walks up to two tables and asks...",
+            "Why did the developer go broke?",
+            "My code worked on the first try, which means...",
+            "The senior dev looked at my PR and said...",
+            "I deployed on Friday and then...",
+            "The bug wasn't a bug, it was...",
+            "Stack Overflow marked my question as duplicate because..."
+        ],
+        crypto: [
+            "Why did Bitcoin break up with the dollar?",
+            "How does a crypto bro propose?",
+            "Why did the NFT go to therapy?",
+            "WAGMI until...",
+            "I bought the dip, but then...",
+            "My portfolio is down 90% because...",
+            "The whitepaper promised... but delivered...",
+            "The gas fees were so high that...",
+            "Diamond hands means...",
+            "The airdrop was worth..."
+        ],
+        general: [
+            "Why don't scientists trust atoms?",
+            "The meeting could have been an email, but instead...",
+            "My therapist said I need to stop...",
+            "I'm not procrastinating, I'm...",
+            "The secret to success is...",
+            "Dating apps taught me that...",
+            "My superpower would be...",
+            "Life hack: instead of being productive...",
+            "I told my boss I was late because...",
+            "My New Year's resolution lasted until..."
+        ]
+    };
+    const allPrompts = [...basePrompts.tech, ...basePrompts.crypto, ...basePrompts.general];
+    const today = new Date();
+    const dayNum = Math.floor(today.getTime() / 86400000);
+    return allPrompts[dayNum % allPrompts.length];
+}
+
 // Auto-advance when timer expires
 async function checkAutoAdvance(room) {
     if (!room?.phaseEndsAt) return room;
@@ -1217,7 +1357,23 @@ async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown',
     room.phaseEndsAt = null;
     room.updatedAt = now;
     room.lastJudgingMethod = judgingMethod;
-    
+
+    // Push winning joke to hall of fame
+    if (winningSubmission && !winningSubmission.playerName?.startsWith?.('Bot')) {
+        try {
+            const hof = await redisGet('hall_of_fame') || [];
+            hof.unshift({
+                prompt: room.jokePrompt,
+                punchline: winningSubmission.punchline,
+                author: winningSubmission.playerName,
+                commentary: aiCommentary?.winnerComment || null,
+                category: room.category,
+                date: Date.now()
+            });
+            await redisSet('hall_of_fame', hof.slice(0, 50), 86400 * 90);
+        } catch(e) { console.error('Hall of fame update failed:', e); }
+    }
+
     await setRoom(room.id, room);
     return room;
 }
@@ -1464,8 +1620,14 @@ function pickWinnerRandom(submissions) {
     return submissions[Math.floor(Math.random() * submissions.length)].id;
 }
 
+function getCurrentSeasonKey() {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+}
+
 async function updateLeaderboard(playerName, score, isBot = false) {
-    if (isBot) return; // Don't add bots to leaderboard
+    if (isBot) return;
+    // Update all-time leaderboard
     const lb = await getLeaderboard();
     const existing = lb.find(p => p.name === playerName);
     if (existing) {
@@ -1476,6 +1638,19 @@ async function updateLeaderboard(playerName, score, isBot = false) {
     }
     lb.sort((a, b) => b.totalScore - a.totalScore);
     await setLeaderboard(lb.slice(0, 100));
+
+    // Update seasonal (monthly) leaderboard
+    const seasonKey = getCurrentSeasonKey();
+    const slb = await redisGet(`leaderboard:${seasonKey}`) || [];
+    const sexisting = slb.find(p => p.name === playerName);
+    if (sexisting) {
+        sexisting.totalScore += score;
+        sexisting.gamesPlayed++;
+    } else {
+        slb.push({ name: playerName, totalScore: score, gamesPlayed: 1 });
+    }
+    slb.sort((a, b) => b.totalScore - a.totalScore);
+    await redisSet(`leaderboard:${seasonKey}`, slb.slice(0, 100), 86400 * 90); // 90-day TTL
 }
 
 // Main handler
@@ -1519,6 +1694,7 @@ export default async function handler(req, res) {
                     category: category || 'tech',
                     maxPlayers,
                     players,
+                    spectators: [],
                     status: 'waiting',
                     currentRound: 0,
                     totalRounds: 5,
@@ -1540,21 +1716,34 @@ export default async function handler(req, res) {
             }
 
             case 'joinRoom': {
-                const { roomId, playerName } = body;
+                const { roomId, playerName, spectator } = body;
                 if (!roomId || !playerName) return res.status(400).json({ error: 'roomId and playerName required' });
-                
+
                 let room = await getRoom(roomId);
                 if (!room) return res.status(404).json({ error: 'Room not found. It may have expired.' });
+
+                if (!room.spectators) room.spectators = [];
+
+                if (spectator) {
+                    // Join as spectator — allowed at any time, even mid-game
+                    if (!room.spectators.find(s => s.name === playerName)) {
+                        room.spectators.push({ name: playerName, joinedAt: Date.now() });
+                        room.updatedAt = Date.now();
+                        await setRoom(roomId, room);
+                    }
+                    return res.status(200).json({ success: true, room, spectating: true });
+                }
+
                 if (room.status !== 'waiting') return res.status(400).json({ error: 'Game already started' });
                 if (room.isSinglePlayer) return res.status(400).json({ error: 'Cannot join single-player game' });
                 if (room.players.length >= room.maxPlayers) return res.status(400).json({ error: 'Room is full' });
-                
+
                 if (!room.players.find(p => p.name === playerName)) {
                     room.players.push({ name: playerName, score: 0, isHost: false, isBot: false, joinedAt: Date.now() });
                     room.updatedAt = Date.now();
                     await setRoom(roomId, room);
                 }
-                
+
                 return res.status(200).json({ success: true, room });
             }
 
@@ -1571,27 +1760,31 @@ export default async function handler(req, res) {
             case 'listRooms': {
                 const keys = await redisKeys('room:*');
                 const publicRooms = [];
-                
+
                 for (const key of keys.slice(0, 20)) {
                     const room = await getRoom(key.replace('room:', ''));
-                    if (room && room.status === 'waiting' && !room.isSinglePlayer) {
+                    if (room && !room.isSinglePlayer && room.status !== 'finished') {
                         publicRooms.push({
                             id: room.id, host: room.host, category: room.category,
-                            players: room.players.length, maxPlayers: room.maxPlayers
+                            players: room.players.length, maxPlayers: room.maxPlayers,
+                            status: room.status, spectators: (room.spectators || []).length,
+                            currentRound: room.currentRound, totalRounds: room.totalRounds
                         });
                     }
                 }
-                
+
                 for (const roomId in fallbackRooms) {
                     const room = fallbackRooms[roomId];
-                    if (room?.status === 'waiting' && !room.isSinglePlayer && !publicRooms.find(r => r.id === roomId)) {
+                    if (room && !room.isSinglePlayer && room.status !== 'finished' && !publicRooms.find(r => r.id === roomId)) {
                         publicRooms.push({
                             id: room.id, host: room.host, category: room.category,
-                            players: room.players.length, maxPlayers: room.maxPlayers
+                            players: room.players.length, maxPlayers: room.maxPlayers,
+                            status: room.status, spectators: (room.spectators || []).length,
+                            currentRound: room.currentRound, totalRounds: room.totalRounds
                         });
                     }
                 }
-                
+
                 return res.status(200).json({ success: true, rooms: publicRooms });
             }
 
@@ -1683,12 +1876,12 @@ export default async function handler(req, res) {
             }
 
             case 'nextRound': {
-                const { roomId, hostName } = body;
+                const { roomId, hostName, playerId } = body;
                 let room = await getRoom(roomId);
-                
+
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.host !== hostName) return res.status(403).json({ error: 'Only host can advance' });
-                
+
                 if (room.currentRound >= room.totalRounds) {
                     room.status = 'finished';
                     for (const p of room.players) {
@@ -1696,10 +1889,63 @@ export default async function handler(req, res) {
                     }
                     await setRoom(roomId, room);
                     const leaderboard = await getLeaderboard();
-                    return res.status(200).json({ 
+
+                    // Update player profile if playerId provided
+                    let profileUpdate = null;
+                    if (playerId) {
+                        try {
+                            let profile = await getProfile(playerId);
+                            if (profile) {
+                                const standings = [...room.players].sort((a, b) => b.score - a.score);
+                                const playerData = room.players.find(p => p.name === profile.name);
+                                const playerScore = playerData?.score || 0;
+                                const isWinner = standings[0]?.name === profile.name;
+
+                                profile.lifetimeXP += playerScore;
+                                profile.gamesPlayed++;
+                                if (isWinner) profile.gamesWon++;
+                                profile.lastPlayedAt = Date.now();
+
+                                // Count rounds won and correct bets from this game
+                                let roundsWonThisGame = 0;
+                                let correctBetsThisGame = 0;
+                                let hadComeback = false;
+                                for (const rr of (room.roundResults || [])) {
+                                    if (rr.winnerName === profile.name) roundsWonThisGame++;
+                                    if (rr.isComeback && rr.winnerName === profile.name) hadComeback = true;
+                                    const bet = room.bets?.find?.(b => b.playerName === profile.name);
+                                }
+                                // Count correct bets from all rounds
+                                for (const rr of (room.roundResults || [])) {
+                                    if ((rr.scores?.[profile.name] || 0) > 0) {
+                                        // If they got positive score beyond win bonus, they had a correct bet
+                                        const winBonus = rr.winnerName === profile.name ? 100 : 0;
+                                        if ((rr.scores[profile.name] || 0) > winBonus) correctBetsThisGame++;
+                                    }
+                                }
+
+                                profile.roundsWon += roundsWonThisGame;
+                                profile.totalCorrectBets += correctBetsThisGame;
+                                const currentStreak = room.streaks?.[profile.name] || 0;
+                                if (currentStreak > profile.bestStreak) profile.bestStreak = currentStreak;
+
+                                const isPerfect = roundsWonThisGame === room.totalRounds;
+                                const newAchievements = checkAchievements(profile, {
+                                    perfectGame: isPerfect,
+                                    comeback: hadComeback
+                                });
+
+                                await saveProfile(profile);
+                                profileUpdate = { profile, newAchievements };
+                            }
+                        } catch(e) { console.error('Profile update failed:', e); }
+                    }
+
+                    return res.status(200).json({
                         success: true, room,
                         finalStandings: [...room.players].sort((a, b) => b.score - a.score),
-                        leaderboard: leaderboard.slice(0, 10)
+                        leaderboard: leaderboard.slice(0, 10),
+                        profileUpdate
                     });
                 }
                 
@@ -1746,6 +1992,458 @@ export default async function handler(req, res) {
                     success: true,
                     theme: { name: theme.name, emoji: theme.emoji, description: theme.description }
                 });
+            }
+
+            // --- Player Profiles ---
+            case 'getProfile': {
+                const { playerId } = body;
+                if (!playerId) return res.status(400).json({ error: 'playerId required' });
+                const profile = await getProfile(playerId);
+                if (!profile) return res.status(404).json({ error: 'Profile not found' });
+                const nextXP = getNextLevelXP(profile.lifetimeXP);
+                return res.status(200).json({ success: true, profile, nextLevelXP: nextXP, achievements: ACHIEVEMENTS });
+            }
+
+            case 'createProfile': {
+                const { playerId, playerName } = body;
+                if (!playerId || !playerName) return res.status(400).json({ error: 'playerId and playerName required' });
+                let profile = await getProfile(playerId);
+                if (!profile) {
+                    profile = createDefaultProfile(playerId, playerName);
+                    await saveProfile(profile);
+                } else {
+                    // Update name if changed
+                    if (profile.name !== playerName) {
+                        profile.name = playerName;
+                        await saveProfile(profile);
+                    }
+                }
+                const nextXP = getNextLevelXP(profile.lifetimeXP);
+                return res.status(200).json({ success: true, profile, nextLevelXP: nextXP, achievements: ACHIEVEMENTS });
+            }
+
+            // --- Daily Challenge ---
+            case 'getDailyChallenge': {
+                const { playerId } = body;
+                const dateKey = getTodayKey();
+                const prompt = getDailyPrompt();
+                const played = playerId ? await redisGet(`daily:${dateKey}:played:${playerId}`) : false;
+                const lb = await redisGet(`daily:${dateKey}:lb`) || [];
+                return res.status(200).json({
+                    success: true,
+                    daily: { date: dateKey, prompt, alreadyPlayed: !!played, leaderboard: lb.slice(0, 20) }
+                });
+            }
+
+            case 'submitDailyChallenge': {
+                const { playerId, playerName, punchline } = body;
+                if (!playerId || !playerName || !punchline) return res.status(400).json({ error: 'playerId, playerName, and punchline required' });
+                const dateKey = getTodayKey();
+                const played = await redisGet(`daily:${dateKey}:played:${playerId}`);
+                if (played) return res.status(400).json({ error: 'Already played today' });
+
+                const prompt = getDailyPrompt();
+                const startTime = Date.now();
+
+                // Create temp submissions: player + 3 bots
+                const submissions = [{ id: 1, playerName, punchline }];
+                const shuffledBots = [...BOT_NAMES].sort(() => Math.random() - 0.5).slice(0, 3);
+                const allPrompts = Object.keys(PROMPT_PUNCHLINES);
+                let botPunchlines = PROMPT_PUNCHLINES[prompt] ? [...PROMPT_PUNCHLINES[prompt]] : null;
+                if (!botPunchlines) {
+                    const cat = prompt.toLowerCase().includes('crypto') ? 'crypto' : prompt.toLowerCase().includes('code') || prompt.toLowerCase().includes('program') ? 'tech' : 'general';
+                    botPunchlines = [...(FALLBACK_PUNCHLINES[cat] || FALLBACK_PUNCHLINES.general)];
+                }
+                shuffledBots.forEach((botName, i) => {
+                    const pl = botPunchlines[i] || botPunchlines[0];
+                    submissions.push({ id: i + 2, playerName: botName, punchline: pl });
+                });
+
+                // Judge with AI
+                const aiResult = await pickWinnerWithAI(submissions, prompt, 'general');
+                const winnerId = aiResult.winnerId || 1;
+                const playerWon = winnerId === 1;
+                const timeTaken = (Date.now() - startTime) / 1000;
+
+                // Score: win bonus + time bonus + streak bonus
+                let score = 0;
+                if (playerWon) score += 100;
+                score += Math.max(0, Math.floor(50 - timeTaken)); // time bonus
+                let profile = await getProfile(playerId);
+                if (profile) {
+                    const yesterday = new Date(Date.now() - 86400000);
+                    const yesterdayKey = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth()+1).padStart(2,'0')}-${String(yesterday.getUTCDate()).padStart(2,'0')}`;
+                    if (profile.lastDailyDate === yesterdayKey) {
+                        profile.dailyChallengeStreak++;
+                    } else if (profile.lastDailyDate !== dateKey) {
+                        profile.dailyChallengeStreak = 1;
+                    }
+                    score += profile.dailyChallengeStreak * 10; // streak bonus
+                    profile.lastDailyDate = dateKey;
+                    profile.lifetimeXP += score;
+                    if (playerWon) profile.roundsWon++;
+                    const newAchievements = checkAchievements(profile);
+                    await saveProfile(profile);
+
+                    // Mark played
+                    await redisSet(`daily:${dateKey}:played:${playerId}`, true, 86400 * 2);
+
+                    // Update daily leaderboard
+                    const lb = await redisGet(`daily:${dateKey}:lb`) || [];
+                    lb.push({ name: playerName, score, won: playerWon, time: Math.round(timeTaken) });
+                    lb.sort((a, b) => b.score - a.score);
+                    await redisSet(`daily:${dateKey}:lb`, lb.slice(0, 100), 86400 * 2);
+
+                    return res.status(200).json({
+                        success: true,
+                        result: {
+                            won: playerWon, score, prompt, punchline,
+                            winnerId, winnerName: submissions.find(s => s.id === winnerId)?.playerName,
+                            winningPunchline: submissions.find(s => s.id === winnerId)?.punchline,
+                            aiCommentary: aiResult.aiCommentary,
+                            streak: profile.dailyChallengeStreak,
+                            leaderboard: lb.slice(0, 20),
+                            newAchievements, profile
+                        }
+                    });
+                }
+                return res.status(200).json({ success: true, result: { won: playerWon, score, prompt, winnerId } });
+            }
+
+            // --- Friend Challenge Links ---
+            case 'createChallenge': {
+                const { creatorName, creatorScore, prompt, category } = body;
+                if (!creatorName || !prompt) return res.status(400).json({ error: 'creatorName and prompt required' });
+                const challengeId = Math.random().toString(36).substring(2, 10);
+                await redisSet(`challenge:${challengeId}`, {
+                    creatorName, creatorScore: creatorScore || 0, prompt, category: category || 'general', createdAt: Date.now()
+                }, 86400 * 7);
+                return res.status(200).json({ success: true, challengeId });
+            }
+
+            case 'getChallenge': {
+                const challengeId = req.query.id || body.challengeId;
+                if (!challengeId) return res.status(400).json({ error: 'challengeId required' });
+                const challenge = await redisGet(`challenge:${challengeId}`);
+                if (!challenge) return res.status(404).json({ error: 'Challenge not found or expired' });
+                return res.status(200).json({ success: true, challenge });
+            }
+
+            // --- Appeal Mechanic ---
+            case 'appealVerdict': {
+                const { roomId, playerName, roundIndex, playerId } = body;
+                let room = await getRoom(roomId);
+                if (!room) return res.status(404).json({ error: 'Room not found' });
+                if (room.status !== 'roundResults') return res.status(400).json({ error: 'Not in results phase' });
+
+                const result = room.roundResults[roundIndex !== undefined ? roundIndex : room.roundResults.length - 1];
+                if (!result) return res.status(400).json({ error: 'No round result to appeal' });
+                if (result.appealed) return res.status(400).json({ error: 'Already appealed' });
+
+                // Check XP cost (50 XP)
+                if (playerId) {
+                    const profile = await getProfile(playerId);
+                    if (profile && profile.lifetimeXP < 50) return res.status(400).json({ error: 'Need 50 XP to appeal' });
+                }
+
+                // Re-judge with stricter prompt
+                const submissions = room.submissions;
+                const reJudgeResult = await pickWinnerWithAI(submissions, room.jokePrompt, room.category);
+                const newWinnerId = reJudgeResult.winnerId;
+                const overturned = newWinnerId && newWinnerId !== result.winnerId;
+
+                result.appealed = true;
+                result.appealResult = overturned ? 'overturned' : 'upheld';
+                result.appealNewWinnerId = newWinnerId;
+
+                if (overturned) {
+                    // Reverse old winner score, apply new
+                    const oldWinner = room.players.find(p => p.name === result.winnerName);
+                    if (oldWinner) oldWinner.score = Math.max(0, oldWinner.score - 100);
+                    const newWinnerSub = submissions.find(s => s.id === newWinnerId);
+                    if (newWinnerSub) {
+                        const newWinnerPlayer = room.players.find(p => p.name === newWinnerSub.playerName);
+                        if (newWinnerPlayer) newWinnerPlayer.score += 100;
+                        result.appealNewWinnerName = newWinnerSub.playerName;
+                        result.appealNewPunchline = newWinnerSub.punchline;
+                    }
+                    // Refund appeal cost
+                    if (playerId) {
+                        const profile = await getProfile(playerId);
+                        if (profile) { /* refund — no XP deducted */ await saveProfile(profile); }
+                    }
+                } else {
+                    // Deduct 50 XP
+                    if (playerId) {
+                        const profile = await getProfile(playerId);
+                        if (profile) { profile.lifetimeXP = Math.max(0, profile.lifetimeXP - 50); await saveProfile(profile); }
+                    }
+                }
+
+                result.appealCommentary = reJudgeResult.aiCommentary;
+                await setRoom(roomId, room);
+                return res.status(200).json({
+                    success: true,
+                    appeal: { overturned, newWinnerId, oldWinnerId: result.winnerId, commentary: reJudgeResult.aiCommentary },
+                    room
+                });
+            }
+
+            // --- OG Preview ---
+            case 'ogPreview': {
+                const shareId = req.query.id;
+                if (!shareId) return res.status(400).json({ error: 'id required' });
+                const shareData = await redisGet(`share:${shareId}`);
+                const title = shareData?.winnerName ? `${shareData.winnerName} won Oracle of Wit!` : 'Oracle of Wit - GenLayer Game';
+                const desc = shareData?.punchline || 'The AI humor prediction game powered by GenLayer';
+                const url = `https://oracle-of-wit.vercel.app`;
+                const html = `<!DOCTYPE html><html><head>
+                    <meta property="og:title" content="${title.replace(/"/g, '&quot;')}" />
+                    <meta property="og:description" content="${desc.replace(/"/g, '&quot;')}" />
+                    <meta property="og:image" content="${url}/og-image.png" />
+                    <meta property="og:url" content="${url}/share/${shareId}" />
+                    <meta name="twitter:card" content="summary_large_image" />
+                    <meta name="twitter:title" content="${title.replace(/"/g, '&quot;')}" />
+                    <meta name="twitter:description" content="${desc.replace(/"/g, '&quot;')}" />
+                    <meta http-equiv="refresh" content="0; url=${url}" />
+                </head><body>Redirecting...</body></html>`;
+                res.setHeader('Content-Type', 'text/html');
+                return res.status(200).send(html);
+            }
+
+            // --- Share Data ---
+            case 'createShare': {
+                const { winnerName, punchline, prompt, score, category } = body;
+                const shareId = Math.random().toString(36).substring(2, 10);
+                await redisSet(`share:${shareId}`, { winnerName, punchline, prompt, score, category, createdAt: Date.now() }, 86400 * 30);
+                return res.status(200).json({ success: true, shareId });
+            }
+
+            // --- Hall of Fame ---
+            case 'getHallOfFame': {
+                const hof = await redisGet('hall_of_fame') || [];
+                return res.status(200).json({ success: true, hallOfFame: hof });
+            }
+
+            // --- Seasonal Leaderboard ---
+            case 'getSeasonalLeaderboard': {
+                const season = body.season || req.query.season || getCurrentSeasonKey();
+                const slb = await redisGet(`leaderboard:${season}`) || [];
+                return res.status(200).json({ success: true, season, leaderboard: slb.slice(0, 50) });
+            }
+
+            case 'getSeasons': {
+                // Return list of available seasons (current + past 6 months)
+                const seasons = [];
+                const now = new Date();
+                for (let i = 0; i < 6; i++) {
+                    const d = new Date(now.getUTCFullYear(), now.getUTCMonth() - i, 1);
+                    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+                    const slb = await redisGet(`leaderboard:${key}`);
+                    if (slb && slb.length > 0) {
+                        seasons.push({ key, players: slb.length, topPlayer: slb[0]?.name, topScore: slb[0]?.totalScore });
+                    }
+                }
+                return res.status(200).json({ success: true, seasons, currentSeason: getCurrentSeasonKey() });
+            }
+
+            // --- Custom Prompt Submission ---
+            case 'submitPrompt': {
+                const { playerName, prompt: userPrompt, playerId } = body;
+                if (!playerName || !userPrompt) return res.status(400).json({ error: 'playerName and prompt required' });
+                if (userPrompt.length < 10 || userPrompt.length > 150) return res.status(400).json({ error: 'Prompt must be 10-150 characters' });
+
+                const prompts = await redisGet('community_prompts') || [];
+                if (prompts.some(p => p.playerId === playerId && Date.now() - p.createdAt < 86400000)) {
+                    return res.status(400).json({ error: 'One submission per day' });
+                }
+                const promptId = Math.random().toString(36).substring(2, 10);
+                prompts.push({
+                    id: promptId, prompt: userPrompt, author: playerName, playerId,
+                    votes: 0, voters: [], status: 'pending',
+                    createdAt: Date.now()
+                });
+                await redisSet('community_prompts', prompts, 86400 * 90);
+                return res.status(200).json({ success: true, promptId });
+            }
+
+            case 'votePrompt': {
+                const { promptId, playerId } = body;
+                if (!promptId || !playerId) return res.status(400).json({ error: 'promptId and playerId required' });
+
+                const prompts = await redisGet('community_prompts') || [];
+                const prompt = prompts.find(p => p.id === promptId);
+                if (!prompt) return res.status(404).json({ error: 'Prompt not found' });
+                if (prompt.voters.includes(playerId)) return res.status(400).json({ error: 'Already voted' });
+
+                prompt.votes++;
+                prompt.voters.push(playerId);
+                // Auto-approve at 5 votes
+                if (prompt.votes >= 5 && prompt.status === 'pending') prompt.status = 'approved';
+                await redisSet('community_prompts', prompts, 86400 * 90);
+                return res.status(200).json({ success: true, votes: prompt.votes, status: prompt.status });
+            }
+
+            case 'getPromptSubmissions': {
+                const prompts = await redisGet('community_prompts') || [];
+                // Sort by votes descending, return top 50
+                const sorted = [...prompts].sort((a, b) => b.votes - a.votes).slice(0, 50);
+                return res.status(200).json({ success: true, prompts: sorted });
+            }
+
+            // --- Tournament Mode ---
+            case 'createTournament': {
+                const { hostName, category, size = 8 } = body;
+                if (!hostName) return res.status(400).json({ error: 'hostName required' });
+                const validSizes = [8, 16, 32];
+                const bracketSize = validSizes.includes(size) ? size : 8;
+                const tournamentId = 'T-' + generateRoomCode();
+
+                const tournament = {
+                    id: tournamentId,
+                    host: hostName,
+                    category: category || 'general',
+                    size: bracketSize,
+                    players: [{ name: hostName, joinedAt: Date.now() }],
+                    spectators: [],
+                    status: 'registration', // registration -> active -> finished
+                    bracket: [],
+                    currentRound: 0,
+                    totalRounds: Math.log2(bracketSize),
+                    activeMatches: [],
+                    results: [],
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+                await redisSet(`tournament:${tournamentId}`, tournament, 86400 * 2);
+                return res.status(200).json({ success: true, tournamentId, tournament });
+            }
+
+            case 'joinTournament': {
+                const { tournamentId, playerName, spectator: tSpectator } = body;
+                if (!tournamentId || !playerName) return res.status(400).json({ error: 'tournamentId and playerName required' });
+
+                const t = await redisGet(`tournament:${tournamentId}`);
+                if (!t) return res.status(404).json({ error: 'Tournament not found' });
+
+                if (tSpectator) {
+                    if (!t.spectators) t.spectators = [];
+                    if (!t.spectators.find(s => s.name === playerName)) {
+                        t.spectators.push({ name: playerName, joinedAt: Date.now() });
+                    }
+                } else {
+                    if (t.status !== 'registration') return res.status(400).json({ error: 'Registration closed' });
+                    if (t.players.length >= t.size) return res.status(400).json({ error: 'Tournament full' });
+                    if (t.players.find(p => p.name === playerName)) return res.status(400).json({ error: 'Already registered' });
+                    t.players.push({ name: playerName, joinedAt: Date.now() });
+                }
+                t.updatedAt = Date.now();
+                await redisSet(`tournament:${tournamentId}`, t, 86400 * 2);
+                return res.status(200).json({ success: true, tournament: t });
+            }
+
+            case 'startTournament': {
+                const { tournamentId, hostName } = body;
+                const t = await redisGet(`tournament:${tournamentId}`);
+                if (!t) return res.status(404).json({ error: 'Tournament not found' });
+                if (t.host !== hostName) return res.status(403).json({ error: 'Only host can start' });
+                if (t.status !== 'registration') return res.status(400).json({ error: 'Already started' });
+                if (t.players.length < 2) return res.status(400).json({ error: 'Need at least 2 players' });
+
+                // Shuffle and seed bracket
+                const shuffled = [...t.players].sort(() => Math.random() - 0.5);
+                // Pad to next power of 2 with BYEs
+                let bracketSize = 2;
+                while (bracketSize < shuffled.length) bracketSize *= 2;
+                while (shuffled.length < bracketSize) shuffled.push({ name: 'BYE', isBye: true });
+
+                const bracket = [];
+                for (let i = 0; i < shuffled.length; i += 2) {
+                    const matchId = `R1-M${bracket.length + 1}`;
+                    const match = {
+                        id: matchId, round: 1,
+                        player1: shuffled[i].name, player2: shuffled[i + 1].name,
+                        winner: null, roomId: null, status: 'pending'
+                    };
+                    // Auto-advance BYE matches
+                    if (shuffled[i + 1].isBye) {
+                        match.winner = shuffled[i].name;
+                        match.status = 'completed';
+                    } else if (shuffled[i].isBye) {
+                        match.winner = shuffled[i + 1].name;
+                        match.status = 'completed';
+                    }
+                    bracket.push(match);
+                }
+
+                t.bracket = bracket;
+                t.status = 'active';
+                t.currentRound = 1;
+                t.totalRounds = Math.log2(bracketSize);
+                t.updatedAt = Date.now();
+                await redisSet(`tournament:${tournamentId}`, t, 86400 * 2);
+                return res.status(200).json({ success: true, tournament: t });
+            }
+
+            case 'getTournament': {
+                const tid = req.query.id || body.tournamentId;
+                if (!tid) return res.status(400).json({ error: 'tournamentId required' });
+                const t = await redisGet(`tournament:${tid}`);
+                if (!t) return res.status(404).json({ error: 'Tournament not found' });
+                return res.status(200).json({ success: true, tournament: t });
+            }
+
+            case 'completeTournamentMatch': {
+                const { tournamentId, matchId, winnerName } = body;
+                const t = await redisGet(`tournament:${tournamentId}`);
+                if (!t) return res.status(404).json({ error: 'Tournament not found' });
+
+                const match = t.bracket.find(m => m.id === matchId);
+                if (!match) return res.status(404).json({ error: 'Match not found' });
+                match.winner = winnerName;
+                match.status = 'completed';
+
+                // Check if current round is complete, build next round
+                const currentMatches = t.bracket.filter(m => m.round === t.currentRound);
+                if (currentMatches.every(m => m.status === 'completed')) {
+                    if (t.currentRound < t.totalRounds) {
+                        const winners = currentMatches.map(m => m.winner);
+                        const nextRound = t.currentRound + 1;
+                        for (let i = 0; i < winners.length; i += 2) {
+                            const mId = `R${nextRound}-M${t.bracket.length + 1}`;
+                            t.bracket.push({
+                                id: mId, round: nextRound,
+                                player1: winners[i], player2: winners[i + 1] || 'BYE',
+                                winner: (winners[i + 1] === undefined || winners[i + 1] === 'BYE') ? winners[i] : null,
+                                roomId: null,
+                                status: (winners[i + 1] === undefined || winners[i + 1] === 'BYE') ? 'completed' : 'pending'
+                            });
+                        }
+                        t.currentRound = nextRound;
+                    } else {
+                        t.status = 'finished';
+                        t.champion = match.winner;
+                    }
+                }
+                t.updatedAt = Date.now();
+                await redisSet(`tournament:${tournamentId}`, t, 86400 * 2);
+                return res.status(200).json({ success: true, tournament: t });
+            }
+
+            case 'listTournaments': {
+                const keys = await redisKeys('tournament:*');
+                const tournaments = [];
+                for (const key of keys.slice(0, 20)) {
+                    const t = await redisGet(key);
+                    if (t && t.status !== 'finished') {
+                        tournaments.push({
+                            id: t.id, host: t.host, category: t.category,
+                            size: t.size, players: t.players.length,
+                            status: t.status, currentRound: t.currentRound
+                        });
+                    }
+                }
+                return res.status(200).json({ success: true, tournaments });
             }
 
             default:

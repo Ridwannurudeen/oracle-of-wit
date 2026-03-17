@@ -206,3 +206,101 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
             self.games[game_id] = json.dumps(game)
         
         return {"recorded": True, "players_updated": len(scores_list)}
+
+    @gl.public.write
+    def appeal_judgment(
+        self,
+        game_id: str,
+        joke_setup: str,
+        category: str,
+        submissions: str,
+        original_winner_id: int
+    ) -> typing.Any:
+        """
+        Appeal a round judgment using Optimistic Democracy with re-evaluation.
+
+        This triggers a fresh judgment with an explicit instruction to reconsider.
+        OD naturally adds more validators for disputed transactions, making
+        appeals inherently more rigorous than initial judgments.
+        """
+        submissions_list = json.loads(submissions)
+
+        if len(submissions_list) <= 1:
+            return {
+                "new_winner_id": submissions_list[0]["id"] if submissions_list else original_winner_id,
+                "overturned": False,
+                "consensus_method": "single_submission"
+            }
+
+        submissions_text = "\n".join([
+            f'[ID: {s["id"]}] "{s["punchline"]}"'
+            for s in submissions_list
+        ])
+
+        appeal_prompt = f"""You are the Oracle of Wit APPEAL COURT. A previous judgment is being challenged.
+
+JOKE SETUP: "{joke_setup}"
+CATEGORY: {category}
+PREVIOUS WINNER: Submission #{original_winner_id}
+
+SUBMITTED PUNCHLINES:
+{submissions_text}
+
+APPEAL INSTRUCTIONS:
+This is a RE-EVALUATION. The previous result is being contested.
+Judge with EXTRA scrutiny. Consider ALL submissions equally without bias toward the previous winner.
+Focus especially on:
+1. Humor quality and laugh-out-loud potential
+2. Cleverness and unexpected twists
+3. How well the punchline completes the setup
+4. Overall comedic excellence
+
+You must pick the OBJECTIVELY funniest submission.
+Respond with ONLY the ID number of the funniest submission (just the number, nothing else)."""
+
+        def judge_appeal() -> int:
+            result = gl.exec_prompt(appeal_prompt)
+            try:
+                winner_id = int(result.strip())
+                valid_ids = [s["id"] for s in submissions_list]
+                if winner_id in valid_ids:
+                    return winner_id
+                return submissions_list[0]["id"]
+            except:
+                return submissions_list[0]["id"]
+
+        new_winner_id = gl.eq_principle_strict_eq(judge_appeal)
+        overturned = new_winner_id != original_winner_id
+
+        if overturned:
+            # Update leaderboard: remove old winner points, add new
+            old_winner = None
+            new_winner = None
+            for s in submissions_list:
+                if s["id"] == original_winner_id:
+                    old_winner = s
+                if s["id"] == new_winner_id:
+                    new_winner = s
+
+            if old_winner:
+                current = self.leaderboard.get(old_winner["playerName"], 0)
+                self.leaderboard[old_winner["playerName"]] = max(0, current - 100)
+            if new_winner:
+                current = self.leaderboard.get(new_winner["playerName"], 0)
+                self.leaderboard[new_winner["playerName"]] = current + 100
+
+        self.total_judgments += 1
+
+        new_winner_sub = None
+        for s in submissions_list:
+            if s["id"] == new_winner_id:
+                new_winner_sub = s
+                break
+
+        return {
+            "new_winner_id": new_winner_id,
+            "new_winner_name": new_winner_sub["playerName"] if new_winner_sub else "Unknown",
+            "new_winning_punchline": new_winner_sub["punchline"] if new_winner_sub else "",
+            "overturned": overturned,
+            "consensus_method": "optimistic_democracy_appeal"
+        }

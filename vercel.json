@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/share/:id", "destination": "/api/game?action=ogPreview&id=:id" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
