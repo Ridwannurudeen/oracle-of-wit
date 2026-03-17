@@ -1804,16 +1804,16 @@ function render(force = false) {
             </div>
         </header>
         ${state.room ? `
-        <div class="consensus-hud border-b border-white/[0.03] py-1 px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
-            <div class="w-full flex items-center justify-between text-gray-500">
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-1"><div class="hud-dot bg-green-500"></div><span>GenLayer</span></div>
+        <div class="consensus-hud border-b border-white/[0.03] py-1 px-2 sm:px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
+            <div class="w-full flex items-center justify-between text-gray-500 text-[10px] sm:text-xs font-mono">
+                <div class="flex items-center gap-1 sm:gap-3">
+                    <div class="flex items-center gap-1"><div class="hud-dot bg-green-500"></div><span class="hidden sm:inline">GenLayer</span></div>
+                    <span class="text-white/10 hidden sm:inline">|</span>
+                    <span>${state.room.players?.length || 0}P</span>
                     <span class="text-white/10">|</span>
-                    <span>${state.room.players?.length || 0} players</span>
-                </div>
-                <div class="flex items-center gap-3">
                     <span>R${state.room.currentRound || 0}/${state.room.totalRounds || 5}</span>
-                    <span class="text-white/10">|</span>
+                </div>
+                <div class="flex items-center gap-1 sm:gap-3">
                     <span class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${state.room.status?.toUpperCase() || 'IDLE'}</span>
                     <span class="text-white/10">|</span>
                     <button onclick="if(confirm('Leave this game?'))leaveRoom()" class="text-red-400/60 hover:text-red-400 transition-colors text-[10px] font-mono tracking-wider">EXIT</button>
@@ -2039,7 +2039,7 @@ function renderLobby() {
             </div>
 
             <!-- Row 1: Profile + Weekly Theme -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
                 <div>${renderProfileCard()}</div>
                 ${state.currentWeeklyTheme ? `
                 <div class="glow-card glow-card-amber p-5 flex items-center">
@@ -2061,7 +2061,7 @@ function renderLobby() {
             </div>
 
             <!-- Row 2: Solo Mode + Multiplayer side by side -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
                 <!-- Solo Mode -->
                 <div class="glow-card glow-card-gold p-6">
                     <div class="flex items-center gap-2 mb-2">
@@ -2131,7 +2131,7 @@ function renderLobby() {
             </div>
 
             <!-- Row 3: Daily Challenge + Community Prompts side by side -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
                 <div class="glow-card glow-card-amber p-5">
                     <div class="flex items-center justify-between mb-3">
                         <div>
@@ -2201,9 +2201,9 @@ function renderLobby() {
                             <div class="flex justify-between items-center p-2.5 ${i<3?'bg-consensus/10 border border-consensus/20':'bg-obsidian border border-white/[0.04]'} rounded-xl">
                                 <div class="flex items-center gap-2">
                                     <span class="text-lg">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</span>
-                                    <span>${esc(p.name)}</span>
+                                    <span class="truncate max-w-[140px]">${esc(p.name)}</span>
                                 </div>
-                                <span class="text-consensus font-mono font-bold">${p.totalScore} XP</span>
+                                <span class="text-consensus font-mono font-bold shrink-0">${p.totalScore} XP</span>
                             </div>
                         `).join('')}
                     </div>
@@ -2641,9 +2641,9 @@ function renderBetting() {
                                 <div class="flex gap-1 mt-2 ml-12">${Object.entries(emojiCounts).map(([e,c]) => `<span class="text-xs bg-obsidian px-1.5 py-0.5 rounded-full border border-white/[0.04]">${e}${c>1?' x'+c:''}</span>`).join('')}</div>
                             ` : ''}
                         </div>
-                        <div class="flex gap-1 mt-1 justify-end">
+                        <div class="flex flex-wrap gap-1 mt-1 justify-end">
                             ${['😂','🔥','💀','😐','👏','🤮'].map(e => `
-                                <button onclick="event.stopPropagation();sendReaction(${s.id},'${e}')" class="text-lg hover:scale-125 transition-transform ${state.sentReactions >= 3 ? 'opacity-30 pointer-events-none' : ''}" title="React">${e}</button>
+                                <button onclick="event.stopPropagation();sendReaction(${s.id},'${e}')" class="text-base sm:text-lg hover:scale-125 transition-transform ${state.sentReactions >= 3 ? 'opacity-30 pointer-events-none' : ''}" title="React">${e}</button>
                             `).join('')}
                         </div>
                     </div>
@@ -2729,7 +2729,7 @@ function renderJudging() {
                     <span class="text-xs font-mono font-bold ${votedCount >= 3 ? 'text-green-400' : 'text-consensus'}">${votedCount}/5</span>
                 </div>
 
-                <div class="grid grid-cols-5 gap-2 mb-4">
+                <div class="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
                     ${validators.map((v, i) => {
                         const hasVoted = i < votedCount;
                         const isThinking = i === votedCount && !consensusReached;
@@ -2742,10 +2742,10 @@ function renderJudging() {
                                         ${thought}
                                     </div>
                                 ` : ''}
-                                <div class="w-12 h-12 rounded-full ${hasVoted ? v.color : 'bg-obsidian border border-white/[0.06]'} flex items-center justify-center text-xl mb-1 transition-all duration-500 ${hasVoted ? 'scale-110 shadow-lg' : isThinking ? 'animate-glow' : 'opacity-50'}">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full ${hasVoted ? v.color : 'bg-obsidian border border-white/[0.06]'} flex items-center justify-center text-lg sm:text-xl mb-1 transition-all duration-500 ${hasVoted ? 'scale-110 shadow-lg' : isThinking ? 'animate-glow' : 'opacity-50'}">
                                     ${hasVoted ? '✓' : v.icon}
                                 </div>
-                                <span class="text-[10px] font-mono ${hasVoted ? 'text-white' : 'text-gray-600'}">${v.name}</span>
+                                <span class="text-[9px] sm:text-[10px] font-mono ${hasVoted ? 'text-white' : 'text-gray-600'}">${v.name}</span>
                                 <span class="text-[9px] text-gray-700 hidden sm:block">${v.taste}</span>
                                 ${hasVoted && vote ? `<span class="text-[10px] font-mono text-consensus">#${vote}</span>` : ''}
                             </div>
@@ -3047,7 +3047,7 @@ function renderFinalResults() {
             <!-- Session Recap -->
             <div class="glow-card p-4">
                 <h3 class="font-display font-bold mb-3 text-center text-wit tracking-wider uppercase text-sm">Session Recap</h3>
-                <div class="grid grid-cols-4 gap-3 text-center">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                     <div class="stat-count bg-obsidian border border-white/[0.04] rounded-xl p-2" style="animation-delay:0.1s">
                         <p class="text-2xl font-mono font-bold text-consensus">${totalXP}</p>
                         <p class="text-[10px] font-mono tracking-wider text-gray-500">XP EARNED</p>
