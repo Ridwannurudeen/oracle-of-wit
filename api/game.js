@@ -961,26 +961,34 @@ const FALLBACK_PUNCHLINES = {
 
 // Redis helpers
 async function redisGet(key) {
-    if (!UPSTASH_URL || !UPSTASH_TOKEN) return null;
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) { console.warn('[Redis] No credentials configured'); return null; }
     try {
         const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
+        if (!res.ok) { console.error(`[Redis] GET ${key} failed: ${res.status} ${res.statusText}`); return null; }
         const data = await res.json();
         return data.result ? JSON.parse(data.result) : null;
-    } catch (e) { return null; }
+    } catch (e) { console.error(`[Redis] GET ${key} error:`, e.message); return null; }
 }
 
 async function redisSet(key, value, exSeconds = 7200) {
-    if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) { console.warn('[Redis] No credentials configured'); return false; }
     try {
-        await fetch(`${UPSTASH_URL}/set/${key}?EX=${exSeconds}`, {
+        const res = await fetch(`${UPSTASH_URL}/set/${key}?EX=${exSeconds}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
             body: JSON.stringify(value)
         });
+        if (!res.ok) {
+            const text = await res.text();
+            console.error(`[Redis] SET ${key} failed: ${res.status} ${res.statusText} — ${text}`);
+            return false;
+        }
+        const data = await res.json();
+        if (data.error) { console.error(`[Redis] SET ${key} Upstash error:`, data.error); return false; }
         return true;
-    } catch (e) { return false; }
+    } catch (e) { console.error(`[Redis] SET ${key} error:`, e.message); return false; }
 }
 
 async function redisKeys(pattern) {
@@ -2626,6 +2634,33 @@ export default async function handler(req, res) {
                 // Sort by votes descending, return top 50
                 const sorted = [...prompts].sort((a, b) => b.votes - a.votes).slice(0, 50);
                 return res.status(200).json({ success: true, prompts: sorted });
+            }
+
+            case 'healthCheck': {
+                const checks = {
+                    redis: false,
+                    redisUrl: !!UPSTASH_URL,
+                    redisToken: !!UPSTASH_TOKEN,
+                    anthropic: !!ANTHROPIC_API_KEY,
+                    genlayer: !!GENLAYER_CONTRACT_ADDRESS && !!GENLAYER_PRIVATE_KEY,
+                };
+                // Test Redis round-trip
+                if (UPSTASH_URL && UPSTASH_TOKEN) {
+                    try {
+                        const testKey = '_health_' + Date.now();
+                        const setOk = await redisSet(testKey, { test: true }, 10);
+                        if (setOk) {
+                            const got = await redisGet(testKey);
+                            checks.redis = !!got;
+                            checks.redisRoundTrip = got ? 'OK' : 'SET ok but GET failed';
+                        } else {
+                            checks.redisRoundTrip = 'SET failed';
+                        }
+                    } catch (e) {
+                        checks.redisRoundTrip = 'Error: ' + e.message;
+                    }
+                }
+                return res.status(200).json(checks);
             }
 
             default:
