@@ -543,6 +543,10 @@ function esc(str) {
     d.textContent = String(str);
     return d.innerHTML;
 }
+// GenLayer logo SVG (from studio.genlayer.com)
+function glLogo(size = 16, color = 'currentColor') {
+    return `<svg viewBox="0 0 97.76 91.93" width="${size}" height="${size}" fill="${color}" xmlns="http://www.w3.org/2000/svg"><polygon points="44.26 32.35 27.72 67.12 43.29 74.9 0 91.93 44.26 0 44.26 32.35"/><polygon points="53.5 32.35 70.04 67.12 54.47 74.9 97.76 91.93 53.5 0 53.5 32.35"/><polygon points="48.64 43.78 58.33 62.94 48.64 67.69 39.47 62.92 48.64 43.78" opacity="0.3"/></svg>`;
+}
 let currentPollInterval = BASE_POLL_INTERVAL;
 let soundEnabled = true;
 let audioCtx = null;
@@ -1639,7 +1643,7 @@ function renderRightWingContent() {
                 <div class="space-y-2 mb-4">
                     <div class="flex justify-between items-center">
                         <span class="text-[10px] font-mono text-gray-600">PROTOCOL</span>
-                        <span class="text-[10px] font-mono text-oracle">GenLayer</span>
+                        <span class="text-[10px] font-mono text-oracle flex items-center gap-1">${glLogo(11, 'rgb(45,212,191)')} GenLayer</span>
                     </div>
                     <div class="flex justify-between items-center">
                         <span class="text-[10px] font-mono text-gray-600">NETWORK</span>
@@ -1787,13 +1791,13 @@ function render(force = false) {
                     <div id="header-eye" class="w-8 h-8 oracle-eye rounded-full flex items-center justify-center shrink-0"></div>
                     <div>
                         <h1 class="text-sm font-display font-bold gradient-text leading-tight tracking-wider">ORACLE OF WIT</h1>
-                        <p class="text-[9px] font-mono text-gray-600 tracking-widest">GENLAYER PROTOCOL</p>
+                        <p class="text-[9px] font-mono text-gray-600 tracking-widest flex items-center gap-1"><span class="text-oracle/60">${glLogo(10, 'rgb(45,212,191)')}</span>GENLAYER PROTOCOL</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5">
                     <div class="hidden sm:flex items-center gap-1.5 mr-2">
                         <div class="flex items-center gap-1 px-2 py-1 bg-green-500/10 border border-green-500/20 rounded-lg">
-                            <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                            ${glLogo(11, 'rgb(34,197,94)')}
                             <span class="text-[9px] font-mono text-green-400 tracking-wider">TESTNET</span>
                         </div>
                     </div>
@@ -1807,7 +1811,7 @@ function render(force = false) {
         <div class="consensus-hud border-b border-white/[0.03] py-1 px-2 sm:px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
             <div class="w-full flex items-center justify-between text-gray-500 text-[10px] sm:text-xs font-mono">
                 <div class="flex items-center gap-1 sm:gap-3">
-                    <div class="flex items-center gap-1"><div class="hud-dot bg-green-500"></div><span class="hidden sm:inline">GenLayer</span></div>
+                    <div class="flex items-center gap-1">${glLogo(12, 'rgb(34,197,94)')}<span class="hidden sm:inline">GenLayer</span></div>
                     <span class="text-white/10 hidden sm:inline">|</span>
                     <span>${state.room.players?.length || 0}P</span>
                     <span class="text-white/10">|</span>
@@ -1956,7 +1960,7 @@ function renderWelcome() {
                 </div>
                 <div class="data-card data-card-consensus text-center py-8 px-6">
                     <div class="w-14 h-14 rounded-2xl bg-consensus/15 border border-consensus/25 flex items-center justify-center mx-auto mb-4">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="1.5" stroke-linecap="round"><path d="M12 2v4"/><path d="m6.34 6.34 2.83 2.83"/><path d="M2 12h4"/><circle cx="12" cy="12" r="4"/><path d="m14.83 9.17 2.83-2.83"/><path d="M18 12h4"/></svg>
+                        ${glLogo(28, '#FBBF24')}
                     </div>
                     <p class="font-display font-bold text-white text-lg mb-2 tracking-wider">JUDGE</p>
                     <p class="text-gray-500 text-sm font-mono leading-relaxed">AI validators reach on-chain consensus via GenLayer</p>
@@ -1984,7 +1988,7 @@ function renderWelcome() {
                     </div>
                 </div>
                 <div class="mt-4 text-center">
-                    <a href="https://www.genlayer.com" target="_blank" class="text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider">POWERED BY GENLAYER &rarr;</a>
+                    <a href="https://www.genlayer.com" target="_blank" class="inline-flex items-center gap-1.5 text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider"><span class="opacity-60">${glLogo(14, 'rgb(45,212,191)')}</span>POWERED BY GENLAYER &rarr;</a>
                 </div>
             </div>
         </div>
@@ -2720,7 +2724,7 @@ function renderJudging() {
             </div>
             <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-1">${consensusReached ? 'FINALIZED' : 'PROCESSING'}</p>
             <h2 class="text-2xl font-display font-bold mb-2 tracking-wider">${consensusReached ? 'CONSENSUS REACHED' : 'ORACLE JUDGING'}</h2>
-            <p class="text-wit text-xs font-mono mb-1 tracking-wider">GENLAYER OPTIMISTIC DEMOCRACY</p>
+            <p class="text-wit text-xs font-mono mb-1 tracking-wider flex items-center justify-center gap-1.5">${glLogo(14, 'rgb(168,85,247)')} GENLAYER OPTIMISTIC DEMOCRACY</p>
             <p class="text-[10px] font-mono text-gray-600 mb-4 tracking-wider">INDEPENDENT VALIDATORS EVALUATE — CONSENSUS ON-CHAIN</p>
 
             <div class="glass-bright rounded-xl p-4 mb-4">
@@ -2814,11 +2818,11 @@ function renderJudging() {
                         <div class="w-3 h-3 rounded-sm bg-green-500 animate-pulse" style="animation-delay:0.4s"></div>
                     </div>
                 </div>
-                <p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider">BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p>
+                <p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider flex items-center justify-center gap-1">${glLogo(11, 'rgb(34,197,94)')} BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p>
             </div>
             ` : `
             <div class="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-600 tracking-wider">
-                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                ${glLogo(12, 'rgb(34,197,94)')}
                 <span>CONNECTED TO GENLAYER INTELLIGENT CONTRACTS</span>
             </div>
             `}
