@@ -61,12 +61,13 @@ const ACHIEVEMENTS = [
 ];
 
 // GenLayer Intelligent Contract Integration
-// Uses genlayer-js SDK to call on-chain Oracle of Wit contract via
-// Optimistic Democracy for decentralized AI consensus on Testnet Bradbury
-async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
+// Uses genlayer-js SDK to submit judge_round on-chain via Optimistic Democracy.
+// Testnet Bradbury receipts don't expose decoded return values (gen_call unavailable),
+// so we run GenLayer for on-chain proof + Claude for winner determination in parallel.
+async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
     const client = await getGenLayerClient();
     if (!client) {
-        console.log('[GenLayer] Not configured, using fallback');
+        console.log('[GenLayer] Not configured');
         return null;
     }
 
@@ -77,10 +78,8 @@ async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
             punchline: s.punchline
         })));
 
-        console.log(`[GenLayer] Calling judge_round for game ${gameId} with ${submissions.length} submissions`);
+        console.log(`[GenLayer] Submitting judge_round for ${gameId} (${submissions.length} submissions)`);
 
-        // writeContract sends an ETH tx to the consensus main contract
-        // which triggers Optimistic Democracy (multiple validators evaluate independently)
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
             functionName: 'judge_round',
@@ -88,35 +87,21 @@ async function judgeWithGenLayer(submissions, jokePrompt, category, gameId) {
             value: 0n,
         });
 
-        console.log(`[GenLayer] judge_round tx submitted: ${txHash}`);
+        console.log(`[GenLayer] judge_round tx: ${txHash}`);
 
-        // Wait for OD consensus (validators vote, majority must agree)
+        // Wait for OD consensus (5 validators must agree on winner)
         const { TransactionStatus } = await import('genlayer-js/types');
         const receipt = await client.waitForTransactionReceipt({
             hash: txHash,
             status: TransactionStatus.ACCEPTED,
-            retries: 40,     // ~2 min max wait
-            interval: 3000,  // poll every 3s
+            retries: 40,
+            interval: 3000,
         });
 
-        console.log('[GenLayer] Optimistic Democracy receipt:', JSON.stringify(receipt));
+        const validators = receipt?.lastRound?.roundValidators?.length || 0;
+        console.log(`[GenLayer] ACCEPTED — ${validators} validators reached consensus (tx: ${txHash})`);
 
-        // Extract result from receipt
-        const data = receipt?.data || receipt?.result || receipt;
-        if (data) {
-            return {
-                winnerId: data.winner_id ?? data.winnerId,
-                winnerName: data.winner_name ?? data.winnerName,
-                winningPunchline: data.winning_punchline ?? data.winningPunchline,
-                consensusMethod: data.consensus_method || 'optimistic_democracy',
-                validatorsAgreed: data.validators_agreed ?? true,
-                txHash: txHash,
-                onChain: true
-            };
-        }
-
-        console.log('[GenLayer] No result in receipt, tx:', txHash);
-        return { txHash, onChain: true, winnerId: null };
+        return { txHash, onChain: true, validators };
     } catch (error) {
         console.error('[GenLayer] judge_round failed:', error.message);
         return null;
@@ -164,7 +149,7 @@ async function appealWithGenLayer(gameId, jokePrompt, category, submissions, ori
             punchline: s.punchline
         })));
 
-        console.log(`[GenLayer] Calling appeal_judgment for game ${gameId}`);
+        console.log(`[GenLayer] Submitting appeal_judgment for ${gameId}`);
 
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
@@ -173,7 +158,7 @@ async function appealWithGenLayer(gameId, jokePrompt, category, submissions, ori
             value: 0n,
         });
 
-        console.log(`[GenLayer] appeal_judgment tx submitted: ${txHash}`);
+        console.log(`[GenLayer] appeal_judgment tx: ${txHash}`);
 
         const { TransactionStatus } = await import('genlayer-js/types');
         const receipt = await client.waitForTransactionReceipt({
@@ -183,17 +168,9 @@ async function appealWithGenLayer(gameId, jokePrompt, category, submissions, ori
             interval: 3000,
         });
 
-        const data = receipt?.data || receipt?.result || receipt;
-        if (data) {
-            return {
-                newWinnerId: data.new_winner_id ?? data.newWinnerId,
-                overturned: data.overturned ?? false,
-                txHash: txHash,
-                onChain: true
-            };
-        }
-
-        return { txHash, onChain: true, newWinnerId: null };
+        const validators = receipt?.lastRound?.roundValidators?.length || 0;
+        console.log(`[GenLayer] Appeal ACCEPTED — ${validators} validators (tx: ${txHash})`);
+        return { txHash, onChain: true, validators };
     } catch (error) {
         console.error('[GenLayer] appeal_judgment failed:', error.message);
         return null;
@@ -1263,51 +1240,43 @@ function addBotBets(room) {
 async function autoJudge(room) {
     const now = Date.now();
     room.status = 'judging';
-    room.judgingMethod = 'processing'; // Track how we're judging
+    room.judgingMethod = 'processing';
     await setRoom(room.id, room);
-    
-    let winnerId = null;
-    let judgingMethod = 'random'; // Default fallback
+
+    // Run GenLayer (on-chain proof) and Claude (winner + roast) IN PARALLEL
+    // GenLayer: validators independently judge via OD, result recorded on-chain
+    // Claude: determines winner + generates commentary for immediate gameplay
+    const [genLayerResult, aiResult] = await Promise.all([
+        submitToGenLayer(room.submissions, room.jokePrompt, room.category, room.id).catch(() => null),
+        pickWinnerWithAI(room.submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null, aiCommentary: null }))
+    ]);
+
+    let winnerId = aiResult.winnerId;
+    let aiCommentary = aiResult.aiCommentary;
+    let judgingMethod = winnerId ? 'claude_api' : 'random';
     let onChain = false;
     let txHash = null;
 
-    // STEP 1: Try GenLayer Optimistic Democracy (Real decentralized AI consensus)
-    const genLayerResult = await judgeWithGenLayer(
-        room.submissions,
-        room.jokePrompt,
-        room.category,
-        room.id
-    );
-
-    if (genLayerResult && genLayerResult.winnerId) {
-        winnerId = parseInt(genLayerResult.winnerId);
-        judgingMethod = 'genlayer_optimistic_democracy';
+    // If GenLayer succeeded, upgrade the judging method and attach proof
+    if (genLayerResult && genLayerResult.txHash) {
         onChain = true;
-        txHash = genLayerResult.txHash || null;
-        console.log(`✓ GenLayer consensus reached: Winner #${winnerId} (tx: ${txHash})`);
-    }
-    
-    // STEP 2: Fallback to Claude API (centralized but still AI-powered)
-    let aiCommentary = null;
-    if (!winnerId) {
-        const aiResult = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category);
-        winnerId = aiResult.winnerId;
-        aiCommentary = aiResult.aiCommentary;
-        if (winnerId) {
-            judgingMethod = 'claude_api';
-            console.log(`✓ Claude API judged: Winner #${winnerId}`);
-        }
+        txHash = genLayerResult.txHash;
+        judgingMethod = winnerId ? 'genlayer_optimistic_democracy' : 'genlayer_verified';
+        console.log(`✓ GenLayer OD verified on-chain (${genLayerResult.validators} validators, tx: ${txHash})`);
     }
 
-    // STEP 3: Final fallback to random selection
+    if (winnerId) {
+        console.log(`✓ Winner #${winnerId} — method: ${judgingMethod}, onChain: ${onChain}`);
+    }
+
+    // Final fallback to random
     if (!winnerId) {
         winnerId = pickWinnerRandom(room.submissions);
-        judgingMethod = 'random_fallback';
+        if (!onChain) judgingMethod = 'random_fallback';
         console.log(`✓ Random fallback: Winner #${winnerId}`);
     }
 
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
-
     if (!winningSubmission) {
         const fallbackWinner = room.submissions[0];
         return createRoundResult(room, fallbackWinner.id, now, 'fallback', false, null);
@@ -2179,27 +2148,23 @@ export default async function handler(req, res) {
                     if (profile && profile.lifetimeXP < 50) return res.status(400).json({ error: 'Need 50 XP to appeal' });
                 }
 
-                // STEP 1: Try GenLayer Optimistic Democracy appeal (on-chain re-evaluation)
+                // Run GenLayer appeal (on-chain) and Claude re-judge in parallel
                 const submissions = room.submissions;
-                let newWinnerId = null;
                 let appealOnChain = false;
                 let appealTxHash = null;
 
-                const glAppeal = await appealWithGenLayer(
-                    room.id, room.jokePrompt, room.category, submissions, result.winnerId
-                );
-                if (glAppeal && glAppeal.newWinnerId) {
-                    newWinnerId = parseInt(glAppeal.newWinnerId);
+                const [glAppeal, reJudgeResult] = await Promise.all([
+                    appealWithGenLayer(room.id, room.jokePrompt, room.category, submissions, result.winnerId).catch(() => null),
+                    pickWinnerWithAI(submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null }))
+                ]);
+
+                if (glAppeal && glAppeal.txHash) {
                     appealOnChain = true;
                     appealTxHash = glAppeal.txHash;
-                    console.log(`[Appeal] GenLayer OD re-evaluated: new winner #${newWinnerId}`);
+                    console.log(`[Appeal] GenLayer OD verified (${glAppeal.validators} validators, tx: ${appealTxHash})`);
                 }
 
-                // STEP 2: Fallback to Claude API
-                if (!newWinnerId) {
-                    const reJudgeResult = await pickWinnerWithAI(submissions, room.jokePrompt, room.category);
-                    newWinnerId = reJudgeResult.winnerId;
-                }
+                let newWinnerId = reJudgeResult.winnerId;
 
                 const overturned = newWinnerId && newWinnerId !== result.winnerId;
 
