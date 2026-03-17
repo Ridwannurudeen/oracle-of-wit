@@ -2644,20 +2644,28 @@ export default async function handler(req, res) {
                     anthropic: !!ANTHROPIC_API_KEY,
                     genlayer: !!GENLAYER_CONTRACT_ADDRESS && !!GENLAYER_PRIVATE_KEY,
                 };
-                // Test Redis round-trip
+                // Raw Redis test with full error capture
                 if (UPSTASH_URL && UPSTASH_TOKEN) {
                     try {
-                        const testKey = '_health_' + Date.now();
-                        const setOk = await redisSet(testKey, { test: true }, 10);
-                        if (setOk) {
-                            const got = await redisGet(testKey);
-                            checks.redis = !!got;
-                            checks.redisRoundTrip = got ? 'OK' : 'SET ok but GET failed';
-                        } else {
-                            checks.redisRoundTrip = 'SET failed';
+                        const rawRes = await fetch(`${UPSTASH_URL}/set/_health_test?EX=10`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+                            body: JSON.stringify({ t: Date.now() })
+                        });
+                        const rawText = await rawRes.text();
+                        checks.redisSetStatus = rawRes.status;
+                        checks.redisSetResponse = rawText.slice(0, 200);
+                        if (rawRes.ok) {
+                            const getRes = await fetch(`${UPSTASH_URL}/get/_health_test`, {
+                                headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
+                            });
+                            const getText = await getRes.text();
+                            checks.redisGetStatus = getRes.status;
+                            checks.redisGetResponse = getText.slice(0, 200);
+                            checks.redis = getRes.ok;
                         }
                     } catch (e) {
-                        checks.redisRoundTrip = 'Error: ' + e.message;
+                        checks.redisError = e.message;
                     }
                 }
                 return res.status(200).json(checks);
