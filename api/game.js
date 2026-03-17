@@ -998,46 +998,39 @@ async function redisKeys(pattern) {
 const fallbackRooms = {};
 const fallbackLeaderboard = [];
 
+// Track rooms currently being auto-advanced to prevent double execution
+const _advancingRooms = new Set();
+
 async function getRoom(roomId) {
     let room = await redisGet(`room:${roomId}`) || fallbackRooms[roomId];
     if (!room) return null;
-    // Ensure version field exists (migration for pre-locking rooms)
     if (room.version === undefined) room.version = 0;
-    room = await checkAutoAdvance(room);
+    // Only auto-advance if not already being advanced by another concurrent request
+    if (!_advancingRooms.has(roomId)) {
+        _advancingRooms.add(roomId);
+        try {
+            room = await checkAutoAdvance(room);
+        } finally {
+            _advancingRooms.delete(roomId);
+        }
+    }
     return room;
 }
 
-// Optimistic locking: compare-and-swap with retry
-// Prevents race conditions when 100 players submit/vote simultaneously
-async function setRoom(roomId, room, retries = 3) {
-    const newVersion = (room.version || 0) + 1;
-    room.version = newVersion;
+// Save room to storage — force-write (last-writer-wins)
+// Previous optimistic locking caused silent write failures that broke game flow
+async function setRoom(roomId, room) {
+    room.version = (room.version || 0) + 1;
+    room.updatedAt = Date.now();
     fallbackRooms[roomId] = room;
 
     if (!UPSTASH_URL || !UPSTASH_TOKEN) return true;
 
-    for (let attempt = 0; attempt < retries; attempt++) {
-        // Read current version from Redis
-        const current = await redisGet(`room:${roomId}`);
-        const currentVersion = current?.version || 0;
-
-        // If someone else wrote since we read, re-merge and retry
-        if (current && currentVersion >= newVersion) {
-            console.log(`[Lock] Version conflict on ${roomId}: expected ${newVersion - 1}, got ${currentVersion}. Retry ${attempt + 1}/${retries}`);
-            // Re-read fresh and let caller retry the mutation
-            return false;
-        }
-
-        // Write with updated version
-        const success = await redisSet(`room:${roomId}`, room);
-        if (success) return true;
-
-        // Redis write failed, wait briefly and retry
-        await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+    const success = await redisSet(`room:${roomId}`, room);
+    if (!success) {
+        console.error(`[Storage] Failed to write room ${roomId} to Redis, using fallback`);
     }
-
-    console.error(`[Lock] Failed to write room ${roomId} after ${retries} retries`);
-    return false;
+    return true;
 }
 
 async function getLeaderboard() {
@@ -1272,6 +1265,7 @@ async function checkAutoAdvance(room) {
         // Add bot bets for single-player
         if (room.isSinglePlayer) {
             addBotBets(room);
+            await setRoom(room.id, room); // Save bets before judging
         }
         room = await autoJudge(room);
     }
@@ -1512,6 +1506,21 @@ async function autoJudge(room) {
 // Helper to create round result and update scores
 async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false, aiCommentary = null, txHash = null) {
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
+
+    if (!winningSubmission) {
+        // Fallback: pick first submission if winnerId is invalid
+        const fallback = room.submissions[0];
+        if (!fallback) {
+            // No submissions at all — skip round
+            room.status = 'roundResults';
+            room.roundResults = room.roundResults || [];
+            room.roundResults.push({ round: room.currentRound, winnerId: null, winnerName: 'No one', winningPunchline: 'No submissions', scores: {}, judgingMethod: 'skipped' });
+            room.phaseEndsAt = null;
+            await setRoom(room.id, room);
+            return room;
+        }
+        return createRoundResult(room, fallback.id, now, 'fallback', onChain, aiCommentary, txHash);
+    }
 
     const roundResult = {
         round: room.currentRound,
@@ -1779,8 +1788,11 @@ async function pickWinnerWithAI(submissions, jokePrompt, category) {
 
     // --- ATTEMPT 1: Full prompt (winner + roast + commentary) ---
     try {
+        const controller1 = new AbortController();
+        const timeout1 = setTimeout(() => controller1.abort(), 8000);
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
+            signal: controller1.signal,
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': ANTHROPIC_API_KEY,
@@ -1807,6 +1819,7 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
             })
         });
 
+        clearTimeout(timeout1);
         if (response.ok) {
             const data = await response.json();
             const aiResponse = data.content?.[0]?.text?.trim();
@@ -1841,8 +1854,11 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
 
     // --- ATTEMPT 2: Simplified prompt (just pick a number) ---
     try {
+        const controller2 = new AbortController();
+        const timeout2 = setTimeout(() => controller2.abort(), 5000);
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
+            signal: controller2.signal,
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': ANTHROPIC_API_KEY,
@@ -1858,6 +1874,7 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
             })
         });
 
+        clearTimeout(timeout2);
         if (response.ok) {
             const data = await response.json();
             const text = data.content?.[0]?.text?.trim();
@@ -2060,6 +2077,7 @@ export default async function handler(req, res) {
                 let room = await getRoom(roomId);
                 
                 if (!room) return res.status(404).json({ error: 'Room not found' });
+                if (room.status !== 'waiting') return res.status(400).json({ error: 'Game already started' });
                 if (room.host !== hostName) return res.status(403).json({ error: 'Only host can start game' });
                 if (!room.isSinglePlayer && room.players.length < 2) return res.status(400).json({ error: 'Need at least 2 players' });
                 
@@ -2089,6 +2107,7 @@ export default async function handler(req, res) {
                 let room = await getRoom(roomId);
                 
                 if (!room) return res.status(404).json({ error: 'Room not found' });
+                if (!room.players.find(p => p.name === playerName)) return res.status(403).json({ error: 'Not a player in this room' });
                 if (room.status !== 'submitting') return res.status(400).json({ error: 'Not in submission phase' });
                 if (room.phaseEndsAt && Date.now() > room.phaseEndsAt) return res.status(400).json({ error: 'Time expired' });
                 if (room.submissions.find(s => s.playerName === playerName)) return res.status(400).json({ error: 'Already submitted' });
@@ -2112,6 +2131,7 @@ export default async function handler(req, res) {
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.status !== 'betting') return res.status(400).json({ error: 'Not in betting phase' });
                 if (room.phaseEndsAt && Date.now() > room.phaseEndsAt) return res.status(400).json({ error: 'Time expired' });
+                if (!room.submissions.find(s => s.id === submissionId)) return res.status(400).json({ error: 'Invalid submission' });
                 if (room.bets.find(b => b.playerName === playerName)) return res.status(400).json({ error: 'Already placed bet' });
 
                 // Enforce betting budget
@@ -2180,7 +2200,10 @@ export default async function handler(req, res) {
                 } else if (room.status === 'voting') {
                     room = await tallyVotesAndJudge(room);
                 } else if (room.status === 'betting') {
-                    if (room.isSinglePlayer) addBotBets(room);
+                    if (room.isSinglePlayer) {
+                        addBotBets(room);
+                        await setRoom(roomId, room); // Save bets before judging
+                    }
                     room = await autoJudge(room);
                 }
 
@@ -2225,7 +2248,6 @@ export default async function handler(req, res) {
                                 for (const rr of (room.roundResults || [])) {
                                     if (rr.winnerName === profile.name) roundsWonThisGame++;
                                     if (rr.isComeback && rr.winnerName === profile.name) hadComeback = true;
-                                    const bet = room.bets?.find?.(b => b.playerName === profile.name);
                                 }
                                 // Count correct bets from all rounds
                                 for (const rr of (room.roundResults || [])) {
@@ -2267,6 +2289,8 @@ export default async function handler(req, res) {
                 room.submissions = [];
                 room.bets = [];
                 room.reactions = [];
+                room.curatedIds = null;
+                room.audienceVotes = {};
                 room.jokePrompt = await getNextPrompt(room);
                 room.phaseEndsAt = now + SUBMISSION_TIME;
                 room.roundStartedAt = now;
