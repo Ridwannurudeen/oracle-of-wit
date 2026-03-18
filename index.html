@@ -1429,7 +1429,8 @@ function shareImage(prompt, punchline, playerName, score, roast) {
 }
 
 function copyShareText(score, roundsWon, totalRounds) {
-    const text = `Oracle of Wit | ${score} XP | ${roundsWon}/${totalRounds} rounds | oracle-of-wit.vercel.app`;
+    const wins = roundsWon > 0 ? ` | ${roundsWon}/${totalRounds} rounds won` : '';
+    const text = `Oracle of Wit | ${score} XP${wins} | oracle-of-wit.vercel.app`;
     navigator.clipboard.writeText(text).then(() => {
         const btn = document.getElementById('copy-share-btn');
         if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy Text'; }, 2000); }
@@ -1437,7 +1438,8 @@ function copyShareText(score, roundsWon, totalRounds) {
 }
 
 function tweetResult(score, roundsWon, totalRounds) {
-    const text = encodeURIComponent(`I scored ${score} XP on Oracle of Wit! ${roundsWon}/${totalRounds} rounds won.\n\nThe AI humor game powered by @GenLayer\noracle-of-wit.vercel.app`);
+    const wins = roundsWon > 0 ? ` ${roundsWon}/${totalRounds} rounds won.` : '';
+    const text = encodeURIComponent(`I scored ${score} XP on Oracle of Wit!${wins}\n\nThe AI humor prediction game powered by @GenLayer\noracle-of-wit.vercel.app`);
     window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
 }
 
