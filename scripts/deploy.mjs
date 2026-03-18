@@ -63,10 +63,12 @@ async function main() {
         });
 
         console.log('\n=== DEPLOYMENT SUCCESSFUL ===');
-        console.log('Receipt:', JSON.stringify(receipt, null, 2));
+        // Handle BigInt serialization in receipt
+        const safeReceipt = JSON.parse(JSON.stringify(receipt, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+        console.log('Receipt:', JSON.stringify(safeReceipt, null, 2));
 
-        // The contract address should be in the receipt
-        const contractAddress = receipt?.contractAddress || receipt?.contract_address || receipt?.data?.contractAddress;
+        // For deploy txs, the contract address is in the `recipient` field
+        const contractAddress = receipt?.contractAddress || receipt?.contract_address || receipt?.recipient || receipt?.data?.contractAddress;
         if (contractAddress) {
             console.log(`\nContract Address: ${contractAddress}`);
             console.log(`Explorer: https://explorer-bradbury.genlayer.com/contracts/${contractAddress}`);

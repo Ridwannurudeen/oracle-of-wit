@@ -206,6 +206,7 @@ const history = await client.readContract({
 | **Achievements** | 13 unlockable achievements (streaks, comebacks, milestones) |
 | **Weekly Themes** | Rotating themes: Roast the AI, DeFi Degen, Office Humor, etc. |
 | **On-Chain Judging** | GenLayer Optimistic Democracy consensus |
+| **Discord Integration** | Webhook posts game results to your Discord channel |
 | **Appeal System** | Challenge any AI judgment via OD re-evaluation |
 | **Player History** | On-chain game history per player |
 | **Season System** | Archivable seasonal leaderboards |
@@ -378,6 +379,7 @@ All endpoints: `POST /api/game?action=<action>` (unless noted as GET)
 | `ANTHROPIC_API_KEY` | Yes | Claude API key for AI judging |
 | `GENLAYER_CONTRACT_ADDRESS` | No | Deployed contract address (enables on-chain features) |
 | `GENLAYER_PRIVATE_KEY` | No | Wallet key for contract interactions |
+| `DISCORD_WEBHOOK_URL` | No | Discord webhook URL for posting game results |
 
 ---
 

@@ -9,6 +9,9 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
 const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
 
+// Discord Webhook (optional — posts game results to a channel)
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+
 // Lazy-init GenLayer SDK client (ESM dynamic import)
 let _glClient = null;
 async function getGenLayerClient() {
@@ -193,6 +196,55 @@ async function appealWithGenLayer(gameId, jokePrompt, category, submissions, ori
     } catch (error) {
         console.error('[GenLayer] appeal_judgment failed:', error.message);
         return null;
+    }
+}
+
+// Discord webhook — post game results to a channel (fire-and-forget)
+async function postGameToDiscord(room) {
+    if (!DISCORD_WEBHOOK_URL) return;
+
+    try {
+        const standings = [...room.players].sort((a, b) => b.score - a.score);
+        const winner = standings[0];
+        const podium = standings.slice(0, 3).map((p, i) => {
+            const medal = ['🥇', '🥈', '🥉'][i];
+            return `${medal} **${p.name}** — ${p.score} XP`;
+        }).join('\n');
+
+        // Find the last round's winning joke
+        const lastResult = (room.roundResults || []).at(-1);
+        const winningJoke = lastResult
+            ? `> *"${lastResult.winningPunchline || 'N/A'}"* — ${lastResult.winnerName || 'Unknown'}`
+            : '';
+
+        const embed = {
+            title: `🎭 Oracle of Wit — Game Over!`,
+            description: `**${winner.name}** wins the ${room.category} game!\n\n${podium}`,
+            color: 0xA855F7, // wit purple
+            fields: [
+                { name: 'Category', value: room.category, inline: true },
+                { name: 'Rounds', value: `${room.totalRounds}`, inline: true },
+                { name: 'Players', value: `${room.players.length}`, inline: true },
+            ],
+            footer: { text: 'Powered by GenLayer Optimistic Democracy' },
+            timestamp: new Date().toISOString(),
+        };
+
+        if (winningJoke) {
+            embed.fields.push({ name: 'Last Winning Joke', value: winningJoke });
+        }
+
+        await fetch(DISCORD_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: 'Oracle of Wit',
+                embeds: [embed],
+            }),
+        });
+        console.log('[Discord] Game results posted');
+    } catch (err) {
+        console.error('[Discord] Webhook failed:', err.message);
     }
 }
 
@@ -2277,6 +2329,11 @@ export default async function handler(req, res) {
                     // Record final scores on GenLayer (fire-and-forget)
                     recordOnChain(roomId, room.players).catch(e =>
                         console.error('[GenLayer] record_game_result fire-and-forget error:', e.message)
+                    );
+
+                    // Post results to Discord (fire-and-forget)
+                    postGameToDiscord(room).catch(e =>
+                        console.error('[Discord] fire-and-forget error:', e.message)
                     );
 
                     const leaderboard = await getLeaderboard();
