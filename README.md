@@ -28,7 +28,6 @@
 
 - [About](#about)
 - [How to Play](#how-to-play)
-- [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [GenLayer Deep Dive](#genlayer-deep-dive)
 - [Features](#features)
@@ -94,29 +93,6 @@ The winner is crowned with a gold card, confetti, and Oracle commentary. XP gain
 | Wrong prediction | **-Bet amount** |
 | Appeal (successful) | **+50 refund** |
 | Appeal (denied) | **-50** |
-
----
-
-## Screenshots
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/hero-welcome.png" alt="Welcome Screen"><br><sub><b>Welcome Screen</b> — 3D Oracle Eye, gradient title, feature cards</sub></td>
-<td width="50%"><img src="docs/images/lobby-overview.png" alt="Game Lobby"><br><sub><b>Game Lobby</b> — Profile card, mode selection, leaderboard</sub></td>
-</tr>
-<tr>
-<td><img src="docs/images/submit-phase.png" alt="Submit Phase"><br><sub><b>Submit Phase</b> — Joke setup, textarea, timer</sub></td>
-<td><img src="docs/images/betting-phase.png" alt="Betting Phase"><br><sub><b>Betting Phase</b> — Submission cards, emoji reactions, bet slider</sub></td>
-</tr>
-<tr>
-<td><img src="docs/images/judging-validators.png" alt="Judging Phase"><br><sub><b>Judging Phase</b> — 5 AI validators, vote bars, on-chain confirmation</sub></td>
-<td><img src="docs/images/reveal-winner.png" alt="Reveal Winner"><br><sub><b>Reveal</b> — Winner gold card, confetti sequence</sub></td>
-</tr>
-<tr>
-<td><img src="docs/images/round-results.png" alt="Round Results"><br><sub><b>Round Results</b> — Winner announcement, XP gains, standings</sub></td>
-<td><img src="docs/images/discord-bot.png" alt="Discord Bot"><br><sub><b>Discord Integration</b> — Slash commands, open rooms</sub></td>
-</tr>
-</table>
 
 ---
 
