@@ -2639,6 +2639,72 @@ export default async function handler(req, res) {
                 return res.status(200).json({ success: true, season, leaderboard: slb.slice(0, 50) });
             }
 
+            // --- On-Chain Player History (GenLayer view call) ---
+            case 'getPlayerHistory': {
+                const playerName = body.playerName || req.query.playerName;
+                if (!playerName) return res.status(400).json({ error: 'playerName required' });
+
+                const client = await getGenLayerClient();
+                if (!client) {
+                    // Fallback: return Redis-based stats when GenLayer is unavailable
+                    const lb = await getLeaderboard();
+                    const entry = lb.find(p => p.name === playerName);
+                    return res.status(200).json({
+                        success: true,
+                        source: 'redis',
+                        history: {
+                            player_name: playerName,
+                            total_score: entry?.totalScore || 0,
+                            games_played: entry?.gamesPlayed || 0,
+                            games: []
+                        }
+                    });
+                }
+
+                try {
+                    const txHash = await client.readContract({
+                        address: GENLAYER_CONTRACT_ADDRESS,
+                        functionName: 'get_player_history',
+                        args: [playerName],
+                    });
+                    return res.status(200).json({ success: true, source: 'genlayer', history: txHash });
+                } catch (err) {
+                    console.error('[GenLayer] get_player_history failed:', err.message);
+                    const lb = await getLeaderboard();
+                    const entry = lb.find(p => p.name === playerName);
+                    return res.status(200).json({
+                        success: true,
+                        source: 'redis_fallback',
+                        history: {
+                            player_name: playerName,
+                            total_score: entry?.totalScore || 0,
+                            games_played: entry?.gamesPlayed || 0,
+                            games: []
+                        }
+                    });
+                }
+            }
+
+            // --- On-Chain Season Archive (GenLayer view call) ---
+            case 'getSeasonArchive': {
+                const seasonId = body.seasonId || req.query.seasonId;
+                if (!seasonId) return res.status(400).json({ error: 'seasonId required' });
+
+                const client = await getGenLayerClient();
+                if (!client) return res.status(200).json({ success: true, source: 'unavailable', archive: null });
+
+                try {
+                    const result = await client.readContract({
+                        address: GENLAYER_CONTRACT_ADDRESS,
+                        functionName: 'get_season',
+                        args: [seasonId],
+                    });
+                    return res.status(200).json({ success: true, source: 'genlayer', archive: result });
+                } catch (err) {
+                    console.error('[GenLayer] get_season failed:', err.message);
+                    return res.status(200).json({ success: true, source: 'error', archive: null });
+                }
+            }
 
             // --- Custom Prompt Submission ---
             case 'submitPrompt': {

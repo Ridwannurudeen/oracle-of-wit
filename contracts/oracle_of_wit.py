@@ -22,9 +22,11 @@ class OracleOfWit(gl.Contract):
     # Storage
     games: TreeMap[str, str]  # game_id -> game state JSON
     leaderboard: TreeMap[str, int]  # player_name -> total_score
+    player_games: TreeMap[str, str]  # player_name -> JSON array of game_ids
+    seasons: TreeMap[str, str]  # season_id -> archived leaderboard JSON
     total_games: int
     total_judgments: int
-    
+
     def __init__(self):
         """Initialize the Oracle of Wit contract"""
         self.total_games = 0
@@ -59,7 +61,38 @@ class OracleOfWit(gl.Contract):
             "total_games": self.total_games,
             "total_judgments": self.total_judgments
         }
-    
+
+    @gl.public.view
+    def get_player_history(self, player_name: str) -> typing.Any:
+        """
+        Get a player's on-chain game history.
+
+        Returns their total score, number of games played, and per-game
+        details (game ID, category, status). Demonstrates GenLayer as a
+        persistent state layer for player profiles.
+        """
+        total_score = self.leaderboard.get(player_name, 0)
+        game_ids_json = self.player_games.get(player_name, "[]")
+        game_ids = json.loads(game_ids_json)
+
+        games = []
+        for gid in game_ids:
+            game_json = self.games.get(gid, None)
+            if game_json:
+                g = json.loads(game_json)
+                games.append({
+                    "game_id": g.get("id", gid),
+                    "category": g.get("category", "unknown"),
+                    "status": g.get("status", "unknown")
+                })
+
+        return {
+            "player_name": player_name,
+            "total_score": total_score,
+            "games_played": len(games),
+            "games": games
+        }
+
     @gl.public.write
     def judge_round(
         self,
@@ -180,10 +213,16 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
         
         self.games[game_id] = json.dumps(game_state)
         self.total_games += 1
-        
+
+        # Track host in player_games index
+        host_games = json.loads(self.player_games.get(host_name, "[]"))
+        if game_id not in host_games:
+            host_games.append(game_id)
+            self.player_games[host_name] = json.dumps(host_games)
+
         return game_state
-    
-    @gl.public.write  
+
+    @gl.public.write
     def record_game_result(
         self, 
         game_id: str, 
@@ -197,14 +236,20 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
             score = player["score"]
             current = self.leaderboard.get(name, 0)
             self.leaderboard[name] = current + score
-        
+
+            # Track player in player_games index
+            pg = json.loads(self.player_games.get(name, "[]"))
+            if game_id not in pg:
+                pg.append(game_id)
+                self.player_games[name] = json.dumps(pg)
+
         # Update game state
         game_json = self.games.get(game_id, None)
         if game_json:
             game = json.loads(game_json)
             game["status"] = "finished"
             self.games[game_id] = json.dumps(game)
-        
+
         return {"recorded": True, "players_updated": len(scores_list)}
 
     @gl.public.write
@@ -304,3 +349,47 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
             "overturned": overturned,
             "consensus_method": "optimistic_democracy_appeal"
         }
+
+    @gl.public.write
+    def season_reset(self, season_id: str) -> typing.Any:
+        """
+        Archive the current leaderboard and start a fresh season.
+
+        Snapshots the full leaderboard into the seasons archive, then
+        zeroes every player's score. Demonstrates contract state management
+        — all historical data remains on-chain and queryable.
+        """
+        existing = self.seasons.get(season_id, None)
+        if existing is not None:
+            raise Exception("Season ID already archived")
+
+        # Snapshot current leaderboard
+        snapshot = []
+        for name in self.leaderboard:
+            snapshot.append({
+                "name": name,
+                "score": self.leaderboard[name]
+            })
+        snapshot.sort(key=lambda x: x["score"], reverse=True)
+
+        archive = {
+            "season_id": season_id,
+            "leaderboard": snapshot,
+            "total_games": self.total_games,
+            "total_judgments": self.total_judgments
+        }
+        self.seasons[season_id] = json.dumps(archive)
+
+        # Reset live leaderboard
+        for entry in snapshot:
+            self.leaderboard[entry["name"]] = 0
+
+        return archive
+
+    @gl.public.view
+    def get_season(self, season_id: str) -> typing.Any:
+        """Retrieve an archived season's leaderboard."""
+        season_json = self.seasons.get(season_id, None)
+        if season_json is None:
+            return None
+        return json.loads(season_json)

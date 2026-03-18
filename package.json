@@ -3,7 +3,14 @@
   "version": "2.0.0",
   "type": "module",
   "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
     "genlayer-js": "^0.21.1"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
   }
 }
