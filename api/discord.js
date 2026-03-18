@@ -380,8 +380,14 @@ async function handleHistory(options) {
 
 // ---------------------------------------------------------------------------
 // Raw body reader for Ed25519 verification
+// Vercel may provide req.body as a Buffer (bodyParser: false) or we stream it.
 // ---------------------------------------------------------------------------
-function readBody(req) {
+function getRawBody(req) {
+    // If Vercel already gave us the raw body as a Buffer
+    if (Buffer.isBuffer(req.body)) return Promise.resolve(req.body);
+    // If Vercel parsed it as string/object, re-serialize
+    if (req.body) return Promise.resolve(Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body)));
+    // Fallback: stream it
     return new Promise((resolve, reject) => {
         const chunks = [];
         req.on('data', c => chunks.push(c));
@@ -399,7 +405,7 @@ export default async function handler(req, res) {
     }
 
     // Read raw body for signature verification
-    const rawBody = await readBody(req);
+    const rawBody = await getRawBody(req);
     const signature = req.headers['x-signature-ed25519'];
     const timestamp = req.headers['x-signature-timestamp'];
 
