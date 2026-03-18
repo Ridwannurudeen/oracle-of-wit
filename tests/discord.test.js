@@ -16,12 +16,13 @@ function resetStore() {
 }
 
 // ---------------------------------------------------------------------------
-// Mock discord-interactions (must come before handler import)
+// Mock node:crypto for Ed25519 verification (must come before handler import)
 // ---------------------------------------------------------------------------
-let _verifyKeyResult = true;
+let _verifyResult = true;
 
-vi.mock('discord-interactions', () => ({
-    verifyKey: () => _verifyKeyResult,
+vi.mock('node:crypto', () => ({
+    createPublicKey: () => ({}),
+    verify: () => _verifyResult,
 }));
 
 // Mock fetch globally — Upstash REST + GenLayer
@@ -64,7 +65,6 @@ const { default: handler } = await import('../api/discord.js');
 // ---------------------------------------------------------------------------
 
 function makeReq({ method = 'POST', body = {}, headers = {} } = {}) {
-    const rawBody = Buffer.from(JSON.stringify(body));
     const defaultHeaders = {
         'x-signature-ed25519': 'fake-sig',
         'x-signature-timestamp': '12345',
@@ -72,11 +72,8 @@ function makeReq({ method = 'POST', body = {}, headers = {} } = {}) {
     };
     return {
         method,
+        body,
         headers: defaultHeaders,
-        on(event, cb) {
-            if (event === 'data') cb(rawBody);
-            if (event === 'end') cb();
-        },
     };
 }
 
@@ -104,13 +101,13 @@ async function call(body, { method, headers } = {}) {
 describe('Discord Bot Handler', () => {
     beforeEach(() => {
         resetStore();
-        _verifyKeyResult = true;
+        _verifyResult = true;
     });
 
     // -- Signature verification ------------------------------------------------
 
     it('returns 401 for invalid signature', async () => {
-        _verifyKeyResult = false;
+        _verifyResult = false;
         const { status, body } = await call({ type: 1 });
         expect(status).toBe(401);
         expect(body.error).toMatch(/signature/i);

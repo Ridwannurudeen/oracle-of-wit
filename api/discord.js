@@ -2,10 +2,7 @@
 // Vercel Serverless endpoint for Discord slash commands.
 // Uses HTTP webhooks (no gateway/WebSocket) — perfect for serverless.
 
-import { verifyKey } from 'discord-interactions';
-
-// Disable Vercel body parser so we can access the raw body for Ed25519 verification
-export const config = { api: { bodyParser: false } };
+import { createPublicKey, verify } from 'node:crypto';
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -379,21 +376,20 @@ async function handleHistory(options) {
 }
 
 // ---------------------------------------------------------------------------
-// Raw body reader for Ed25519 verification
-// Vercel may provide req.body as a Buffer (bodyParser: false) or we stream it.
+// Ed25519 signature verification using Node.js built-in crypto (sync, no deps)
 // ---------------------------------------------------------------------------
-function getRawBody(req) {
-    // If Vercel already gave us the raw body as a Buffer
-    if (Buffer.isBuffer(req.body)) return Promise.resolve(req.body);
-    // If Vercel parsed it as string/object, re-serialize
-    if (req.body) return Promise.resolve(Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body)));
-    // Fallback: stream it
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        req.on('data', c => chunks.push(c));
-        req.on('end', () => resolve(Buffer.concat(chunks)));
-        req.on('error', reject);
-    });
+function verifyDiscordSignature(rawBody, signature, timestamp, publicKeyHex) {
+    try {
+        const msg = Buffer.from(timestamp + rawBody);
+        const sig = Buffer.from(signature, 'hex');
+        // Wrap raw Ed25519 public key bytes in DER/SPKI envelope
+        const derPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+        const keyBytes = Buffer.from(publicKeyHex, 'hex');
+        const key = createPublicKey({ key: Buffer.concat([derPrefix, keyBytes]), format: 'der', type: 'spki' });
+        return verify(null, msg, key, sig);
+    } catch {
+        return false;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -404,8 +400,9 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Read raw body for signature verification
-    const rawBody = await getRawBody(req);
+    // Vercel provides req.body as parsed JSON by default.
+    // Re-serialize to get the raw string for Ed25519 verification.
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     const signature = req.headers['x-signature-ed25519'];
     const timestamp = req.headers['x-signature-timestamp'];
 
@@ -413,12 +410,12 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Invalid request signature' });
     }
 
-    const isValid = verifyKey(rawBody, signature, timestamp, DISCORD_PUBLIC_KEY);
+    const isValid = verifyDiscordSignature(rawBody, signature, timestamp, DISCORD_PUBLIC_KEY);
     if (!isValid) {
         return res.status(401).json({ error: 'Invalid request signature' });
     }
 
-    const body = JSON.parse(rawBody.toString());
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
     // PING → PONG (Discord endpoint verification)
     if (body.type === PING) {
