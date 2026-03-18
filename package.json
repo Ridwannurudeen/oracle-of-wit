@@ -5,9 +5,11 @@
   "private": true,
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "register-commands": "node scripts/register-commands.mjs"
   },
   "dependencies": {
+    "discord-interactions": "^4.1.0",
     "genlayer-js": "^0.21.1"
   },
   "devDependencies": {

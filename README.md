@@ -4,7 +4,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-purple?style=for-the-badge)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-blue?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-40_passing-green?style=for-the-badge)]()
+[![Tests](https://img.shields.io/badge/Tests-55_passing-green?style=for-the-badge)]()
 
 ---
 
@@ -206,7 +206,7 @@ const history = await client.readContract({
 | **Achievements** | 13 unlockable achievements (streaks, comebacks, milestones) |
 | **Weekly Themes** | Rotating themes: Roast the AI, DeFi Degen, Office Humor, etc. |
 | **On-Chain Judging** | GenLayer Optimistic Democracy consensus |
-| **Discord Integration** | Webhook posts game results to your Discord channel |
+| **Discord Integration** | Webhook posts game results + slash commands for playing from Discord |
 | **Appeal System** | Challenge any AI judgment via OD re-evaluation |
 | **Player History** | On-chain game history per player |
 | **Season System** | Archivable seasonal leaderboards |
@@ -243,14 +243,17 @@ const history = await client.readContract({
 oracle-of-wit/
 ├── index.html              # Single-page application (frontend)
 ├── api/
-│   └── game.js             # Serverless API (rooms, judging, scoring)
+│   ├── game.js             # Serverless API (rooms, judging, scoring)
+│   └── discord.js          # Discord bot (slash commands via Interactions API)
 ├── contracts/
 │   └── oracle_of_wit.py    # GenLayer Intelligent Contract
 ├── scripts/
-│   └── deploy.mjs          # Contract deployment to Testnet Bradbury
+│   ├── deploy.mjs          # Contract deployment to Testnet Bradbury
+│   └── register-commands.mjs  # Register Discord slash commands
 ├── tests/
 │   ├── contract.test.js    # Contract logic unit tests (20 tests)
-│   └── api.test.js         # API integration tests (20 tests)
+│   ├── api.test.js         # API integration tests (20 tests)
+│   └── discord.test.js     # Discord bot tests (~15 tests)
 ├── package.json            # Dependencies & scripts
 ├── vercel.json             # Vercel routing configuration
 ├── .env.example            # Environment variables template
@@ -315,7 +318,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has 40 tests across two test suites:
+Oracle of Wit has ~55 tests across three test suites:
 
 ```bash
 # Run all tests
@@ -341,6 +344,13 @@ npm run test:watch
 - Phase advancement (host-only authorization)
 - Leaderboard and room listing endpoints
 - CORS preflight handling
+
+**Discord bot tests** (`tests/discord.test.js`) — ~15 tests covering:
+- Ed25519 signature verification (valid + invalid)
+- PING/PONG endpoint verification
+- All 5 slash commands (/play, /leaderboard, /stats, /joke, /history)
+- Unknown command handling
+- Non-POST method rejection
 
 ---
 
@@ -380,6 +390,47 @@ All endpoints: `POST /api/game?action=<action>` (unless noted as GET)
 | `GENLAYER_CONTRACT_ADDRESS` | No | Deployed contract address (enables on-chain features) |
 | `GENLAYER_PRIVATE_KEY` | No | Wallet key for contract interactions |
 | `DISCORD_WEBHOOK_URL` | No | Discord webhook URL for posting game results |
+| `DISCORD_APPLICATION_ID` | No | Discord app ID (for slash command registration) |
+| `DISCORD_PUBLIC_KEY` | No | Discord public key (for Ed25519 signature verification) |
+| `DISCORD_BOT_TOKEN` | No | Discord bot token (for command registration script) |
+
+---
+
+## Discord Bot
+
+Oracle of Wit includes a Discord bot that lets users interact with the game directly from Discord using slash commands. It uses Discord's Interactions API (HTTP webhook) — no gateway or WebSocket needed, perfect for Vercel serverless.
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/play [category]` | Create a new game room (returns room code + join link) |
+| `/leaderboard` | View the top 10 players |
+| `/stats [player]` | View global or player-specific stats |
+| `/joke [category]` | Get a random joke setup (ephemeral) |
+| `/history <player>` | View a player's on-chain game history via GenLayer |
+
+### Setup
+
+1. Create a Discord application at [discord.com/developers](https://discord.com/developers/applications)
+2. Copy your **Application ID**, **Public Key**, and **Bot Token**
+3. Add them to your environment:
+   ```bash
+   DISCORD_APPLICATION_ID=your_app_id
+   DISCORD_PUBLIC_KEY=your_public_key
+   DISCORD_BOT_TOKEN=your_bot_token
+   ```
+4. Deploy to Vercel (the endpoint is auto-routed to `/api/discord`)
+5. In the Discord Developer Portal, set **Interactions Endpoint URL** to:
+   ```
+   https://oracle-of-wit.vercel.app/api/discord
+   ```
+   Discord will send a PING — the handler responds with PONG to verify.
+6. Register slash commands:
+   ```bash
+   npm run register-commands
+   ```
+7. Invite the bot to your server with the `applications.commands` scope
 
 ---
 
