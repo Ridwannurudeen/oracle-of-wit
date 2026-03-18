@@ -6,13 +6,15 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "register-commands": "node scripts/register-commands.mjs"
+    "register-commands": "node scripts/register-commands.mjs",
+    "capture-screenshots": "node scripts/capture-screenshots.mjs"
   },
   "dependencies": {
     "discord-interactions": "^4.1.0",
     "genlayer-js": "^0.21.1"
   },
   "devDependencies": {
+    "playwright": "^1.58.2",
     "vitest": "^3.0.0"
   }
 }
