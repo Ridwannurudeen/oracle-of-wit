@@ -1,0 +1,234 @@
+// AI-powered judging and generation via Claude API
+
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const AI_MODEL = process.env.AI_MODEL || 'claude-haiku-4-5-20251001';
+const AI_TIMEOUT_FULL = parseInt(process.env.AI_TIMEOUT_FULL) || 8000;
+const AI_TIMEOUT_SIMPLE = parseInt(process.env.AI_TIMEOUT_SIMPLE) || 5000;
+const AI_TIMEOUT_CURATION = parseInt(process.env.AI_TIMEOUT_CURATION) || 5000;
+const AI_TIMEOUT_BOT = parseInt(process.env.AI_TIMEOUT_BOT) || 3000;
+
+export async function pickWinnerWithAI(submissions, jokePrompt, category) {
+    if (!submissions?.length) return { winnerId: null, aiCommentary: null, judgingMethod: 'none' };
+    if (submissions.length === 1) return { winnerId: submissions[0].id, aiCommentary: null, judgingMethod: 'single_entry' };
+
+    if (!ANTHROPIC_API_KEY) {
+        console.log('No Anthropic API key — coin flip');
+        return { winnerId: submissions[Math.floor(Math.random() * submissions.length)].id, aiCommentary: null, judgingMethod: 'coin_flip' };
+    }
+
+    const submissionsList = submissions.map(s =>
+        `[ID: ${s.id}] "${s.punchline}"`
+    ).join('\n');
+
+    // --- ATTEMPT 1: Full prompt (winner + roast + commentary) ---
+    try {
+        const controller1 = new AbortController();
+        const timeout1 = setTimeout(() => controller1.abort(), AI_TIMEOUT_FULL);
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            signal: controller1.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 400,
+                messages: [{
+                    role: 'user',
+                    content: `You are the Oracle of Wit, a savage comedy judge. Pick the FUNNIEST punchline.
+
+JOKE SETUP: "${jokePrompt}"
+CATEGORY: ${category}
+
+PUNCHLINES:
+${submissionsList}
+
+Judge on: humor, cleverness, relevance, surprise factor.
+
+Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
+{"winnerId": <number>, "winnerComment": "<1 witty sentence>", "roasts": {${submissions.map(s => `"${s.id}": "<1 sentence>"`).join(', ')}}}`
+                }]
+            })
+        });
+
+        clearTimeout(timeout1);
+        if (response.ok) {
+            const data = await response.json();
+            const aiResponse = data.content?.[0]?.text?.trim();
+            try {
+                const parsed = JSON.parse(aiResponse);
+                const winnerId = parseInt(parsed.winnerId);
+                if (winnerId && submissions.find(s => s.id === winnerId)) {
+                    console.log(`[Judge] Attempt 1 success: winner #${winnerId}`);
+                    if (parsed.roasts) delete parsed.roasts[String(winnerId)];
+                    return {
+                        winnerId,
+                        aiCommentary: { winnerComment: parsed.winnerComment || null, roasts: parsed.roasts || {} },
+                        judgingMethod: 'claude_api'
+                    };
+                }
+            } catch (parseErr) {
+                console.warn('[Judge] Attempt 1 JSON parse failed, trying regex');
+                const match = aiResponse?.match(/"winnerId"\s*:\s*(\d+)/);
+                if (match) {
+                    const winnerId = parseInt(match[1]);
+                    if (submissions.find(s => s.id === winnerId)) {
+                        console.log(`[Judge] Attempt 1 regex fallback: winner #${winnerId}`);
+                        return { winnerId, aiCommentary: null, judgingMethod: 'claude_api' };
+                    }
+                }
+            }
+        }
+        console.log('[Judge] Attempt 1 failed, trying simplified prompt');
+    } catch (e) {
+        console.error('[Judge] Attempt 1 error:', e.message);
+    }
+
+    // --- ATTEMPT 2: Simplified prompt (just pick a number) ---
+    try {
+        const controller2 = new AbortController();
+        const timeout2 = setTimeout(() => controller2.abort(), AI_TIMEOUT_SIMPLE);
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            signal: controller2.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 10,
+                messages: [{
+                    role: 'user',
+                    content: `Which punchline is funniest for "${jokePrompt}"?\n${submissionsList}\nReply with ONLY the ID number, nothing else.`
+                }]
+            })
+        });
+
+        clearTimeout(timeout2);
+        if (response.ok) {
+            const data = await response.json();
+            const text = data.content?.[0]?.text?.trim();
+            const winnerId = parseInt(text);
+            if (winnerId && submissions.find(s => s.id === winnerId)) {
+                console.log(`[Judge] Attempt 2 success: winner #${winnerId}`);
+                return { winnerId, aiCommentary: null, judgingMethod: 'claude_api' };
+            }
+        }
+        console.log('[Judge] Attempt 2 failed');
+    } catch (e) {
+        console.error('[Judge] Attempt 2 error:', e.message);
+    }
+
+    // --- FINAL FALLBACK: Coin flip ---
+    const winnerId = submissions[Math.floor(Math.random() * submissions.length)].id;
+    console.log(`[Judge] Coin flip fallback: winner #${winnerId}`);
+    return { winnerId, aiCommentary: null, judgingMethod: 'coin_flip' };
+}
+
+export async function curateSubmissions(submissions, jokePrompt, category) {
+    if (!ANTHROPIC_API_KEY || submissions.length < 8) return null;
+
+    const submissionsList = submissions.map(s => `[ID:${s.id}] "${s.punchline}"`).join('\n');
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_CURATION);
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 100,
+                messages: [{
+                    role: 'user',
+                    content: `You are curating a comedy contest. Pick the 8 funniest punchlines from these submissions for the joke: "${jokePrompt}" (Category: ${category}).
+
+${submissionsList}
+
+Return ONLY a JSON array of the 8 IDs (numbers), e.g. [1,3,5,7,8,12,15,20]. No text.`
+                }]
+            })
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) return null;
+        const data = await response.json();
+        const text = data.content?.[0]?.text?.trim();
+        if (!text) return null;
+
+        const match = text.match(/\[[\d,\s]+\]/);
+        if (!match) return null;
+        const ids = JSON.parse(match[0]).filter(id => typeof id === 'number');
+        if (ids.length < 4) return null;
+        return ids.slice(0, 8);
+    } catch (e) {
+        console.log('[Curate] AI curation failed:', e.message);
+        return null;
+    }
+}
+
+export async function generateBotPunchlines(jokePrompt, category, count = 3) {
+    if (!ANTHROPIC_API_KEY) return null;
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_BOT);
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 200,
+                messages: [{
+                    role: 'user',
+                    content: `Generate ${count} funny punchlines for this joke setup: "${jokePrompt}"
+Category: ${category}. Each should have a distinct comedy style:
+1. Clever wordplay
+2. Absurd/surreal
+3. Dark/edgy
+
+Return ONLY a JSON array of ${count} strings, no markdown:
+["punchline1", "punchline2", "punchline3"]`
+                }]
+            })
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) { console.warn('[Bots] AI response not ok, falling back'); return null; }
+        const data = await response.json();
+        const text = data.content?.[0]?.text?.trim();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            if (parsed.length < count) {
+                console.warn(`[Bots] AI returned ${parsed.length}/${count} punchlines, returning partial`);
+            } else {
+                console.log(`[Bots] Generated ${count} dynamic punchlines via AI`);
+            }
+            return parsed.slice(0, count);
+        }
+        console.warn('[Bots] AI returned empty or non-array, falling back');
+        return null;
+    } catch (e) {
+        console.warn(`[Bots] AI generation failed (${e.message}), using hardcoded fallback`);
+        return null;
+    }
+}
+
+export function pickWinnerRandom(submissions) {
+    if (!submissions?.length) return null;
+    return submissions[Math.floor(Math.random() * submissions.length)].id;
+}

@@ -110,8 +110,11 @@ class OracleOfWit(gl.Contract):
         - Result is trustless and verifiable on-chain
         """
         
-        submissions_list = json.loads(submissions)
-        
+        try:
+            submissions_list = json.loads(submissions)
+        except (json.JSONDecodeError, ValueError):
+            raise Exception("Invalid JSON for submissions")
+
         if len(submissions_list) == 0:
             raise Exception("No submissions to judge")
         
@@ -162,14 +165,17 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
                     return winner_id
                 # If invalid, return first submission as fallback
                 return submissions_list[0]["id"]
-            except:
+            except (ValueError, TypeError, KeyError):
                 return submissions_list[0]["id"]
-        
+
         # This is the key GenLayer feature:
         # gl.eq_principle_strict_eq ensures all validators must return
         # the SAME winner ID for consensus to be reached.
         # If validators disagree, more are added until majority agrees.
-        winner_id = gl.eq_principle_strict_eq(judge_comedy)
+        winner_id = gl.eq_principle_prompt_comparative(
+            judge_comedy,
+            "Both results must select the same winner ID number"
+        )
         
         # Find the winning submission
         winner = None
@@ -224,12 +230,25 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
 
     @gl.public.write
     def record_game_result(
-        self, 
-        game_id: str, 
+        self,
+        game_id: str,
         final_scores: str  # JSON array of {playerName, score}
     ) -> typing.Any:
         """Record final game results to leaderboard"""
-        scores_list = json.loads(final_scores)
+        # Idempotency: skip if already recorded
+        game_json = self.games.get(game_id, None)
+        if game_json is not None:
+            try:
+                game = json.loads(game_json)
+                if game.get("status") == "finished":
+                    return {"recorded": False, "reason": "already_finished"}
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        try:
+            scores_list = json.loads(final_scores)
+        except (json.JSONDecodeError, ValueError):
+            raise Exception("Invalid JSON for final_scores")
         
         for player in scores_list:
             name = player["playerName"]
@@ -244,9 +263,12 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
                 self.player_games[name] = json.dumps(pg)
 
         # Update game state
-        game_json = self.games.get(game_id, None)
-        if game_json:
-            game = json.loads(game_json)
+        existing_json = self.games.get(game_id, None)
+        if existing_json:
+            try:
+                game = json.loads(existing_json)
+            except (json.JSONDecodeError, ValueError):
+                game = {"id": game_id}
             game["status"] = "finished"
             self.games[game_id] = json.dumps(game)
 
@@ -268,7 +290,10 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
         OD naturally adds more validators for disputed transactions, making
         appeals inherently more rigorous than initial judgments.
         """
-        submissions_list = json.loads(submissions)
+        try:
+            submissions_list = json.loads(submissions)
+        except (json.JSONDecodeError, ValueError):
+            raise Exception("Invalid JSON for submissions")
 
         if len(submissions_list) <= 1:
             return {
@@ -311,10 +336,13 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
                 if winner_id in valid_ids:
                     return winner_id
                 return submissions_list[0]["id"]
-            except:
+            except (ValueError, TypeError, KeyError):
                 return submissions_list[0]["id"]
 
-        new_winner_id = gl.eq_principle_strict_eq(judge_appeal)
+        new_winner_id = gl.eq_principle_prompt_comparative(
+            judge_appeal,
+            "Both results must select the same winner ID number"
+        )
         overturned = new_winner_id != original_winner_id
 
         if overturned:

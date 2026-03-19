@@ -100,6 +100,9 @@ class OracleOfWitSim {
   }
 
   record_game_result(game_id, final_scores) {
+    if (this.games[game_id] && this.games[game_id].status === 'finished') {
+      return { recorded: false, reason: 'already_finished' };
+    }
     for (const p of final_scores) {
       const current = this.leaderboard[p.playerName] ?? 0;
       this.leaderboard[p.playerName] = current + p.score;
@@ -264,6 +267,19 @@ describe('OracleOfWit Contract', () => {
       contract.record_game_result('G2', [{ playerName: 'Alice', score: 200 }]);
       expect(contract.get_leaderboard()[0].score).toBe(300);
     });
+
+    it('is idempotent — second call on finished game returns already_finished', () => {
+      contract.create_game('G1', 'Alice', 'tech');
+      const first = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
+      expect(first.recorded).toBe(true);
+
+      const second = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
+      expect(second.recorded).toBe(false);
+      expect(second.reason).toBe('already_finished');
+
+      // Score should not double-count
+      expect(contract.get_leaderboard()[0].score).toBe(100);
+    });
   });
 
   // -- appeal_judgment ------------------------------------------------------
@@ -340,6 +356,24 @@ describe('OracleOfWit Contract', () => {
 
       // Live leaderboard is now empty
       expect(contract.get_leaderboard()).toEqual([]);
+    });
+  });
+
+  // -- JSON safety -----------------------------------------------------------
+
+  describe('JSON safety', () => {
+    it('judge_round handles submission with missing playerName without throwing', () => {
+      const malformed = [
+        { id: 1 },
+        { id: 2, playerName: 'Bob', punchline: 'Good joke' },
+      ];
+      // Should not throw — fallback `submissions[0]` path covers missing fields
+      expect(() => contract.judge_round('G1', malformed, 999)).not.toThrow();
+
+      const result = contract.judge_round('G2', malformed, 999);
+      // Falls back to submissions[0] because id 999 doesn't exist
+      expect(result.winner_id).toBe(1);
+      expect(result.winner_name).toBeUndefined();
     });
   });
 

@@ -8,7 +8,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-A855F7?style=for-the-badge&logo=vercel&logoColor=white)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-2DD4BF?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-56_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-94_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-FBBF24?style=for-the-badge)](LICENSE)
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
@@ -122,7 +122,7 @@ flowchart TB
 
     subgraph GenLayer ["GenLayer Testnet Bradbury"]
         Contract[oracle_of_wit.py<br/>Intelligent Contract]
-        Validators[AI Validators<br/>GPT-4 / Claude / LLaMA /<br/>Gemini / Mixtral]
+        Validators[AI Validators<br/>GPT-4, Claude, LLaMA,<br/>Gemini, Mixtral]
     end
 
     UI -- "HTTP poll / POST" --> API
@@ -134,10 +134,10 @@ flowchart TB
     API -- "genlayer-js SDK" --> GL
     GL -- "writeContract" --> Contract
     Contract -- "gl.exec_prompt" --> Validators
-    Validators -- "gl.eq_principle_strict_eq" --> Contract
+    Validators -- "gl.eq_principle_prompt_comparative" --> Contract
 ```
 
-**Why parallel judging?** Claude Haiku returns a winner in ~2s for instant UX. GenLayer OD takes ~30s+ (validators must reach strict consensus) but provides a trustless, on-chain proof. The game shows Claude's result immediately while the GenLayer transaction finalizes in the background.
+**Dual-judge architecture:** GenLayer OD is the authoritative source when available (~2-3 validator rotations with `prompt_comparative`). Claude Haiku serves as a fast fallback if GenLayer times out or fails. Both run in parallel — GenLayer's result is preferred when it arrives within 30s.
 
 ---
 
@@ -155,11 +155,20 @@ GenLayer's OD consensus is the core innovation this dApp demonstrates. When `jud
 4. If consensus is reached, the result is accepted and recorded on-chain
 5. If validators disagree, more validators are added until consensus forms
 
-### Equivalence Principle: `eq_principle_strict_eq`
+### Equivalence Principle: `eq_principle_prompt_comparative`
 
-Oracle of Wit uses the strictest equivalence principle — `gl.eq_principle_strict_eq` — which requires **all validators to return the exact same value**. For comedy judging, this means every validator's LLM must pick the same winner ID.
+Oracle of Wit uses the comparative equivalence principle — `gl.eq_principle_prompt_comparative` with the principle `"Both results must select the same winner ID number"`. Instead of requiring byte-identical JSON, validators only need to agree on the winner ID.
 
-This is intentionally strict for humor — a subjective domain where LLMs often disagree. The high validator rotation (~22 rotations, ~32 min finalization in testing) demonstrates OD's ability to eventually converge on consensus even for subjective tasks.
+This dramatically reduces validator rotations (~2-3 rotations, ~10s finalization) compared to strict equality (~22 rotations, ~32 min), making GenLayer practical as the **authoritative judge** rather than just a background proof.
+
+### Dual-Judge Architecture
+
+GenLayer is the authoritative source of truth when available. Claude Haiku serves as a fast fallback:
+
+1. Both GenLayer OD and Claude are called **in parallel**
+2. If GenLayer returns a result within 30s → **it is used** (multi-validator consensus)
+3. If GenLayer times out or fails → Claude's result is used as fallback
+4. The `glOverride` flag in round metadata tracks which source was authoritative
 
 ### Appeal Mechanism
 
@@ -253,10 +262,24 @@ const history = await client.readContract({
 
 ```
 oracle-of-wit/
-├── index.html                 # Single-page application (frontend)
+├── index.html                 # SPA shell (HTML + CSS only, ~246 lines)
+├── js/                        # Frontend JavaScript (split from index.html)
+│   ├── state.js               # Global state variables, session token
+│   ├── effects.js             # Particles, Three.js eye, audio, confetti
+│   ├── api.js                 # API wrapper, polling, DOM micro-updates
+│   ├── render.js              # All render*() functions, HUD, reveal
+│   └── app.js                 # Game actions, timer, boot, event handlers
 ├── api/
-│   ├── game.js                # Serverless API — rooms, judging, scoring
-│   └── discord.js             # Discord bot — slash commands via Interactions API
+│   ├── game.js                # Serverless API handler (~400 lines)
+│   ├── discord.js             # Discord bot — slash commands via Interactions API
+│   └── lib/                   # Extracted modules (split from monolithic game.js)
+│       ├── redis.js           # Upstash REST helpers (GET/SET/INCR/SETNX/DEL)
+│       ├── auth.js            # Session tokens, CORS whitelist, rate limiting
+│       ├── constants.js       # Timers, levels, achievements, themes, prompts
+│       ├── genlayer.js        # GenLayer SDK, submit/poll/record/appeal
+│       ├── ai.js              # Claude judging, curation, bot punchlines
+│       ├── game-logic.js      # Phase transitions, judging, bots, distributed lock
+│       └── profiles.js        # Player profiles, daily challenges, leaderboard
 ├── contracts/
 │   └── oracle_of_wit.py       # GenLayer Intelligent Contract
 ├── scripts/
@@ -264,8 +287,8 @@ oracle-of-wit/
 │   ├── register-commands.mjs  # Register Discord slash commands
 │   └── capture-screenshots.mjs # Screenshot capture for README (Playwright)
 ├── tests/
-│   ├── contract.test.js       # Contract logic unit tests (20 tests)
-│   ├── api.test.js            # API integration tests (20 tests)
+│   ├── contract.test.js       # Contract logic unit tests (22 tests)
+│   ├── api.test.js            # API integration tests (56 tests)
 │   └── discord.test.js        # Discord bot tests (16 tests)
 ├── docs/
 │   └── images/                # README screenshots (8 PNGs)
@@ -333,7 +356,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **56 tests** across three test suites:
+Oracle of Wit has **94 tests** across three test suites:
 
 ```bash
 # Run all tests
@@ -345,8 +368,8 @@ npm run test:watch
 
 | Suite | File | Tests | Coverage |
 |-------|------|-------|----------|
-| **Contract** | `tests/contract.test.js` | 20 | Game creation, OD judging, leaderboard, appeals, seasons |
-| **API** | `tests/api.test.js` | 20 | Room CRUD, submissions, betting, phase transitions, CORS |
+| **Contract** | `tests/contract.test.js` | 22 | Game creation, OD judging, leaderboard, appeals, seasons, idempotency, JSON safety |
+| **API** | `tests/api.test.js` | 56 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth (session tokens), rate limiting, input validation, CORS |
 | **Discord** | `tests/discord.test.js` | 16 | Ed25519 signatures, slash commands, error handling |
 
 ---
