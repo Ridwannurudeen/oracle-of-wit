@@ -13,7 +13,7 @@ export function ProfileCard() {
 
     const progress = xpProgress.value;
 
-    return h('div', { class: 'profile-card-island' },
+    return h('div', { class: 'glow-card p-4' },
         h('div', { class: 'flex items-center gap-3 mb-3' },
             h('div', { class: 'w-10 h-10 rounded-xl bg-wit/20 border border-wit/30 flex items-center justify-center' },
                 h('span', { class: 'text-sm font-mono font-bold text-wit' }, p.level)

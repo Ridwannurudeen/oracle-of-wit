@@ -9,6 +9,7 @@ import { renderSubmitting, renderCurating, renderVoting, renderBetting, renderJu
 import { renderRevealing, renderRoundResults, renderFinalResults } from './render-results.js';
 import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderCommunityPrompts } from './render-screens.js';
 import { syncFromLegacyState } from './signals.js';
+import { mountIslands } from './islands.js';
 
 // === HUD WING PANELS ===
 
@@ -324,8 +325,9 @@ export function render(force = false) {
     // Sync Preact signals from legacy state (bridges islands architecture)
     syncFromLegacyState(state);
 
-    // Mount 3D oracle eyes after render
+    // Mount Preact islands + 3D oracle eyes after render
     requestAnimationFrame(() => {
+        mountIslands();
         mountOracleEye('welcome-eye-3d', 160);
         mountOracleEye('header-eye', 32);
         oracleEye3D.setGameState(state.screen);

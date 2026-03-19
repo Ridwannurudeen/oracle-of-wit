@@ -8,7 +8,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-A855F7?style=for-the-badge&logo=vercel&logoColor=white)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-2DD4BF?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-297_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-290_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-FBBF24?style=for-the-badge)](LICENSE)
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
@@ -249,10 +249,13 @@ const history = await client.readContract({
 
 | Layer | Technology | Badge |
 |-------|------------|-------|
-| **Frontend** | Vanilla JavaScript, TailwindCSS, Three.js | ![JS](https://img.shields.io/badge/-JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black) ![Tailwind](https://img.shields.io/badge/-TailwindCSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white) ![Three.js](https://img.shields.io/badge/-Three.js-000?style=flat-square&logo=threedotjs&logoColor=white) |
+| **Frontend** | Vanilla JS + Preact Islands, TailwindCSS, Three.js | ![JS](https://img.shields.io/badge/-JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black) ![Tailwind](https://img.shields.io/badge/-TailwindCSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white) ![Three.js](https://img.shields.io/badge/-Three.js-000?style=flat-square&logo=threedotjs&logoColor=white) |
+| **UI Components** | Preact + Preact Signals (islands architecture) | ![Preact](https://img.shields.io/badge/-Preact-673AB8?style=flat-square&logo=preact&logoColor=white) |
 | **Backend** | Vercel Serverless Functions (Node.js) | ![Vercel](https://img.shields.io/badge/-Vercel-000?style=flat-square&logo=vercel&logoColor=white) ![Node](https://img.shields.io/badge/-Node.js-339933?style=flat-square&logo=node.js&logoColor=white) |
 | **Database** | Upstash Redis | ![Redis](https://img.shields.io/badge/-Redis-DC382D?style=flat-square&logo=redis&logoColor=white) |
+| **Persistent DB** | Turso (LibSQL) | ![SQLite](https://img.shields.io/badge/-Turso-4FC3F7?style=flat-square&logo=sqlite&logoColor=white) |
 | **AI Judging** | Claude Haiku (fast) + GenLayer OD (on-chain) | ![Anthropic](https://img.shields.io/badge/-Claude-191919?style=flat-square&logo=anthropic&logoColor=white) |
+| **Wallet Auth** | SIWE (EIP-4361) | ![Ethereum](https://img.shields.io/badge/-SIWE-3C3C3D?style=flat-square&logo=ethereum&logoColor=white) |
 | **Smart Contract** | GenLayer Intelligent Contract (Python) | ![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white) |
 | **SDK** | genlayer-js v0.21+ | ![npm](https://img.shields.io/badge/-genlayer--js-CB3837?style=flat-square&logo=npm&logoColor=white) |
 | **Testing** | Vitest | ![Vitest](https://img.shields.io/badge/-Vitest-6E9F18?style=flat-square&logo=vitest&logoColor=white) |
@@ -265,23 +268,50 @@ const history = await client.readContract({
 oracle-of-wit/
 ├── index.html                 # SPA shell (HTML + CSS only, ~246 lines)
 ├── js/                        # Frontend JavaScript (split from index.html)
+│   ├── main.js                # Entry point — imports app.js, registers service worker
 │   ├── state.js               # Global state variables, session token
+│   ├── signals.js             # Preact signals bridge — mirrors state.js for islands
+│   ├── islands.js             # Preact island mounter — finds data-island placeholders
+│   ├── events.js              # DOM event delegation (data-action click/input/keypress)
 │   ├── effects.js             # Particles, Three.js eye, audio, confetti
 │   ├── api.js                 # API wrapper, polling, DOM micro-updates
-│   ├── render.js              # All render*() functions, HUD, reveal
-│   └── app.js                 # Game actions, timer, boot, event handlers
+│   ├── render.js              # Main render dispatcher, HUD wings, screen routing
+│   ├── render-helpers.js      # Shared render fragments (profile card, timer placeholders)
+│   ├── render-lobby.js        # Welcome, lobby, waiting room screens
+│   ├── render-game.js         # Submitting, curating, voting, betting, judging screens
+│   ├── render-results.js      # Revealing, round results, final results screens
+│   ├── render-screens.js      # Daily challenge, profile, hall of fame, community prompts
+│   ├── app.js                 # Game actions, timer, boot, event handlers
+│   └── components/            # Preact island components (JSX)
+│       ├── ProfileCard.jsx    # Player profile card with XP bar
+│       ├── Timer.jsx          # Self-updating countdown timer
+│       └── WalletButton.jsx   # Connect/disconnect wallet button
 ├── api/
 │   ├── game.js                # Serverless API handler (auth, routing, CORS)
 │   ├── discord.js             # Discord bot — slash commands via Interactions API
-│   ├── handlers/              # Action handler modules (room, gameplay, profile, social, meta)
-│   └── lib/                   # Shared modules (redis, auth, ai, genlayer, constants, profiles)
+│   ├── health.js              # Health check endpoint
+│   ├── cron/
+│   │   └── advance-games.js   # Cron job — auto-advance stale game phases
+│   ├── _handlers/             # Action handler modules
+│   │   ├── index.js           # Handler routing
+│   │   ├── room.js            # Room CRUD
+│   │   ├── gameplay.js        # Submissions, betting, voting, judging
+│   │   ├── profile.js         # Player profiles, daily challenges
+│   │   ├── social.js          # Reactions, community prompts
+│   │   └── meta.js            # Leaderboard, hall of fame, stats
+│   └── _lib/                  # Shared server modules
 │       ├── redis.js           # Upstash REST helpers (GET/SET/INCR/SETNX/DEL)
+│       ├── turso.js           # Turso (LibSQL) persistent database
 │       ├── auth.js            # Session tokens, CORS whitelist, rate limiting
+│       ├── wallet-auth.js     # SIWE (EIP-4361) wallet authentication
 │       ├── constants.js       # Timers, levels, achievements, themes, prompts
 │       ├── genlayer.js        # GenLayer SDK, submit/poll/record/appeal
 │       ├── ai.js              # Claude judging, curation, bot punchlines
 │       ├── game-logic.js      # Phase transitions, judging, bots, distributed lock
-│       └── profiles.js        # Player profiles, daily challenges, leaderboard
+│       ├── profiles.js        # Player profiles, daily challenges, leaderboard
+│       ├── logger.js          # Structured logging utility
+│       ├── monitor.js         # Performance monitoring
+│       └── types.js           # JSDoc type definitions
 ├── contracts/
 │   └── oracle_of_wit.py       # GenLayer Intelligent Contract
 ├── scripts/
@@ -290,10 +320,11 @@ oracle-of-wit/
 │   └── capture-screenshots.mjs # Screenshot capture for README (Playwright)
 ├── tests/
 │   ├── game-logic.test.js     # Core game-logic unit tests (44 tests)
-│   ├── contract.test.js       # Contract logic unit tests (60 tests)
+│   ├── contract.test.js       # Contract logic unit tests (53 tests)
 │   ├── api.test.js            # API integration tests (93 tests)
-│   ├── frontend.test.js       # Frontend unit tests (76 tests)
-│   └── discord.test.js        # Discord bot tests (16 tests)
+│   ├── frontend.test.js       # Frontend unit tests (84 tests)
+│   ├── discord.test.js        # Discord bot tests (16 tests)
+│   └── e2e/                   # End-to-end tests
 ├── docs/
 │   └── images/                # README screenshots (8 PNGs)
 ├── package.json               # Dependencies & scripts
@@ -360,7 +391,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **297 tests** across five test suites:
+Oracle of Wit has **290 tests** across five test suites:
 
 ```bash
 # Run all tests
@@ -375,7 +406,7 @@ npm run test:watch
 | **Game Logic** | `tests/game-logic.test.js` | 44 | autoJudge, transitionFromSubmitting, tallyVotesAndJudge, createRoundResult, checkAutoAdvance, bot submissions/bets, prompts |
 | **API** | `tests/api.test.js` | 93 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth (session tokens), rate limiting, input validation, CORS |
 | **Frontend** | `tests/frontend.test.js` | 84 | XSS escaping, auto-escape templates, DOM patching, timer formatting, state management, game events, adaptive polling |
-| **Contract** | `tests/contract.test.js` | 60 | Game creation, OD judging, leaderboard, appeals, seasons, admin access control, idempotency, JSON safety, player history |
+| **Contract** | `tests/contract.test.js` | 53 | Game creation, OD judging, leaderboard, appeals, seasons, admin access control, idempotency, JSON safety, player history |
 | **Discord** | `tests/discord.test.js` | 16 | Ed25519 signatures, slash commands, error handling |
 
 ---
@@ -489,6 +520,9 @@ Oracle of Wit includes a Discord bot that lets users interact with the game dire
 | `DISCORD_APPLICATION_ID` | No | Discord app ID (for slash command registration) |
 | `DISCORD_PUBLIC_KEY` | No | Discord public key (for Ed25519 signature verification) |
 | `DISCORD_BOT_TOKEN` | No | Discord bot token (for command registration script) |
+| `TURSO_URL` | No | Turso database URL (persistent profiles, history) |
+| `TURSO_AUTH_TOKEN` | No | Turso auth token |
+| `CRON_SECRET` | No | Secret for cron job authentication (advance-games) |
 
 ---
 

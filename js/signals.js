@@ -15,6 +15,7 @@ export const error = signal(null);
 export const profile = signal(null);
 export const walletAddress = signal(null);
 export const isWalletConnected = signal(false);
+export const walletConnecting = signal(false);
 export const timeLeft = signal(0);
 export const hasSubmitted = signal(false);
 export const hasBet = signal(false);
@@ -62,6 +63,7 @@ export function syncFromLegacyState(state) {
     profile.value = state.profile;
     walletAddress.value = state.walletAddress;
     isWalletConnected.value = state.isWalletConnected;
+    walletConnecting.value = state.walletConnecting || false;
     timeLeft.value = state.timeLeft;
     hasSubmitted.value = state.hasSubmitted;
     hasBet.value = state.hasBet;

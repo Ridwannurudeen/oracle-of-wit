@@ -121,19 +121,7 @@ export function renderWelcome() {
                             INITIALIZE SESSION
                         </button>
                     </div>
-                    ${state.isWalletConnected ? `
-                        <div class="mt-3 flex items-center justify-between p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
-                            <div class="flex items-center gap-2">
-                                <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                                <span class="text-[11px] font-mono text-green-400 truncate max-w-[200px]">${esc(state.walletAddress)}</span>
-                            </div>
-                            <button data-action="disconnectWallet" class="text-[10px] font-mono text-gray-500 hover:text-red-400 transition-colors">DISCONNECT</button>
-                        </div>
-                    ` : `
-                        <button data-action="connectWallet" data-hover-sound="true" class="btn w-full mt-3 py-3 rounded-xl text-sm font-mono tracking-wider border border-oracle/30 text-oracle hover:bg-oracle/10 transition-all ${state.walletConnecting ? 'opacity-50 pointer-events-none' : ''}">
-                            ${state.walletConnecting ? '<span class="spinner inline-block w-4 h-4 mr-2 align-middle"></span>CONNECTING...' : 'CONNECT WALLET'}
-                        </button>
-                    `}
+                    <div data-island="wallet-button" class="mt-3"></div>
                 </div>
                 <div class="mt-4 text-center">
                     <a href="https://www.genlayer.com" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider"><span class="opacity-60">${glLogo(14, 'rgb(45,212,191)')}</span>POWERED BY GENLAYER &rarr;</a>

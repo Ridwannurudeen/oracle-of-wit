@@ -2,10 +2,11 @@
 // Reads from wallet signals — dispatches actions via data-action attributes.
 
 import { h } from 'preact';
-import { walletAddress, isWalletConnected, walletDisplayAddress } from '../signals.js';
+import { walletAddress, isWalletConnected, walletDisplayAddress, walletConnecting } from '../signals.js';
 
-export function WalletButton({ connecting = false }) {
+export function WalletButton() {
     const connected = isWalletConnected.value;
+    const connecting = walletConnecting.value;
     const displayAddr = walletDisplayAddress.value;
 
     if (connected) {

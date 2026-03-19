@@ -35,7 +35,7 @@ export function Timer({ maxTime = 40 }) {
     const isLow = timeLeft <= 10;
     const pct = Math.min(100, (timeLeft / maxTime) * 100);
 
-    return h('div', { class: 'timer-island' },
+    return h('div', null,
         h('div', { class: `text-3xl font-mono font-bold ${isLow ? 'countdown-critical text-red-500' : 'text-white'}` },
             formatTime(timeLeft)
         ),

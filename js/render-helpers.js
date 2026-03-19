@@ -112,39 +112,7 @@ export function getTodayKeyClient() {
  */
 export function renderProfileCard() {
     if (!state.profile) return '';
-    const p = state.profile;
-    const nextXP = state.nextLevelXP;
-    const currentLevelXP = [0,0,500,1500,3000,6000,10000,20000,40000,75000,150000][p.level] || 0;
-    const progress = nextXP ? Math.min(100, ((p.lifetimeXP - currentLevelXP) / (nextXP - currentLevelXP)) * 100) : 100;
-    return html`
-        <div class="glow-card p-4">
-            <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 oracle-eye rounded-full flex items-center justify-center text-xl font-display font-bold">${p.level}</div>
-                    <div>
-                        <p class="font-display font-bold text-white tracking-wider">${p.name}</p>
-                        <p class="text-sm font-mono text-wit">${p.title}</p>
-                    </div>
-                </div>
-                <button data-action="goToProfile" class="btn btn-ghost text-xs px-3 py-1.5 rounded-lg" aria-label="View profile">PROFILE</button>
-            </div>
-            <div class="flex justify-between text-[10px] font-mono text-gray-500 mb-1 tracking-wider">
-                <span>${raw(p.lifetimeXP.toLocaleString())} XP</span>
-                <span>${raw(nextXP ? nextXP.toLocaleString() + ' XP' : 'MAX LEVEL')}</span>
-            </div>
-            <div class="h-2.5 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
-                <div class="h-full xp-bar" style="width:${raw(String(progress))}%"></div>
-            </div>
-            <div class="flex justify-between mt-2 text-[10px] font-mono text-gray-600 tracking-wider">
-                <span>${raw(String(p.gamesPlayed))} GAMES</span>
-                <span>${raw(String(p.gamesWon))} WINS</span>
-                <span>${raw(String(p.roundsWon))} ROUNDS</span>
-            </div>
-            ${raw(p.achievements.length > 0 ? `<div class="flex flex-wrap gap-1 mt-2">${p.achievements.slice(0,8).map(aId => {
-                const a = state.allAchievements.find(x=>x.id===aId);
-                return a ? `<span title="${esc(a.name)}" class="text-lg">${esc(a.icon)}</span>` : '';
-            }).join('')}${p.achievements.length > 8 ? `<span class="text-xs text-gray-500">+${p.achievements.length-8}</span>` : ''}</div>` : '')}
-        </div>`;
+    return '<div data-island="profile-card"></div>';
 }
 
 /**
@@ -153,19 +121,6 @@ export function renderProfileCard() {
  */
 export function renderTimer() {
     if (state.timeLeft <= 0) return '';
-    const isLow = state.timeLeft <= 10;
     const max = state.screen === 'submitting' ? 40 : state.screen === 'voting' ? 20 : 30;
-    const pct = (state.timeLeft / max) * 100;
-    return html`
-        <div class="glow-card ${raw(isLow ? 'glow-card-red' : '')} p-4 mb-4">
-            <div class="flex justify-between items-center mb-2">
-                <span class="text-[10px] font-mono text-gray-500 tracking-widest uppercase">TIMER</span>
-                <span id="timer-display" role="timer" aria-label="Time remaining" class="text-3xl font-mono font-bold ${raw(isLow ? 'countdown-critical text-red-500' : 'text-white')}">${raw(formatTime(state.timeLeft))}</span>
-            </div>
-            <div class="h-2 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
-                <div id="timer-bar" class="h-full timer-bar rounded-full ${raw(isLow ? 'bg-red-500' : 'bg-gradient-to-r from-wit to-oracle')}" style="width:${raw(String(pct))}%"></div>
-            </div>
-            <p id="timer-warning" class="text-red-400 text-xs font-mono mt-2 text-center animate-pulse tracking-wider" style="display:${raw(isLow ? 'block' : 'none')}">TIME CRITICAL</p>
-        </div>
-    `;
+    return `<div data-island="timer" data-max-time="${max}" class="glow-card p-4 mb-4"></div>`;
 }
