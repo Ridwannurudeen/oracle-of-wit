@@ -51,7 +51,7 @@ globalThis.fetch = vi.fn(async (url, opts = {}) => {
 
     if (command === 'get') {
       // GET /get/{key}  — key may contain colons so rejoin remaining segments
-      const key = segments.slice(1).join('/');
+      const key = decodeURIComponent(segments.slice(1).join('/'));
       const val = store[key] ?? null;
       return { ok: true, json: async () => ({ result: val }) };
     }
@@ -61,7 +61,7 @@ globalThis.fetch = vi.fn(async (url, opts = {}) => {
 
       if (hasNX) {
         // SETNX: /set/{key}/{value}?NX&EX=sec  — 3+ segments
-        const key = segments[1];
+        const key = decodeURIComponent(segments[1]);
         if (store[key] !== undefined) {
           return { ok: true, json: async () => ({ result: null }) };
         }
@@ -74,21 +74,21 @@ globalThis.fetch = vi.fn(async (url, opts = {}) => {
       }
 
       // Normal SET: /set/{key}?EX=sec  — body contains JSON.stringify(value)
-      const key = segments.slice(1).join('/');
+      const key = decodeURIComponent(segments.slice(1).join('/'));
       store[key] = opts.body;
       return { ok: true, json: async () => ({ result: 'OK' }) };
     }
 
     if (command === 'keys') {
       // KEYS /keys/{pattern}
-      const pattern = segments.slice(1).join('/');
+      const pattern = decodeURIComponent(segments.slice(1).join('/'));
       const regex = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
       const keys = Object.keys(store).filter((k) => regex.test(k));
       return { ok: true, json: async () => ({ result: keys }) };
     }
 
     if (command === 'incr') {
-      const key = segments.slice(1).join('/');
+      const key = decodeURIComponent(segments.slice(1).join('/'));
       counters[key] = (counters[key] || 0) + 1;
       return { ok: true, json: async () => ({ result: counters[key] }) };
     }
@@ -99,7 +99,7 @@ globalThis.fetch = vi.fn(async (url, opts = {}) => {
     }
 
     if (command === 'del') {
-      const key = segments.slice(1).join('/');
+      const key = decodeURIComponent(segments.slice(1).join('/'));
       delete store[key];
       return { ok: true, json: async () => ({ result: 1 }) };
     }
@@ -119,7 +119,7 @@ process.env.ANTHROPIC_API_KEY = 'sk-ant-fake';
 // Import the handler. Because game.js uses dynamic import() for genlayer-js,
 // and we don't have it installed in test, GenLayer calls will gracefully return null.
 const { default: handler } = await import('../api/game.js');
-const { _resetCircuit } = await import('../api/lib/redis.js');
+const { _resetCircuit, redisGet } = await import('../api/lib/redis.js');
 
 // ---------------------------------------------------------------------------
 // Helpers to simulate Vercel req/res
@@ -987,6 +987,7 @@ describe('API Handler', () => {
       const { status, body } = await call('appealVerdict', {
         roomId,
         playerName: 'Host',
+        playerId: 'appeal-test-player',
       });
       expect(status).toBe(200);
       expect(body.success).toBe(true);
@@ -998,8 +999,8 @@ describe('API Handler', () => {
 
     it('rejects double appeal on same round', async () => {
       const roomId = await setupRoom('roundResults');
-      await call('appealVerdict', { roomId, playerName: 'Host' });
-      const { status, body } = await call('appealVerdict', { roomId, playerName: 'Host' });
+      await call('appealVerdict', { roomId, playerName: 'Host', playerId: 'appeal-test-player' });
+      const { status, body } = await call('appealVerdict', { roomId, playerName: 'Host', playerId: 'appeal-test-player' });
       expect(status).toBe(400);
       expect(body.error).toMatch(/already/i);
     });
@@ -1113,7 +1114,7 @@ describe('API Handler', () => {
     it('returns 400 for unknown action with descriptive error', async () => {
       const { status, body } = await call('totallyFakeAction');
       expect(status).toBe(400);
-      expect(body.error).toContain('totallyFakeAction');
+      expect(body.error).toBe('Unknown action');
     });
   });
 
@@ -1283,6 +1284,115 @@ describe('API Handler', () => {
       });
       expect(status).toBe(400);
       expect(body.error).toMatch(/invalid submission/i);
+    });
+  });
+
+  // ===========================================================================
+  // SECURITY AUDIT FIXES
+  // ===========================================================================
+
+  describe('Auth Bypass Prevention', () => {
+    it('rejects session-required action when playerName is empty', async () => {
+      const { body: c } = await call('createRoom', { hostName: 'Host' });
+      const { status, body } = await call('submitPunchline', {
+        roomId: c.roomId, playerName: '', punchline: 'test',
+      });
+      expect(status).toBe(401);
+      expect(body.error).toMatch(/required/i);
+    });
+
+    it('rejects session-required action when roomId is missing', async () => {
+      const { status, body } = await call('submitPunchline', {
+        playerName: 'Host', punchline: 'test',
+      });
+      expect(status).toBe(401);
+      expect(body.error).toMatch(/required/i);
+    });
+  });
+
+  describe('Appeal XP Requirement', () => {
+    it('rejects appeal when playerId is omitted', async () => {
+      const roomId = await setupRoom('roundResults');
+      const { status, body } = await call('appealVerdict', {
+        roomId, playerName: 'Host',
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/playerId required/i);
+    });
+  });
+
+  describe('Self-Vote Prevention', () => {
+    it('rejects voting for own community prompt', async () => {
+      // Submit a prompt
+      await call('submitPrompt', {
+        playerId: 'self-voter', playerName: 'Tester', prompt: 'Why did the chicken cross the road?',
+      });
+      const prompts = await redisGet('community_prompts') || [];
+      const prompt = prompts.find(p => p.playerId === 'self-voter');
+
+      // Try to self-vote
+      const { status, body } = await call('votePrompt', {
+        promptId: prompt.id, playerId: 'self-voter',
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/own prompt/i);
+    });
+  });
+
+  describe('Spectator Limit', () => {
+    it('rejects spectators beyond the cap', async () => {
+      const { body: c } = await call('createRoom', { hostName: 'Host' });
+      const roomId = c.roomId;
+
+      // Fill spectator slots to capacity (50)
+      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
+      const room = JSON.parse(store[key]);
+      room.spectators = Array.from({ length: 50 }, (_, i) => ({
+        name: `Spec${i}`, joinedAt: Date.now(),
+      }));
+      store[key] = JSON.stringify(room);
+
+      // 51st spectator should be rejected
+      const { status, body } = await call('joinRoom', {
+        roomId, playerName: 'Spec50', spectator: true,
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/limit/i);
+    });
+  });
+
+  describe('OG Preview Validation', () => {
+    it('rejects malformed share IDs', async () => {
+      const req = makeReq({
+        method: 'GET',
+        query: { action: 'ogPreview', id: '"><script>alert(1)</script>' },
+      });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res._status).toBe(400);
+    });
+  });
+
+  describe('Unknown Action Error', () => {
+    it('does not reflect the action name in error response', async () => {
+      const { status, body } = await call('xssPayload<script>');
+      expect(status).toBe(400);
+      expect(body.error).toBe('Unknown action');
+      expect(body.error).not.toContain('xssPayload');
+    });
+  });
+
+  describe('Security Headers (Vercel)', () => {
+    it('vercel.json includes security headers', async () => {
+      const fs = await import('fs');
+      const config = JSON.parse(fs.readFileSync('vercel.json', 'utf-8'));
+      expect(config.headers).toBeDefined();
+      const globalHeaders = config.headers.find(h => h.source === '/(.*)');
+      expect(globalHeaders).toBeDefined();
+      const headerNames = globalHeaders.headers.map(h => h.key);
+      expect(headerNames).toContain('X-Frame-Options');
+      expect(headerNames).toContain('X-Content-Type-Options');
+      expect(headerNames).toContain('Strict-Transport-Security');
     });
   });
 });

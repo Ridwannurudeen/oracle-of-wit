@@ -326,7 +326,7 @@ async function loadWeeklyTheme() {
         const res = await fetch(`${API_URL}?action=getWeeklyTheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const result = await res.json();
         if (result.success) { state.currentWeeklyTheme = result.theme; render(); }
-    } catch(e) {}
+    } catch(e) { console.warn('Failed to load weekly theme:', e.message); }
 }
 
 function startBootSequence() {
@@ -405,7 +405,7 @@ async function fetchProfile() {
             state.allAchievements = result.achievements || [];
             render();
         }
-    } catch(e) {}
+    } catch(e) { console.warn('Failed to fetch profile:', e.message); }
 }
 
 async function fetchDailyChallenge() {
@@ -420,7 +420,7 @@ async function fetchDailyChallenge() {
             state.screen = 'daily';
             render();
         }
-    } catch(e) {}
+    } catch(e) { console.warn('Failed to fetch daily challenge:', e.message); }
 }
 
 async function submitDailyChallenge() {
@@ -451,7 +451,7 @@ async function fetchHallOfFame() {
         const res = await fetch(`${API_URL}?action=getHallOfFame`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const result = await res.json();
         if (result.success) { state.hallOfFame = result.hallOfFame || []; state.showHallOfFame = true; render(); }
-    } catch(e) {}
+    } catch(e) { console.warn('Failed to fetch hall of fame:', e.message); }
 }
 
 async function appealVerdict() {
@@ -611,7 +611,7 @@ async function detectChallenge() {
     const challengeId = params.get('challenge');
     if (!challengeId) return;
     try {
-        const res = await fetch(`${API_URL}?action=getChallenge&id=${challengeId}`);
+        const res = await fetch(`${API_URL}?action=getChallenge&id=${encodeURIComponent(challengeId)}`);
         const data = await res.json();
         if (data.success) {
             state.challengeData = data.challenge;
@@ -713,7 +713,7 @@ async function fetchCommunityPrompts() {
             state.screen = 'communityPrompts';
             render();
         }
-    } catch(e) {}
+    } catch(e) { console.warn('Failed to fetch community prompts:', e.message); }
 }
 
 async function submitCommunityPrompt() {
@@ -736,7 +736,6 @@ async function voteCommunityPrompt(promptId) {
 // ─── Event Listeners ────────────────────────────────────────────
 
 // === FLOATING NAV ON SCROLL ===
-let headerFloating = false;
 window.addEventListener('scroll', () => {
     const header = document.getElementById('main-header');
     if (!header) return;

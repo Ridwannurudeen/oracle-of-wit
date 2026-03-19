@@ -118,10 +118,11 @@ export default async function handler(req, res) {
     if (SESSION_REQUIRED_ACTIONS.has(action)) {
         const { roomId, sessionToken } = body;
         const playerName = body.playerName || body.hostName;
-        if (roomId && playerName) {
-            const valid = await validateSession(roomId, playerName, sessionToken);
-            if (!valid) return res.status(401).json({ error: 'Invalid or missing session token' });
+        if (!roomId || !playerName) {
+            return res.status(401).json({ error: 'roomId and playerName/hostName required' });
         }
+        const valid = await validateSession(roomId, playerName, sessionToken);
+        if (!valid) return res.status(401).json({ error: 'Invalid or missing session token' });
     }
 
     try {
@@ -193,6 +194,7 @@ export default async function handler(req, res) {
                     if (existing) {
                         existing.joinedAt = Date.now();
                     } else {
+                        if (room.spectators.length >= 50) return res.status(400).json({ error: 'Spectator limit reached' });
                         room.spectators.push({ name: playerName, joinedAt: Date.now() });
                     }
                     room.updatedAt = Date.now();
@@ -591,13 +593,13 @@ export default async function handler(req, res) {
             }
 
             case 'createChallenge': {
-                const { creatorName, creatorScore, category } = body;
+                const { creatorName, category } = body;
                 const prompt = sanitizeInput(body.prompt);
                 if (!creatorName || !prompt) return res.status(400).json({ error: 'creatorName and prompt required' });
                 if (prompt.length > 150) return res.status(400).json({ error: 'Prompt too long (max 150 characters)' });
                 const safeCategory = VALID_CATEGORIES.includes(category) ? category : 'general';
                 const challengeId = Math.random().toString(36).substring(2, 10);
-                await redisSet(`challenge:${challengeId}`, { creatorName, creatorScore: creatorScore || 0, prompt, category: safeCategory, createdAt: Date.now() }, 86400 * 7);
+                await redisSet(`challenge:${challengeId}`, { creatorName, creatorScore: 0, prompt, category: safeCategory, createdAt: Date.now() }, 86400 * 7);
                 return res.status(200).json({ success: true, challengeId });
             }
 
@@ -619,10 +621,9 @@ export default async function handler(req, res) {
                 if (!result) return res.status(400).json({ error: 'No round result to appeal' });
                 if (result.appealed) return res.status(400).json({ error: 'Already appealed' });
 
-                if (playerId) {
-                    const profile = await getProfile(playerId);
-                    if (profile && profile.lifetimeXP < 50) return res.status(400).json({ error: 'Need 50 XP to appeal' });
-                }
+                if (!playerId) return res.status(400).json({ error: 'playerId required for appeals' });
+                const profile = await getProfile(playerId);
+                if (profile && profile.lifetimeXP < 50) return res.status(400).json({ error: 'Need 50 XP to appeal' });
 
                 const submissions = room.submissions;
                 const [glAppeal, reJudgeResult] = await Promise.all([
@@ -668,16 +669,17 @@ export default async function handler(req, res) {
             case 'ogPreview': {
                 const shareId = req.query.id;
                 if (!shareId) return res.status(400).json({ error: 'id required' });
+                if (!/^[a-z0-9]{6,12}$/i.test(shareId)) return res.status(400).json({ error: 'Invalid share ID format' });
                 const shareData = await redisGet(`share:${shareId}`);
                 const title = shareData?.winnerName ? `${shareData.winnerName} won Oracle of Wit!` : 'Oracle of Wit - GenLayer Game';
                 const desc = shareData?.punchline || 'The AI humor prediction game powered by GenLayer';
                 const url = 'https://oracle-of-wit.vercel.app';
-                const esc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const esc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
                 const html = `<!DOCTYPE html><html><head>
                     <meta property="og:title" content="${esc(title)}" />
                     <meta property="og:description" content="${esc(desc)}" />
                     <meta property="og:image" content="${url}/og-image.png" />
-                    <meta property="og:url" content="${url}/share/${shareId}" />
+                    <meta property="og:url" content="${url}/share/${esc(shareId)}" />
                     <meta name="twitter:card" content="summary_large_image" />
                     <meta name="twitter:title" content="${esc(title)}" />
                     <meta name="twitter:description" content="${esc(desc)}" />
@@ -760,6 +762,7 @@ export default async function handler(req, res) {
                 const prompts = await redisGet('community_prompts') || [];
                 const prompt = prompts.find(p => p.id === promptId);
                 if (!prompt) return res.status(404).json({ error: 'Prompt not found' });
+                if (prompt.playerId === playerId) return res.status(400).json({ error: 'Cannot vote for your own prompt' });
                 if (prompt.voters.includes(playerId)) return res.status(400).json({ error: 'Already voted' });
                 prompt.votes++;
                 prompt.voters.push(playerId);
@@ -774,7 +777,7 @@ export default async function handler(req, res) {
             }
 
             default:
-                return res.status(400).json({ error: 'Unknown action: ' + action });
+                return res.status(400).json({ error: 'Unknown action' });
         }
     } catch (error) {
         console.error(`[API Error] action=${action} roomId=${body.roomId || 'N/A'} error=${String(error.message).slice(0, 200)}`);

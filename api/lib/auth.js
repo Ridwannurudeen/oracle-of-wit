@@ -17,7 +17,7 @@ export function generateToken() {
     return crypto.randomUUID();
 }
 
-const SESSION_TTL = parseInt(process.env.SESSION_TTL) || 7200;
+const SESSION_TTL = Math.max(60, parseInt(process.env.SESSION_TTL) || 7200);
 
 export async function storeSessionToken(roomId, playerName, token) {
     await redisSet(`session:${roomId}:${playerName}`, token, SESSION_TTL);

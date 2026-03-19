@@ -356,7 +356,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **123 tests** across three test suites:
+Oracle of Wit has **131 tests** across three test suites:
 
 ```bash
 # Run all tests

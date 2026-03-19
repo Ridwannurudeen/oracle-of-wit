@@ -75,7 +75,7 @@ function renderRightWingContent() {
                     ${r ? `
                         <div class="flex justify-between items-center">
                             <span class="text-[10px] font-mono text-gray-600">ROOM</span>
-                            <span class="text-[10px] font-mono text-wit">${r.id || '—'}</span>
+                            <span class="text-[10px] font-mono text-wit">${esc(r.id || '—')}</span>
                         </div>
                         <div class="flex justify-between items-center">
                             <span class="text-[10px] font-mono text-gray-600">PLAYERS</span>
@@ -87,7 +87,7 @@ function renderRightWingContent() {
                         </div>
                         <div class="flex justify-between items-center">
                             <span class="text-[10px] font-mono text-gray-600">STATUS</span>
-                            <span class="text-[10px] font-mono ${r.status === 'judging' ? 'text-oracle' : r.status === 'submitting' ? 'text-wit' : 'text-gray-400'}">${(r.status || 'IDLE').toUpperCase()}</span>
+                            <span class="text-[10px] font-mono ${r.status === 'judging' ? 'text-oracle' : r.status === 'submitting' ? 'text-wit' : 'text-gray-400'}">${esc((r.status || 'IDLE').toUpperCase())}</span>
                         </div>
                     ` : `
                         <div class="flex justify-between items-center">
@@ -224,7 +224,7 @@ function render(force = false) {
                     </div>
                     <button onclick="toggleSound()" class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'}</button>
                     ${state.profile ? `<span class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)">Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span></span>` : state.playerName ? `<span class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)">${esc(state.playerName)}</span>` : ''}
-                    ${state.roomId ? `<span class="px-1.5 py-1 bg-obsidian border border-white/[0.06] rounded text-[10px] font-mono text-gray-400">${state.roomId}</span>` : ''}
+                    ${state.roomId ? `<span class="px-1.5 py-1 bg-obsidian border border-white/[0.06] rounded text-[10px] font-mono text-gray-400">${esc(state.roomId)}</span>` : ''}
                 </div>
             </div>
         </header>
@@ -239,7 +239,7 @@ function render(force = false) {
                     <span>R${state.room.currentRound || 0}/${state.room.totalRounds || 5}</span>
                 </div>
                 <div class="flex items-center gap-1 sm:gap-3">
-                    <span class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${state.room.status?.toUpperCase() || 'IDLE'}</span>
+                    <span class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${esc(state.room.status?.toUpperCase() || 'IDLE')}</span>
                     <span class="text-white/10">|</span>
                     <button onclick="if(confirm('Leave this game?'))leaveRoom()" class="text-red-400/60 hover:text-red-400 transition-colors text-[10px] font-mono tracking-wider">EXIT</button>
                 </div>
@@ -442,7 +442,7 @@ function renderWelcome() {
                     </div>
                 </div>
                 <div class="mt-4 text-center">
-                    <a href="https://www.genlayer.com" target="_blank" class="inline-flex items-center gap-1.5 text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider"><span class="opacity-60">${glLogo(14, 'rgb(45,212,191)')}</span>POWERED BY GENLAYER &rarr;</a>
+                    <a href="https://www.genlayer.com" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider"><span class="opacity-60">${glLogo(14, 'rgb(45,212,191)')}</span>POWERED BY GENLAYER &rarr;</a>
                 </div>
             </div>
         </div>
@@ -481,7 +481,7 @@ function renderProfileCard() {
             </div>
             ${p.achievements.length > 0 ? `<div class="flex flex-wrap gap-1 mt-2">${p.achievements.slice(0,8).map(aId => {
                 const a = state.allAchievements.find(x=>x.id===aId);
-                return a ? `<span title="${a.name}" class="text-lg">${a.icon}</span>` : '';
+                return a ? `<span title="${esc(a.name)}" class="text-lg">${esc(a.icon)}</span>` : '';
             }).join('')}${p.achievements.length > 8 ? `<span class="text-xs text-gray-500">+${p.achievements.length-8}</span>` : ''}</div>` : ''}
         </div>`;
 }
@@ -502,11 +502,11 @@ function renderLobby() {
                 ${state.currentWeeklyTheme ? `
                 <div class="glow-card glow-card-amber p-5 flex items-center">
                     <div class="flex items-center gap-4 w-full">
-                        <span class="text-4xl">${state.currentWeeklyTheme.emoji}</span>
+                        <span class="text-4xl">${esc(state.currentWeeklyTheme.emoji)}</span>
                         <div class="flex-1">
                             <p class="text-[10px] font-mono text-wit tracking-widest mb-1">THIS WEEK'S THEME</p>
-                            <p class="font-display font-bold text-xl tracking-wider">${state.currentWeeklyTheme.name}</p>
-                            <p class="text-sm text-gray-400 mt-1">${state.currentWeeklyTheme.description}</p>
+                            <p class="font-display font-bold text-xl tracking-wider">${esc(state.currentWeeklyTheme.name)}</p>
+                            <p class="text-sm text-gray-400 mt-1">${esc(state.currentWeeklyTheme.description)}</p>
                         </div>
                     </div>
                 </div>
@@ -572,13 +572,13 @@ function renderLobby() {
                             ${state.publicRooms.map(r => `
                                 <div class="flex justify-between items-center p-2.5 bg-obsidian border border-white/[0.04] rounded-xl">
                                     <div>
-                                        <span class="font-mono text-wit">${r.id}</span>
+                                        <span class="font-mono text-wit">${esc(r.id)}</span>
                                         ${r.status !== 'waiting' ? `<span class="text-xs ml-1 ${r.status === 'finished' ? 'text-gray-500' : 'text-green-400'}">R${r.currentRound}/${r.totalRounds}</span>` : ''}
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <span class="text-xs text-gray-400">${r.players}p${r.spectators ? ' '+r.spectators+'s' : ''}</span>
                                         ${r.status === 'waiting' ? `
-                                            <button onclick="joinRoom('${r.id}')" class="btn btn-primary px-3 py-1 rounded-lg text-sm text-white">Join</button>
+                                            <button onclick="joinRoom('${esc(r.id).replace(/'/g, "\\'")}')" class="btn btn-primary px-3 py-1 rounded-lg text-sm text-white">Join</button>
                                         ` : ''}
                                     </div>
                                 </div>
@@ -622,7 +622,7 @@ function renderLobby() {
                             <p class="text-oracle font-display font-bold text-sm tracking-wider mb-1">FRIEND CHALLENGE</p>
                             <p class="text-xs font-mono text-gray-400">${esc(state.challengeData.creatorName)} scored ${state.challengeData.creatorScore} XP — can you beat them?</p>
                         </div>
-                        <button onclick="createRoom('${state.challengeData.category}', true)" class="btn btn-teal px-5 py-2.5 rounded-xl text-xs text-white font-bold">ACCEPT</button>
+                        <button onclick="createRoom('${esc(state.challengeData.category).replace(/'/g, "\\'")}', true)" class="btn btn-teal px-5 py-2.5 rounded-xl text-xs text-white font-bold">ACCEPT</button>
                     </div>
                 </div>
             ` : ''}
@@ -683,7 +683,7 @@ function renderWaiting() {
         <div class="glow-card p-6">
             <div class="flex justify-between items-center mb-4">
                 <div>
-                    <h2 class="text-xl font-display font-bold tracking-wider">${r.isSinglePlayer ? 'SOLO MODE' : r.id}</h2>
+                    <h2 class="text-xl font-display font-bold tracking-wider">${r.isSinglePlayer ? 'SOLO MODE' : esc(r.id)}</h2>
                     <span class="text-[10px] font-mono ${r.isSinglePlayer ? 'text-consensus/60' : 'text-oracle/60'} tracking-widest">${r.isSinglePlayer ? 'VS ORACLE BOTS' : 'AWAITING PLAYERS'}</span>
                 </div>
                 <button onclick="leaveRoom()" class="btn btn-ghost px-3 py-2 rounded-lg text-gray-500 hover:text-white text-lg">✕</button>
@@ -693,8 +693,8 @@ function renderWaiting() {
                 <div class="mb-4 p-4 bg-obsidian rounded-xl text-center border border-white/[0.04]">
                     <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">ROOM CODE</p>
                     <div class="flex items-center justify-center gap-2">
-                        <p class="font-mono text-2xl text-wit select-all tracking-wider">${r.id}</p>
-                        <button onclick="copyRoomCode('${r.id}')" class="btn btn-ghost p-2 rounded-lg text-gray-400" title="Copy code">
+                        <p class="font-mono text-2xl text-wit select-all tracking-wider">${esc(r.id)}</p>
+                        <button onclick="copyRoomCode('${esc(r.id).replace(/'/g, "\\'")}')" class="btn btn-ghost p-2 rounded-lg text-gray-400" title="Copy code">
                             <span class="text-sm">COPY</span>
                         </button>
                     </div>
@@ -740,7 +740,7 @@ function renderSubmitting() {
             <div class="glow-card p-3 flex justify-between items-center">
                 <div class="flex items-center gap-2">
                     <span class="font-mono text-wit text-xs font-bold tracking-wider">ROUND ${r.currentRound}/${r.totalRounds}</span>
-                    ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
+                    ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${esc(r.weeklyTheme.emoji)} ${esc(r.weeklyTheme.name)}</span>` : ''}
                 </div>
                 <span data-hud="submitted" class="text-[10px] font-mono text-gray-500 tracking-wider">${submitted}/${humanPlayers} SUBMITTED</span>
             </div>
@@ -986,7 +986,7 @@ function renderBetting() {
             <div class="glow-card p-3 flex justify-between items-center">
                 <div class="flex items-center gap-2">
                     <span class="font-mono text-consensus text-xs font-bold tracking-wider">ROUND ${r.currentRound} — BETTING</span>
-                    ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${r.weeklyTheme.emoji} ${r.weeklyTheme.name}</span>` : ''}
+                    ${r.weeklyTheme ? `<span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-1.5 py-0.5 rounded border border-consensus/20">${esc(r.weeklyTheme.emoji)} ${esc(r.weeklyTheme.name)}</span>` : ''}
                 </div>
                 <span data-hud="bets" class="text-[10px] font-mono text-gray-500 tracking-wider">${humanBets}/${humanPlayers} BET</span>
             </div>
@@ -1023,7 +1023,7 @@ function renderBetting() {
             ${(() => {
                 const budget = r.betBudgets?.[state.playerName] ?? 300;
                 const sliderMax = Math.min(100, budget);
-                if (state.betAmount > sliderMax) state.betAmount = sliderMax;
+                const displayBetAmount = Math.min(state.betAmount, sliderMax);
                 if (state.hasBet) return `
                     <div class="glow-card glow-card-green p-6 text-center">
                         <div class="w-14 h-14 rounded-full bg-consensus/10 border border-consensus/30 flex items-center justify-center mx-auto mb-3">
@@ -1045,8 +1045,8 @@ function renderBetting() {
                         </div>
                         <div class="flex items-center gap-3 mb-3">
                             <span class="text-[10px] font-mono text-gray-500 tracking-wider">BET</span>
-                            <input type="range" min="10" max="${sliderMax}" step="10" value="${state.betAmount}" oninput="state.betAmount=+this.value;updateBetDisplay()" class="flex-1">
-                            <span id="bet-amount-display" class="text-xl font-mono font-bold text-consensus">${state.betAmount}</span>
+                            <input type="range" min="10" max="${sliderMax}" step="10" value="${displayBetAmount}" oninput="state.betAmount=+this.value;updateBetDisplay()" class="flex-1">
+                            <span id="bet-amount-display" class="text-xl font-mono font-bold text-consensus">${displayBetAmount}</span>
                         </div>
                         <button id="bet-submit-btn" onclick="placeBet()" ${!state.selectedSubmission?'disabled':''} class="btn btn-play w-full py-3 rounded-xl font-bold text-sm">BET ON #${state.selectedSubmission||'?'}</button>
                     </div>`;
@@ -1209,12 +1209,13 @@ function renderRoundResults() {
     const isAI = judgingMethod === 'claude_api';
     const isAudienceVote = judgingMethod === 'audience_vote' || judgingMethod === 'audience_vote_ai_tiebreak';
 
-    const txHash = result.txHash || null;
+    const txHashRaw = result.txHash || null;
+    const txHash = txHashRaw && /^0x[0-9a-fA-F]+$/.test(txHashRaw) ? txHashRaw : null;
     const explorerUrl = txHash ? `https://explorer-bradbury.genlayer.com/transactions/${txHash}` : null;
 
     const isCoinFlip = judgingMethod === 'coin_flip';
     const methodBadge = isOnChain
-        ? `<span class="text-xs bg-green-600 px-2 py-1 rounded-full font-medium">⛓️ On-Chain Verified (Bradbury Testnet)</span>${txHash ? `<a href="${explorerUrl}" target="_blank" class="block text-[10px] text-green-400/70 mt-1 hover:underline">tx: ${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}</a>` : ''}`
+        ? `<span class="text-xs bg-green-600 px-2 py-1 rounded-full font-medium">⛓️ On-Chain Verified (Bradbury Testnet)</span>${txHash ? `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" class="block text-[10px] text-green-400/70 mt-1 hover:underline">tx: ${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}</a>` : ''}`
         : isAudienceVote
         ? `<span class="text-xs bg-cyan-600 px-2 py-1 rounded-full font-medium">🗳️ Audience Vote${result.totalVotes ? ` (${result.totalVotes} votes)` : ''}${judgingMethod === 'audience_vote_ai_tiebreak' ? ' + AI Tiebreak' : ''}</span>`
         : isAI
@@ -1351,7 +1352,7 @@ function renderRoundResults() {
                     <p class="text-xs font-mono text-gray-500 mt-1">${state.appealResult.overturned ? '50 XP refunded' : '50 XP lost'}</p>
                     ${state.appealResult.onChain ? `
                         <p class="text-[10px] font-mono text-green-400/70 mt-2 tracking-wider">VERIFIED ON GENLAYER BRADBURY TESTNET</p>
-                        ${state.appealResult.txHash ? `<a href="https://explorer-bradbury.genlayer.com/transactions/${state.appealResult.txHash}" target="_blank" class="text-[10px] font-mono text-green-400/50 hover:underline">tx: ${state.appealResult.txHash.substring(0, 10)}...</a>` : ''}
+                        ${state.appealResult.txHash && /^0x[0-9a-fA-F]+$/.test(state.appealResult.txHash) ? `<a href="https://explorer-bradbury.genlayer.com/transactions/${state.appealResult.txHash}" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono text-green-400/50 hover:underline">tx: ${state.appealResult.txHash.substring(0, 10)}...</a>` : ''}
                     ` : ''}
                 </div>
             ` : ''}
@@ -1481,7 +1482,7 @@ function renderFinalResults() {
             </div>
 
             <div class="grid grid-cols-2 gap-2">
-                <button onclick="createRoom('${r.category}',${r.isSinglePlayer})" class="btn btn-play py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Rematch</button>
+                <button onclick="createRoom('${esc(r.category).replace(/'/g, "\\'")}',${!!r.isSinglePlayer})" class="btn btn-play py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Rematch</button>
                 <button onclick="leaveRoom()" class="btn btn-primary py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Play Again</button>
             </div>
         </div>
@@ -1555,7 +1556,7 @@ function renderDailyChallenge() {
             <div class="glow-card glow-card-amber p-6">
                 <div class="text-center mb-4">
                     <h2 class="text-2xl font-display font-bold tracking-wider uppercase">DAILY ORACLE</h2>
-                    <p class="text-[10px] font-mono tracking-wider text-gray-400 uppercase mt-1">${dc.date}</p>
+                    <p class="text-[10px] font-mono tracking-wider text-gray-400 uppercase mt-1">${esc(dc.date)}</p>
                     ${state.profile?.dailyChallengeStreak > 0 ? `<p class="text-consensus font-mono font-bold mt-2">${state.profile.dailyChallengeStreak}-day streak</p>` : ''}
                 </div>
                 <div class="glow-card p-4 mb-4" style="background:linear-gradient(135deg,rgba(88,28,135,0.2),rgba(157,23,77,0.15),rgba(15,20,35,0.9))">
@@ -1656,8 +1657,8 @@ function renderProfileScreen() {
                             const unlocked = p.achievements.includes(a.id);
                             return `
                                 <div class="rounded-xl p-2.5 text-center ${unlocked ? 'bg-consensus/10 border border-consensus/30' : 'bg-obsidian/80 border border-white/[0.04] opacity-40'}">
-                                    <span class="text-2xl">${a.icon}</span>
-                                    <p class="text-xs ${unlocked ? 'text-white' : 'text-gray-500'} mt-1">${a.name}</p>
+                                    <span class="text-2xl">${esc(a.icon)}</span>
+                                    <p class="text-xs ${unlocked ? 'text-white' : 'text-gray-500'} mt-1">${esc(a.name)}</p>
                                 </div>`;
                         }).join('')}
                     </div>
@@ -1668,8 +1669,8 @@ function renderProfileScreen() {
                     <div class="grid grid-cols-3 gap-2">
                         ${state.allAchievements.map(a => `
                             <div class="rounded-xl p-2.5 text-center bg-obsidian/80 border border-white/[0.04] opacity-40">
-                                <span class="text-2xl">${a.icon}</span>
-                                <p class="text-xs text-gray-500 mt-1">${a.name}</p>
+                                <span class="text-2xl">${esc(a.icon)}</span>
+                                <p class="text-xs text-gray-500 mt-1">${esc(a.name)}</p>
                             </div>
                         `).join('')}
                     </div>
@@ -1745,7 +1746,7 @@ function renderCommunityPrompts() {
                                         ${p.status === 'pending' ? '<span class="text-[10px] font-mono text-consensus tracking-wider">NEEDS ' + (5 - (p.votes || 0)) + ' MORE</span>' : ''}
                                     </div>
                                 </div>
-                                <button onclick="voteCommunityPrompt('${p.id}')" class="btn btn-ghost px-3 py-2 rounded-lg text-center shrink-0" ${p.status === 'approved' ? 'disabled' : ''}>
+                                <button onclick="voteCommunityPrompt('${esc(p.id).replace(/'/g, "\\'")}')" class="btn btn-ghost px-3 py-2 rounded-lg text-center shrink-0" ${p.status === 'approved' ? 'disabled' : ''}>
                                     <span class="text-lg block">👍</span>
                                     <span class="text-xs text-gray-400">${p.votes || 0}</span>
                                 </button>

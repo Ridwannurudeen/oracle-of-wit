@@ -68,7 +68,7 @@ export async function redisHealthCheck() {
 export async function redisGet(key) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) { console.warn('[Redis] No credentials configured'); return null; }
     return withRetry(async () => {
-        const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
+        const res = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
         if (!res.ok) { console.warn(`[Redis] GET key=${key} failed: ${res.status} ${res.statusText}`); return null; }
@@ -80,7 +80,7 @@ export async function redisGet(key) {
 export async function redisSet(key, value, exSeconds = 7200) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) { console.warn('[Redis] No credentials configured'); return false; }
     return withRetry(async () => {
-        const res = await fetch(`${UPSTASH_URL}/set/${key}?EX=${exSeconds}`, {
+        const res = await fetch(`${UPSTASH_URL}/set/${encodeURIComponent(key)}?EX=${exSeconds}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
             body: JSON.stringify(value)
@@ -99,7 +99,7 @@ export async function redisSet(key, value, exSeconds = 7200) {
 export async function redisKeys(pattern) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) return [];
     try {
-        const res = await fetch(`${UPSTASH_URL}/keys/${pattern}`, {
+        const res = await fetch(`${UPSTASH_URL}/keys/${encodeURIComponent(pattern)}`, {
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
         const data = await res.json();
@@ -110,7 +110,7 @@ export async function redisKeys(pattern) {
 export async function redisIncr(key) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) return 0;
     try {
-        const res = await fetch(`${UPSTASH_URL}/incr/${key}`, {
+        const res = await fetch(`${UPSTASH_URL}/incr/${encodeURIComponent(key)}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
@@ -122,7 +122,7 @@ export async function redisIncr(key) {
 export async function redisExpire(key, seconds) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
     try {
-        const res = await fetch(`${UPSTASH_URL}/expire/${key}/${seconds}`, {
+        const res = await fetch(`${UPSTASH_URL}/expire/${encodeURIComponent(key)}/${seconds}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
@@ -134,7 +134,7 @@ export async function redisExpire(key, seconds) {
 export async function redisSetNX(key, value, exSeconds) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
     return withRetry(async () => {
-        const res = await fetch(`${UPSTASH_URL}/set/${key}/${JSON.stringify(value)}?NX&EX=${exSeconds}`, {
+        const res = await fetch(`${UPSTASH_URL}/set/${encodeURIComponent(key)}/${JSON.stringify(value)}?NX&EX=${exSeconds}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
@@ -146,7 +146,7 @@ export async function redisSetNX(key, value, exSeconds) {
 export async function redisDel(key) {
     if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
     try {
-        const res = await fetch(`${UPSTASH_URL}/del/${key}`, {
+        const res = await fetch(`${UPSTASH_URL}/del/${encodeURIComponent(key)}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
         });
