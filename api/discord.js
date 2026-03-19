@@ -3,9 +3,9 @@
 // Uses HTTP webhooks (no gateway/WebSocket) — perfect for serverless.
 
 import { createPublicKey, verify } from 'node:crypto';
-import { redisGet, redisSet, redisKeys } from './lib/redis.js';
-import { getGenLayerClient } from './lib/genlayer.js';
-import { CATEGORIZED_PROMPTS } from './lib/constants.js';
+import { redisGet, redisSet, redisKeys } from './_lib/redis.js';
+import { getGenLayerClient } from './_lib/genlayer.js';
+import { CATEGORIZED_PROMPTS } from './_lib/constants.js';
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;

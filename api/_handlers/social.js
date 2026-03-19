@@ -1,15 +1,15 @@
 // Social/community feature handlers
 
-import { redisGet, redisSet } from '../lib/redis.js';
-import { pickWinnerWithAI } from '../lib/ai.js';
-import { appealWithGenLayer } from '../lib/genlayer.js';
-import { getProfile, saveProfile } from '../lib/profiles.js';
+import { redisGet, redisSet } from '../_lib/redis.js';
+import { pickWinnerWithAI } from '../_lib/ai.js';
+import { appealWithGenLayer } from '../_lib/genlayer.js';
+import { getProfile, saveProfile } from '../_lib/profiles.js';
 
 /**
  * Create a friend challenge with a custom prompt.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function createChallenge(body, ctx) {
     const { creatorName, category } = body;
@@ -25,8 +25,8 @@ export async function createChallenge(body, ctx) {
 /**
  * Get a friend challenge by ID.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getChallenge(body, ctx) {
     const challengeId = ctx.query.id || body.challengeId;
@@ -39,8 +39,8 @@ export async function getChallenge(body, ctx) {
 /**
  * Appeal a round verdict using AI re-judging and GenLayer.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function appealVerdict(body, ctx) {
     const { roomId, playerName, roundIndex, playerId } = body;
@@ -100,8 +100,8 @@ export async function appealVerdict(body, ctx) {
 /**
  * Generate an Open Graph preview HTML page for social sharing.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function ogPreview(body, ctx) {
     const shareId = ctx.query.id;
@@ -128,8 +128,8 @@ export async function ogPreview(body, ctx) {
 /**
  * Create a shareable link for a game result.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function createShare(body, ctx) {
     const { winnerName, punchline, prompt, score, category } = body;
@@ -141,8 +141,8 @@ export async function createShare(body, ctx) {
 /**
  * Get the hall of fame (best winning jokes).
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getHallOfFame(body, ctx) {
     const hof = await redisGet('hall_of_fame') || [];
@@ -152,8 +152,8 @@ export async function getHallOfFame(body, ctx) {
 /**
  * Submit a community-created joke prompt.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function submitPrompt(body, ctx) {
     const { playerId } = body;
@@ -174,8 +174,8 @@ export async function submitPrompt(body, ctx) {
 /**
  * Vote for a community prompt (auto-approves at 5 votes).
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function votePrompt(body, ctx) {
     const { promptId, playerId } = body;
@@ -195,8 +195,8 @@ export async function votePrompt(body, ctx) {
 /**
  * Get all community prompt submissions sorted by votes.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getPromptSubmissions(body, ctx) {
     const prompts = await redisGet('community_prompts') || [];

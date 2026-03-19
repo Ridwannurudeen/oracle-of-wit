@@ -1,8 +1,8 @@
 // Health check endpoint — verifies Redis and GenLayer connectivity
 
-import { redisHealthCheck } from './lib/redis.js';
-import { getGenLayerClient } from './lib/genlayer.js';
-import { getMetrics } from './lib/monitor.js';
+import { redisHealthCheck } from './_lib/redis.js';
+import { getGenLayerClient } from './_lib/genlayer.js';
+import { getMetrics } from './_lib/monitor.js';
 
 export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-cache, no-store');

@@ -153,7 +153,7 @@ process.env.ANTHROPIC_API_KEY = 'sk-ant-fake';
 // Import the handler. Because game.js uses dynamic import() for genlayer-js,
 // and we don't have it installed in test, GenLayer calls will gracefully return null.
 const { default: handler } = await import('../api/game.js');
-const { _resetCircuit, redisGet } = await import('../api/lib/redis.js');
+const { _resetCircuit, redisGet } = await import('../api/_lib/redis.js');
 
 // ---------------------------------------------------------------------------
 // Helpers to simulate Vercel req/res

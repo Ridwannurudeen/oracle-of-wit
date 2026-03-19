@@ -1,17 +1,17 @@
 // Core game action handlers: startGame, submitPunchline, placeBet, castVote, advancePhase, nextRound, sendReaction
 
-import { SUBMISSION_TIME, VOTING_TIME } from '../lib/constants.js';
-import { pickWinnerWithAI, curateSubmissions } from '../lib/ai.js';
-import { transitionFromSubmitting, autoJudge, tallyVotesAndJudge, addBotBets, getNextPrompt } from '../lib/game-logic.js';
-import { recordOnChain, postGameToDiscord } from '../lib/genlayer.js';
-import { getProfile, saveProfile, checkAchievements } from '../lib/profiles.js';
-import { tursoRecordGameHistory } from '../lib/turso.js';
+import { SUBMISSION_TIME, VOTING_TIME } from '../_lib/constants.js';
+import { pickWinnerWithAI, curateSubmissions } from '../_lib/ai.js';
+import { transitionFromSubmitting, autoJudge, tallyVotesAndJudge, addBotBets, getNextPrompt } from '../_lib/game-logic.js';
+import { recordOnChain, postGameToDiscord } from '../_lib/genlayer.js';
+import { getProfile, saveProfile, checkAchievements } from '../_lib/profiles.js';
+import { tursoRecordGameHistory } from '../_lib/turso.js';
 
 /**
  * Start a game in the waiting room.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function startGame(body, ctx) {
     const { roomId, hostName } = body;
@@ -41,8 +41,8 @@ export async function startGame(body, ctx) {
 /**
  * Submit a punchline during the submission phase.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function submitPunchline(body, ctx) {
     const { roomId, playerName } = body;
@@ -72,8 +72,8 @@ export async function submitPunchline(body, ctx) {
 /**
  * Place a bet on a submission during the betting phase.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function placeBet(body, ctx) {
     const { roomId, playerName, amount } = body;
@@ -108,8 +108,8 @@ export async function placeBet(body, ctx) {
 /**
  * Cast a vote for a curated submission during the voting phase.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function castVote(body, ctx) {
     const { roomId, playerName } = body;
@@ -144,8 +144,8 @@ export async function castVote(body, ctx) {
 /**
  * Host-only: manually advance the game to the next phase.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function advancePhase(body, ctx) {
     const { roomId, hostName } = body;
@@ -181,8 +181,8 @@ export async function advancePhase(body, ctx) {
 /**
  * Host-only: advance to the next round or finish the game.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function nextRound(body, ctx) {
     const { roomId, hostName, playerId } = body;
@@ -281,8 +281,8 @@ export async function nextRound(body, ctx) {
 /**
  * Send an emoji reaction on a submission during betting.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function sendReaction(body, ctx) {
     const { roomId, playerName, emoji } = body;

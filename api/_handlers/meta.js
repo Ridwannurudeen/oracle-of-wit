@@ -1,12 +1,12 @@
 // Config/meta handlers
 
-import { getCurrentTheme } from '../lib/constants.js';
+import { getCurrentTheme } from '../_lib/constants.js';
 
 /**
  * Get the current weekly theme.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getWeeklyTheme(body, ctx) {
     const theme = getCurrentTheme();

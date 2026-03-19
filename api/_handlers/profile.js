@@ -1,19 +1,19 @@
 // Player profiles and leaderboard handlers
 
-import { redisGet, redisSet } from '../lib/redis.js';
-import { BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, ACHIEVEMENTS } from '../lib/constants.js';
-import { pickWinnerWithAI } from '../lib/ai.js';
-import { getGenLayerClient } from '../lib/genlayer.js';
-import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey } from '../lib/profiles.js';
-import { generateToken, storePlayerSession } from '../lib/auth.js';
-import { generateNonce, storeNonce, consumeNonce, verifySiweMessage } from '../lib/wallet-auth.js';
-import { tursoUpsertUser } from '../lib/turso.js';
+import { redisGet, redisSet } from '../_lib/redis.js';
+import { BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, ACHIEVEMENTS } from '../_lib/constants.js';
+import { pickWinnerWithAI } from '../_lib/ai.js';
+import { getGenLayerClient } from '../_lib/genlayer.js';
+import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey } from '../_lib/profiles.js';
+import { generateToken, storePlayerSession } from '../_lib/auth.js';
+import { generateNonce, storeNonce, consumeNonce, verifySiweMessage } from '../_lib/wallet-auth.js';
+import { tursoUpsertUser } from '../_lib/turso.js';
 
 /**
  * Get the global leaderboard (top 20).
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getLeaderboard(body, ctx) {
     const leaderboard = await ctx.getLeaderboard();
@@ -23,8 +23,8 @@ export async function getLeaderboard(body, ctx) {
 /**
  * Get a player's profile by ID.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getProfileHandler(body, ctx) {
     const playerId = body.playerId || ctx.query.playerId;
@@ -37,8 +37,8 @@ export async function getProfileHandler(body, ctx) {
 /**
  * Create or update a player profile.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function createProfile(body, ctx) {
     const { playerId, playerName } = body;
@@ -57,8 +57,8 @@ export async function createProfile(body, ctx) {
 /**
  * Get today's daily challenge prompt and status.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getDailyChallenge(body, ctx) {
     const { playerId } = body;
@@ -72,8 +72,8 @@ export async function getDailyChallenge(body, ctx) {
 /**
  * Submit a punchline for the daily challenge.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function submitDailyChallenge(body, ctx) {
     const { playerId, playerName, punchline } = body;
@@ -136,8 +136,8 @@ export async function submitDailyChallenge(body, ctx) {
 /**
  * Get a player's game history (GenLayer or Redis fallback).
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getPlayerHistory(body, ctx) {
     const playerName = body.playerName || ctx.query.playerName;
@@ -162,8 +162,8 @@ export async function getPlayerHistory(body, ctx) {
 /**
  * Get the seasonal leaderboard for a given month.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getSeasonalLeaderboard(body, ctx) {
     const season = body.season || ctx.query.season || getCurrentSeasonKey();
@@ -174,8 +174,8 @@ export async function getSeasonalLeaderboard(body, ctx) {
 /**
  * Get archived season data from GenLayer.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getSeasonArchive(body, ctx) {
     const seasonId = body.seasonId || ctx.query.seasonId;
@@ -195,8 +195,8 @@ export async function getSeasonArchive(body, ctx) {
 /**
  * Generate and return a SIWE nonce for wallet authentication.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function requestNonce(body, ctx) {
     const nonce = generateNonce();
@@ -208,8 +208,8 @@ export async function requestNonce(body, ctx) {
  * Verify a SIWE signature, upsert user in Turso, create/load profile,
  * and issue a player session token.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function verifyWallet(body, ctx) {
     const { message, signature } = body;

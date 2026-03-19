@@ -1,12 +1,12 @@
 // Oracle of Wit API — Powered by GenLayer Intelligent Contracts
 
-import { redisGet, redisSet, redisKeys, redisSAdd, redisSRem, redisSetNX, redisDel } from './lib/redis.js';
-import { getCorsOrigin, validateSession, validatePlayerSession, checkRateLimit } from './lib/auth.js';
-import { checkAutoAdvance, acquireAdvanceLock, releaseAdvanceLock } from './lib/game-logic.js';
-import { getLeaderboard as getLeaderboardFromStore, setLeaderboard as setLeaderboardToStore, updateLeaderboard } from './lib/profiles.js';
-import { handlers } from './handlers/index.js';
-import { logger } from './lib/logger.js';
-import { trackRequest } from './lib/monitor.js';
+import { redisGet, redisSet, redisKeys, redisSAdd, redisSRem, redisSetNX, redisDel } from './_lib/redis.js';
+import { getCorsOrigin, validateSession, validatePlayerSession, checkRateLimit } from './_lib/auth.js';
+import { checkAutoAdvance, acquireAdvanceLock, releaseAdvanceLock } from './_lib/game-logic.js';
+import { getLeaderboard as getLeaderboardFromStore, setLeaderboard as setLeaderboardToStore, updateLeaderboard } from './_lib/profiles.js';
+import { handlers } from './_handlers/index.js';
+import { logger } from './_lib/logger.js';
+import { trackRequest } from './_lib/monitor.js';
 
 /** @type {string|undefined} */
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
@@ -31,7 +31,7 @@ function sanitizeInput(str) {
 /**
  * Get a room directly from Redis without auto-advance check.
  * @param {string} roomId
- * @returns {Promise<import('./lib/types.js').Room|null>}
+ * @returns {Promise<import('./_lib/types.js').Room|null>}
  */
 async function getRoomRaw(roomId) {
     let room = await redisGet(`room:${roomId}`);
@@ -43,7 +43,7 @@ async function getRoomRaw(roomId) {
 /**
  * Get a room from Redis, auto-advancing phase if timer expired.
  * @param {string} roomId
- * @returns {Promise<import('./lib/types.js').Room|null>}
+ * @returns {Promise<import('./_lib/types.js').Room|null>}
  */
 async function getRoom(roomId) {
     let room = await getRoomRaw(roomId);
@@ -64,7 +64,7 @@ async function getRoom(roomId) {
 /**
  * Persist a room to Redis.
  * @param {string} roomId
- * @param {import('./lib/types.js').Room} room
+ * @param {import('./_lib/types.js').Room} room
  * @returns {Promise<boolean>}
  */
 async function setRoom(roomId, room) {
@@ -89,7 +89,7 @@ async function setRoom(roomId, room) {
 
 /**
  * Get the global leaderboard.
- * @returns {Promise<import('./lib/types.js').LeaderboardEntry[]>}
+ * @returns {Promise<import('./_lib/types.js').LeaderboardEntry[]>}
  */
 async function _getLeaderboard() {
     return await getLeaderboardFromStore();
@@ -97,7 +97,7 @@ async function _getLeaderboard() {
 
 /**
  * Set the global leaderboard.
- * @param {import('./lib/types.js').LeaderboardEntry[]} lb
+ * @param {import('./_lib/types.js').LeaderboardEntry[]} lb
  * @returns {Promise<void>}
  */
 async function _setLeaderboard(lb) {

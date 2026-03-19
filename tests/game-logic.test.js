@@ -1,5 +1,5 @@
 /**
- * Unit tests for api/lib/game-logic.js
+ * Unit tests for api/_lib/game-logic.js
  *
  * Mocks: redis, ai, genlayer, logger, constants (partially)
  * Pattern: vi.mock() at top level (hoisted), helper factories for room/submission objects
@@ -10,26 +10,26 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mocks — vi.mock is hoisted above imports automatically
 // ---------------------------------------------------------------------------
 
-vi.mock('../api/lib/redis.js', () => ({
+vi.mock('../api/_lib/redis.js', () => ({
     redisGet: vi.fn(async () => []),
     redisSet: vi.fn(async () => true),
     redisSetNX: vi.fn(async () => true),
     redisDel: vi.fn(async () => true),
 }));
 
-vi.mock('../api/lib/ai.js', () => ({
+vi.mock('../api/_lib/ai.js', () => ({
     pickWinnerWithAI: vi.fn(async () => ({ winnerId: null, aiCommentary: null })),
     curateSubmissions: vi.fn(async () => null),
     generateBotPunchlines: vi.fn(async () => null),
     pickWinnerRandom: vi.fn(() => null),
 }));
 
-vi.mock('../api/lib/genlayer.js', () => ({
+vi.mock('../api/_lib/genlayer.js', () => ({
     submitToGenLayer: vi.fn(async () => null),
     pollGenLayerResult: vi.fn(async () => null),
 }));
 
-vi.mock('../api/lib/logger.js', () => ({
+vi.mock('../api/_lib/logger.js', () => ({
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
@@ -46,12 +46,12 @@ import {
     addBotSubmissions,
     addBotBets,
     getPromptsForCategory,
-} from '../api/lib/game-logic.js';
+} from '../api/_lib/game-logic.js';
 
-import { redisGet, redisSet } from '../api/lib/redis.js';
-import { pickWinnerWithAI, generateBotPunchlines, pickWinnerRandom } from '../api/lib/ai.js';
-import { submitToGenLayer, pollGenLayerResult } from '../api/lib/genlayer.js';
-import { CATEGORIZED_PROMPTS } from '../api/lib/constants.js';
+import { redisGet, redisSet } from '../api/_lib/redis.js';
+import { pickWinnerWithAI, generateBotPunchlines, pickWinnerRandom } from '../api/_lib/ai.js';
+import { submitToGenLayer, pollGenLayerResult } from '../api/_lib/genlayer.js';
+import { CATEGORIZED_PROMPTS } from '../api/_lib/constants.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

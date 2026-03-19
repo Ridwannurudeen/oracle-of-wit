@@ -1,15 +1,15 @@
 // Room management handlers: createRoom, joinRoom, getRoom, listRooms
 
-import { redisKeys, redisSRange } from '../lib/redis.js';
-import { generateToken, storeSessionToken, storePlayerSession } from '../lib/auth.js';
-import { BOT_NAMES, getCurrentTheme } from '../lib/constants.js';
-import { createGameOnChain } from '../lib/genlayer.js';
+import { redisKeys, redisSRange } from '../_lib/redis.js';
+import { generateToken, storeSessionToken, storePlayerSession } from '../_lib/auth.js';
+import { BOT_NAMES, getCurrentTheme } from '../_lib/constants.js';
+import { createGameOnChain } from '../_lib/genlayer.js';
 
 /**
  * Create a new game room.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function createRoom(body, ctx) {
     const { category, maxPlayers = 100, singlePlayer = false } = body;
@@ -68,8 +68,8 @@ export async function createRoom(body, ctx) {
 /**
  * Join an existing game room or spectate.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function joinRoom(body, ctx) {
     const { roomId, spectator } = body;
@@ -117,8 +117,8 @@ export async function joinRoom(body, ctx) {
 /**
  * Get the current state of a room.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getRoom(body, ctx) {
     const roomId = ctx.query.roomId;
@@ -131,8 +131,8 @@ export async function getRoom(body, ctx) {
 /**
  * List all active public rooms with pagination.
  * @param {Object} body
- * @param {import('../lib/types.js').HandlerContext} ctx
- * @returns {Promise<import('../lib/types.js').HandlerResult>}
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function listRooms(body, ctx) {
     const page = Math.max(1, parseInt(ctx.query.page, 10) || 1);

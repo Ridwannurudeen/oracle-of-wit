@@ -1,10 +1,10 @@
 // Vercel Cron Job — advance stale game phases
 // Runs every 60 seconds to catch games where all clients disconnected
 
-import { redisKeys, redisGet } from '../lib/redis.js';
-import { checkAutoAdvance, acquireAdvanceLock, releaseAdvanceLock } from '../lib/game-logic.js';
-import { redisSet } from '../lib/redis.js';
-import { logger } from '../lib/logger.js';
+import { redisKeys, redisGet } from '../_lib/redis.js';
+import { checkAutoAdvance, acquireAdvanceLock, releaseAdvanceLock } from '../_lib/game-logic.js';
+import { redisSet } from '../_lib/redis.js';
+import { logger } from '../_lib/logger.js';
 
 async function setRoom(roomId, room) {
     room.version = (room.version || 0) + 1;
