@@ -1,8 +1,15 @@
 // Player profiles, daily challenges, leaderboard helpers
 
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
-import { LEVEL_THRESHOLDS, ACHIEVEMENTS, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES } from './constants.js';
+import { LEVEL_THRESHOLDS, ACHIEVEMENTS, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, CATEGORIZED_PROMPTS } from './constants.js';
+import { logger } from './logger.js';
+import { tursoGetProfile, tursoSaveProfile, tursoUpdateLeaderboard } from './turso.js';
 
+/**
+ * Get the level info for a given XP amount.
+ * @param {number} xp
+ * @returns {import('./types.js').LevelThreshold}
+ */
 export function getLevelForXP(xp) {
     let result = LEVEL_THRESHOLDS[0];
     for (const t of LEVEL_THRESHOLDS) {
@@ -11,6 +18,11 @@ export function getLevelForXP(xp) {
     return result;
 }
 
+/**
+ * Get the XP threshold for the next level.
+ * @param {number} xp
+ * @returns {number|null} The next level's XP threshold, or null if max level.
+ */
 export function getNextLevelXP(xp) {
     for (const t of LEVEL_THRESHOLDS) {
         if (xp < t.xp) return t.xp;
@@ -18,17 +30,45 @@ export function getNextLevelXP(xp) {
     return null;
 }
 
+/**
+ * Retrieve a player profile. Redis first, Turso fallback.
+ * @param {string} playerId
+ * @returns {Promise<import('./types.js').Profile|null>}
+ */
 export async function getProfile(playerId) {
-    return await redisGet(`player:${playerId}`);
+    const cached = await redisGet(`player:${playerId}`);
+    if (cached) return cached;
+    // Turso fallback — rehydrate Redis cache on hit
+    const persisted = await tursoGetProfile(playerId);
+    if (persisted) {
+        const level = getLevelForXP(persisted.lifetimeXP);
+        persisted.level = level.level;
+        persisted.title = level.title;
+        await redisSet(`player:${playerId}`, persisted, 86400 * 365);
+    }
+    return persisted;
 }
 
+/**
+ * Save a player profile to Redis + Turso (auto-calculates level/title).
+ * @param {import('./types.js').Profile} profile
+ * @returns {Promise<void>}
+ */
 export async function saveProfile(profile) {
     const level = getLevelForXP(profile.lifetimeXP);
     profile.level = level.level;
     profile.title = level.title;
     await redisSet(`player:${profile.id}`, profile, 86400 * 365);
+    // Fire-and-forget Turso write (non-blocking)
+    tursoSaveProfile(profile).catch(() => {});
 }
 
+/**
+ * Create a default player profile with initial values.
+ * @param {string} playerId
+ * @param {string} playerName
+ * @returns {import('./types.js').Profile}
+ */
 export function createDefaultProfile(playerId, playerName) {
     return {
         id: playerId, name: playerName, createdAt: Date.now(),
@@ -40,6 +80,12 @@ export function createDefaultProfile(playerId, playerName) {
     };
 }
 
+/**
+ * Check and award new achievements based on profile stats.
+ * @param {import('./types.js').Profile} profile
+ * @param {{perfectGame?: boolean, comeback?: boolean}} [extraContext={}]
+ * @returns {string[]} Array of newly earned achievement IDs.
+ */
 export function checkAchievements(profile, extraContext = {}) {
     const newAchievements = [];
     const has = id => profile.achievements.includes(id);
@@ -60,83 +106,71 @@ export function checkAchievements(profile, extraContext = {}) {
     return newAchievements;
 }
 
+/**
+ * Get today's date as a UTC key string (YYYY-MM-DD).
+ * @returns {string}
+ */
 export function getTodayKey() {
     const d = new Date();
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
 
+/**
+ * Get the deterministic daily challenge prompt based on the current date.
+ * @returns {string}
+ */
 export function getDailyPrompt() {
-    const basePrompts = {
-        tech: [
-            "Why do programmers prefer dark mode? Because...",
-            "How many programmers does it take to change a light bulb?",
-            "Why do Java developers wear glasses? Because...",
-            "A SQL query walks into a bar, walks up to two tables and asks...",
-            "Why did the developer go broke?",
-            "My code worked on the first try, which means...",
-            "The senior dev looked at my PR and said...",
-            "I deployed on Friday and then...",
-            "The bug wasn't a bug, it was...",
-            "Stack Overflow marked my question as duplicate because..."
-        ],
-        crypto: [
-            "Why did Bitcoin break up with the dollar?",
-            "How does a crypto bro propose?",
-            "Why did the NFT go to therapy?",
-            "WAGMI until...",
-            "I bought the dip, but then...",
-            "My portfolio is down 90% because...",
-            "The whitepaper promised... but delivered...",
-            "The gas fees were so high that...",
-            "Diamond hands means...",
-            "The airdrop was worth..."
-        ],
-        general: [
-            "Why don't scientists trust atoms?",
-            "The meeting could have been an email, but instead...",
-            "My therapist said I need to stop...",
-            "I'm not procrastinating, I'm...",
-            "The secret to success is...",
-            "Dating apps taught me that...",
-            "My superpower would be...",
-            "Life hack: instead of being productive...",
-            "I told my boss I was late because...",
-            "My New Year's resolution lasted until..."
-        ]
-    };
-    const allPrompts = [...basePrompts.tech, ...basePrompts.crypto, ...basePrompts.general];
+    const allPrompts = [...CATEGORIZED_PROMPTS.tech, ...CATEGORIZED_PROMPTS.crypto, ...CATEGORIZED_PROMPTS.general];
     const today = new Date();
     const dayNum = Math.floor(today.getTime() / 86400000);
     return allPrompts[dayNum % allPrompts.length];
 }
 
+/**
+ * Get the current season key (YYYY-MM).
+ * @returns {string}
+ */
 export function getCurrentSeasonKey() {
     const d = new Date();
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
 }
 
-export async function getLeaderboard(fallbackLeaderboard) {
-    return await redisGet('leaderboard') || [...fallbackLeaderboard];
+/**
+ * Get the global leaderboard from Redis.
+ * @returns {Promise<import('./types.js').LeaderboardEntry[]>}
+ */
+export async function getLeaderboard() {
+    return await redisGet('leaderboard') || [];
 }
 
-export async function setLeaderboard(lb, fallbackLeaderboard) {
-    fallbackLeaderboard.length = 0;
-    fallbackLeaderboard.push(...lb);
+/**
+ * Set the global leaderboard in Redis.
+ * @param {import('./types.js').LeaderboardEntry[]} lb
+ * @returns {Promise<void>}
+ */
+export async function setLeaderboard(lb) {
     await redisSet('leaderboard', lb);
 }
 
-export async function updateLeaderboard(playerName, score, isBot, fallbackLeaderboard) {
+/**
+ * Update a player's entry on the global and seasonal leaderboards.
+ * @param {string} playerName
+ * @param {number} score
+ * @param {boolean} isBot
+ * @returns {Promise<void>}
+ */
+export async function updateLeaderboard(playerName, score, isBot) {
     if (isBot) return;
 
     // Acquire lock to prevent concurrent read-modify-write corruption
     const lockAcquired = await redisSetNX('lock:lb', 1, 10);
     if (!lockAcquired) {
-        console.warn('[Leaderboard] Lock busy, skipping update (next round will catch up)');
+        logger.warn('Lock busy, skipping update (next round will catch up)', { service: 'leaderboard' });
         return;
     }
 
     try {
-        const lb = await getLeaderboard(fallbackLeaderboard);
+        const lb = await getLeaderboard();
         const existing = lb.find(p => p.name === playerName);
         if (existing) {
             existing.totalScore += score;
@@ -145,7 +179,7 @@ export async function updateLeaderboard(playerName, score, isBot, fallbackLeader
             lb.push({ name: playerName, totalScore: score, gamesPlayed: 1 });
         }
         lb.sort((a, b) => b.totalScore - a.totalScore);
-        await setLeaderboard(lb.slice(0, 100), fallbackLeaderboard);
+        await setLeaderboard(lb.slice(0, 100));
 
         const seasonKey = getCurrentSeasonKey();
         const slb = await redisGet(`leaderboard:${seasonKey}`) || [];
@@ -158,6 +192,10 @@ export async function updateLeaderboard(playerName, score, isBot, fallbackLeader
         }
         slb.sort((a, b) => b.totalScore - a.totalScore);
         await redisSet(`leaderboard:${seasonKey}`, slb.slice(0, 100), 86400 * 90);
+
+        // Fire-and-forget Turso write for both global and seasonal
+        tursoUpdateLeaderboard(playerName, score, 'all-time').catch(() => {});
+        tursoUpdateLeaderboard(playerName, score, seasonKey).catch(() => {});
     } finally {
         await redisDel('lock:lb');
     }

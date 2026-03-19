@@ -1,9 +1,16 @@
-// Oracle of Wit — Results Screen Renderers (ES Module)
+/**
+ * @module render-results
+ * @description Results screen renderers: dramatic reveal, round results, final results.
+ */
 
 import { state } from './state.js';
 import { esc, glLogo, getTodayKeyClient } from './render-helpers.js';
 import { renderJudging } from './render-game.js';
 
+/**
+ * Render the dramatic joke reveal sequence with eliminated/winner animations.
+ * @returns {string} HTML string.
+ */
 export function renderRevealing() {
     if (!state.room) return '';
     const r = state.room;
@@ -114,6 +121,11 @@ export function renderRevealing() {
     `;
 }
 
+/**
+ * Render the round results screen with winner, validator consensus,
+ * AI commentary, standings, and appeal option.
+ * @returns {string} HTML string.
+ */
 export function renderRoundResults() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
@@ -287,6 +299,11 @@ export function renderRoundResults() {
     `;
 }
 
+/**
+ * Render the final game results with session recap, profile update,
+ * final standings, and share/rematch options.
+ * @returns {string} HTML string.
+ */
 export function renderFinalResults() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;

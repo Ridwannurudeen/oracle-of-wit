@@ -1,4 +1,11 @@
-// Oracle of Wit — Event Delegation (ES Module)
+/**
+ * @module events
+ * @description Event delegation module. Registers global listeners for click, input,
+ * focus, blur, keypress, keydown, keyup, and mouseenter events. Routes actions via
+ * `data-action`, `data-action-input`, `data-action-focus`, `data-action-blur`,
+ * `data-action-keypress`, `data-action-keydown`, `data-action-keyup`, and
+ * `data-hover-sound` attributes.
+ */
 
 import { state } from './state.js';
 import { setTyping, updateCharCount } from './api.js';
@@ -11,7 +18,8 @@ import {
     createChallengeLink, shareRoundResult, shareFinalResult,
     copyShareText, tweetResult, fetchDailyChallenge, submitDailyChallenge,
     fetchCommunityPrompts, submitCommunityPrompt, voteCommunityPrompt,
-    fetchHallOfFame, copyRoomCode, updateBetDisplay, fetchProfile
+    fetchHallOfFame, copyRoomCode, updateBetDisplay, fetchProfile,
+    connectWallet, disconnectWallet
 } from './app.js';
 
 // === CLICK EVENT DELEGATION ===
@@ -178,6 +186,14 @@ document.addEventListener('click', function(e) {
             break;
         case 'voteCommunityPrompt':
             voteCommunityPrompt(target.dataset.promptId);
+            break;
+
+        // --- Wallet ---
+        case 'connectWallet':
+            connectWallet();
+            break;
+        case 'disconnectWallet':
+            disconnectWallet();
             break;
     }
 });

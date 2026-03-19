@@ -3,9 +3,9 @@
 import { state, validatorVotingInterval, setValidatorVotingInterval, revealTimeouts, setRevealTimeouts } from './state.js';
 import { soundEnabled, audioCtx, setAudioCtx } from './api.js';
 
-// Late-binding for render to avoid circular imports
+/** @type {((force?: boolean) => void)|null} Late-binding render to avoid circular imports. */
 let _render = null;
-export function bindEffectsRender(fn) { _render = fn; }
+/** @param {(force?: boolean) => void} fn */ export function bindEffectsRender(fn) { _render = fn; }
 
 // === DATA MIST PARTICLE SYSTEM ===
 (function initMist() {
@@ -52,7 +52,10 @@ export function bindEffectsRender(fn) { _render = fn; }
     draw();
 })();
 
-// === 3D ORACLE EYE (Three.js) ===
+/**
+ * 3D Oracle Eye rendered with Three.js shaders. Tracks mouse movement,
+ * changes colour/pulse based on game state, and supports multiple DOM mount points.
+ */
 class OracleEye3D {
     constructor() {
         this.instances = [];
@@ -75,6 +78,12 @@ class OracleEye3D {
         }
     }
 
+    /**
+     * Mount a new 3D eye instance into a DOM container.
+     * @param {HTMLElement} container - DOM element to append the renderer canvas to.
+     * @param {number} [size=160] - Pixel width/height of the eye.
+     * @returns {Object|null} Eye instance, or null if Three.js unavailable.
+     */
     mount(container, size = 160) {
         if (!this.available) return null;
         try {
@@ -170,6 +179,11 @@ class OracleEye3D {
         }
     }
 
+    /**
+     * Set the eye's visual state (colour, pulse speed, dilation) based on game phase.
+     * @param {string} stateName - Current game screen/state name.
+     * @returns {void}
+     */
     setGameState(stateName) {
         switch(stateName) {
             case 'idle': case 'welcome': case 'lobby':
@@ -204,9 +218,14 @@ class OracleEye3D {
         }
     }
 
-    dilate() { this.targetDilation = 0.45; }
-    undilate() { this.targetDilation = 0.3; }
+    /** Dilate the pupil (e.g. on input focus). */ dilate() { this.targetDilation = 0.45; }
+    /** Constrict the pupil back to default. */ undilate() { this.targetDilation = 0.3; }
 
+    /**
+     * Main animation loop. Smoothly interpolates colour, mouse tracking,
+     * and dilation, then renders all active instances.
+     * @returns {void}
+     */
     animate() {
         this.targetX += (this.mouseX - this.targetX) * 0.08;
         this.targetY += (this.mouseY - this.targetY) * 0.08;
@@ -239,14 +258,23 @@ class OracleEye3D {
         requestAnimationFrame(() => this.animate());
     }
 
+    /** Start the animation loop if Three.js is available. */
     start() {
         if (this.available) this.animate();
     }
 }
 
+/** @type {OracleEye3D} Singleton 3D oracle eye instance. */
 export const oracleEye3D = new OracleEye3D();
 oracleEye3D.start();
 
+/**
+ * Mount the 3D oracle eye into a container element by ID.
+ * No-ops if container not found or already has a canvas.
+ * @param {string} containerId - DOM element ID.
+ * @param {number} size - Pixel size for the eye.
+ * @returns {void}
+ */
 export function mountOracleEye(containerId, size) {
     const el = document.getElementById(containerId);
     if (!el || el.querySelector('canvas')) return;
@@ -268,12 +296,20 @@ document.addEventListener('mousemove', e => {
     });
 });
 
-// === AUDIO SYSTEM ===
+/**
+ * Initialise the Web Audio API context. Creates one if needed and resumes if suspended.
+ * @returns {void}
+ */
 export function initAudio() {
     if (!audioCtx) setAudioCtx(new (window.AudioContext || window.webkitAudioContext)());
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 
+/**
+ * Play a synthesised sound effect using Web Audio oscillators.
+ * @param {string} type - Sound type key (e.g. 'click', 'submit', 'win', 'drumroll').
+ * @returns {void}
+ */
 export function playSound(type) {
     if (!soundEnabled || !audioCtx) return;
     const sounds = {
@@ -305,7 +341,7 @@ export function playSound(type) {
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
             osc.start(audioCtx.currentTime);
             osc.stop(audioCtx.currentTime + 0.6);
-        } catch(e) {}
+        } catch (_e) { /* audio may not be available */ }
         return;
     }
     if (type === 'transition') {
@@ -320,7 +356,7 @@ export function playSound(type) {
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
             osc.start(audioCtx.currentTime);
             osc.stop(audioCtx.currentTime + 0.2);
-        } catch(e) {}
+        } catch (_e) { /* audio may not be available */ }
         return;
     }
     if (type === 'hover') {
@@ -333,7 +369,7 @@ export function playSound(type) {
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
             osc.start(audioCtx.currentTime);
             osc.stop(audioCtx.currentTime + 0.05);
-        } catch(e) {}
+        } catch (_e) { /* audio may not be available */ }
         return;
     }
     const s = sounds[type];
@@ -350,10 +386,13 @@ export function playSound(type) {
             osc.start(audioCtx.currentTime + i * 0.1);
             osc.stop(audioCtx.currentTime + s[1] + i * 0.1);
         });
-    } catch(e) {}
+    } catch (_e) { /* audio may not be available */ }
 }
 
-// === CONFETTI ===
+/**
+ * Create a burst of 60 coloured confetti particles that fall and auto-remove.
+ * @returns {void}
+ */
 export function createConfetti() {
     const colors = ['#f59e0b','#ec4899','#6366f1','#10b981','#ef4444','#8b5cf6'];
     for (let i = 0; i < 60; i++) {
@@ -369,7 +408,11 @@ export function createConfetti() {
     }
 }
 
-// === VALIDATOR VOTING ANIMATION ===
+/**
+ * Start the animated validator voting sequence. Simulates 5 validators
+ * casting votes at 800ms intervals with sound effects.
+ * @returns {void}
+ */
 export function startValidatorVoting() {
     if (validatorVotingInterval) return;
 
@@ -417,6 +460,10 @@ export function startValidatorVoting() {
     }, 800));
 }
 
+/**
+ * Stop the validator voting animation and clear the interval.
+ * @returns {void}
+ */
 export function stopValidatorVoting() {
     if (validatorVotingInterval) {
         clearInterval(validatorVotingInterval);
@@ -424,7 +471,11 @@ export function stopValidatorVoting() {
     }
 }
 
-// === DRAMATIC REVEAL SEQUENCE ===
+/**
+ * Start the dramatic joke reveal sequence. Reveals eliminated submissions
+ * at 2.5s intervals, then the winner with confetti and a screen flash.
+ * @returns {void}
+ */
 export function startRevealSequence() {
     stopRevealSequence();
     const r = state.room;
@@ -491,6 +542,10 @@ export function startRevealSequence() {
     }, 2500);
 }
 
+/**
+ * Stop the reveal sequence, clear all timeouts, and reset reveal state.
+ * @returns {void}
+ */
 export function stopRevealSequence() {
     if (state.revealTimer) { clearInterval(state.revealTimer); state.revealTimer = null; }
     revealTimeouts.forEach(t => clearTimeout(t));
@@ -500,12 +555,22 @@ export function stopRevealSequence() {
     state.revealIndex = -1;
 }
 
+/**
+ * Skip the reveal animation and jump directly to the round results.
+ * @returns {void}
+ */
 export function skipReveal() {
     stopRevealSequence();
     playSound('win');
     if (_render) _render(true);
 }
 
+/**
+ * Play a transition sound when switching between screens.
+ * @param {string} oldScreen - Previous screen name.
+ * @param {string} newScreen - New screen name.
+ * @returns {void}
+ */
 export function playScreenTransition(oldScreen, newScreen) {
     if (oldScreen === newScreen) return;
     playSound('transition');

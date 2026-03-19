@@ -1,5 +1,9 @@
-// Oracle of Wit — ES Module Entry Point
-// This file wires up late bindings and boots the app.
+/**
+ * @module main
+ * @description ES Module entry point. Wires up late-binding references to break
+ * circular dependency chains between render, api, effects, and app modules,
+ * then boots the application.
+ */
 
 import { render, renderLeftWingContent, renderRightWingContent } from './render.js';
 import { bindRender, bindLeaveRoom, bindRenderLeftWingContent, bindRenderRightWingContent, bindHandlePhaseChange, bindSyncTimer } from './api.js';

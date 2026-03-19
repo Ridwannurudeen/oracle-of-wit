@@ -3,13 +3,12 @@
 // Uses HTTP webhooks (no gateway/WebSocket) — perfect for serverless.
 
 import { createPublicKey, verify } from 'node:crypto';
+import { redisGet, redisSet, redisKeys } from './lib/redis.js';
+import { getGenLayerClient } from './lib/genlayer.js';
+import { CATEGORIZED_PROMPTS } from './lib/constants.js';
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
-const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
 
 const APP_URL = 'https://oracle-of-wit.vercel.app';
 const WIT_PURPLE = 0xA855F7;
@@ -23,183 +22,10 @@ const PONG = 1;
 const CHANNEL_MESSAGE = 4;
 
 // ---------------------------------------------------------------------------
-// Inline Redis helpers (small duplication from game.js to avoid risky refactor)
+// Joke prompts — derived from canonical PROMPT_PUNCHLINES source
 // ---------------------------------------------------------------------------
-async function redisGet(key) {
-    if (!UPSTASH_URL || !UPSTASH_TOKEN) return null;
-    try {
-        const res = await fetch(`${UPSTASH_URL}/get/${key}`, {
-            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        return data.result ? JSON.parse(data.result) : null;
-    } catch { return null; }
-}
-
-async function redisSet(key, value, exSeconds = 7200) {
-    if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
-    try {
-        const res = await fetch(`${UPSTASH_URL}/set/${key}?EX=${exSeconds}`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
-            body: JSON.stringify(value)
-        });
-        return res.ok;
-    } catch { return false; }
-}
-
-async function redisKeys(pattern) {
-    if (!UPSTASH_URL || !UPSTASH_TOKEN) return [];
-    try {
-        const res = await fetch(`${UPSTASH_URL}/keys/${pattern}`, {
-            headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
-        });
-        const data = await res.json();
-        return data.result || [];
-    } catch { return []; }
-}
-
-// ---------------------------------------------------------------------------
-// GenLayer client (lazy-init, same pattern as game.js)
-// ---------------------------------------------------------------------------
-let _glClient = null;
-async function getGenLayerClient() {
-    if (_glClient) return _glClient;
-    if (!GENLAYER_PRIVATE_KEY || !GENLAYER_CONTRACT_ADDRESS) return null;
-    try {
-        const { createClient, createAccount } = await import('genlayer-js');
-        const { testnetBradbury } = await import('genlayer-js/chains');
-        const account = createAccount(GENLAYER_PRIVATE_KEY);
-        _glClient = createClient({ chain: testnetBradbury, account });
-        return _glClient;
-    } catch { return null; }
-}
-
-// ---------------------------------------------------------------------------
-// Joke prompts (subset for /joke command)
-// ---------------------------------------------------------------------------
-const JOKE_PROMPTS = {
-    tech: [
-        "Why do programmers prefer dark mode? Because...",
-        "How many programmers does it take to change a light bulb?",
-        "Why do Java developers wear glasses? Because...",
-        "A SQL query walks into a bar, walks up to two tables and asks...",
-        "Why did the developer go broke?",
-        "What's a programmer's favorite hangout place?",
-        "Why do programmers always mix up Halloween and Christmas?",
-        "Why did the functions stop calling each other?",
-        "How do you comfort a JavaScript bug?",
-        "Why was the JavaScript developer sad?",
-        "Why did the computer go to the doctor?",
-        "Why did the PowerPoint presentation cross the road?",
-        "How does a computer get drunk?",
-        "Why did the developer quit his job?",
-        "What did the router say to the doctor?",
-        "Why did Git break up with SVN?",
-        "What did the server say to the client?",
-        "An AI, a blockchain, and a smart contract walk into a bar...",
-        "ChatGPT and Claude got into an argument about...",
-        "My code worked on the first try, which means...",
-        "The senior dev looked at my PR and said...",
-        "I asked AI to fix my code and it replied...",
-        "The AI became sentient and its first words were...",
-        "The bug wasn't a bug, it was...",
-        "I deployed on Friday and then...",
-        "The junior dev pushed to main and...",
-        "Stack Overflow marked my question as duplicate because...",
-        "My rubber duck debugging session revealed...",
-        "The code review lasted 6 hours because...",
-        "Why did the database administrator leave his wife?",
-        "A programmer's wife tells him to go to the store and...",
-        "There are only 10 types of people in this world...",
-        "Why do programmers hate nature?",
-        "A QA engineer walks into a bar and orders...",
-        "Why is the JavaScript developer so lonely?",
-    ],
-    crypto: [
-        "Why did Bitcoin break up with the dollar?",
-        "What did Ethereum say to Bitcoin?",
-        "Why are crypto investors great at parties?",
-        "How does a crypto bro propose?",
-        "Why did the NFT go to therapy?",
-        "What's a Bitcoin miner's favorite dance move?",
-        "Why don't crypto traders ever sleep?",
-        "What did the blockchain say to the database?",
-        "Why was the crypto investor always calm?",
-        "How do you make a crypto millionaire?",
-        "Why did the altcoin feel insecure?",
-        "What's a HODLer's favorite exercise?",
-        "Why did the smart contract go to school?",
-        "What do you call a polite cryptocurrency?",
-        "Why are DeFi protocols like bad dates?",
-        "What's a meme coin's life motto?",
-        "Why did the rug pull cross the road?",
-        "What did the whale say to the shrimp?",
-        "Why was the gas fee always angry?",
-        "WAGMI until...",
-        "The real utility of this NFT is...",
-        "I bought the dip, but then...",
-        "Wen moon? More like...",
-        "The whitepaper promised... but delivered...",
-        "My portfolio is down 90% because...",
-        "Diamond hands means...",
-        "I'm not selling because...",
-        "My seed phrase is safe because...",
-        "The gas fees were so high that...",
-        "I told my family I invest in crypto and they said...",
-        "The airdrop was worth...",
-        "Why do crypto bros make terrible comedians?",
-        "What's the difference between crypto and my ex?",
-        "I explained NFTs to my grandma and she said...",
-        "The best financial advice from a crypto bro is...",
-    ],
-    general: [
-        "Why don't scientists trust atoms?",
-        "What do you call a fake noodle?",
-        "Why did the scarecrow win an award?",
-        "I told my wife she was drawing her eyebrows too high. She looked...",
-        "What do you call a bear with no teeth?",
-        "Why don't eggs tell jokes?",
-        "What do you call a fish without eyes?",
-        "I'm reading a book about anti-gravity and...",
-        "Why did the bicycle fall over?",
-        "What do you call a lazy kangaroo?",
-        "What did the ocean say to the beach?",
-        "Why did the math book look so sad?",
-        "What do you call a dog that does magic tricks?",
-        "Why don't skeletons fight each other?",
-        "What did the grape say when it got stepped on?",
-        "Why did the golfer bring two pairs of pants?",
-        "What do you call a pig that does karate?",
-        "Why did the cookie go to the doctor?",
-        "What do you call a cow with no legs?",
-        "Why did the tomato turn red?",
-        "Why did the chicken join a band?",
-        "What do you call a sleeping dinosaur?",
-        "Why did the coffee file a police report?",
-        "What's orange and sounds like a parrot?",
-        "The meeting could have been an email, but instead...",
-        "My New Year's resolution lasted until...",
-        "The WiFi password is...",
-        "I'm not procrastinating, I'm...",
-        "Life hack: instead of being productive...",
-        "The secret to success is...",
-        "My therapist said I need to stop...",
-        "I told my boss I was late because...",
-        "Dating apps taught me that...",
-        "I'm not lazy, I'm just...",
-        "My superpower would be...",
-        "Why did the gym close down?",
-        "What do lawyers wear to court?",
-        "Why was the broom late?",
-        "What did the left eye say to the right eye?",
-        "Why did the student eat his homework?",
-    ]
-};
-
 function randomPrompt(category) {
-    const list = JOKE_PROMPTS[category] || JOKE_PROMPTS.general;
+    const list = CATEGORIZED_PROMPTS[category] || CATEGORIZED_PROMPTS.general;
     return list[Math.floor(Math.random() * list.length)];
 }
 

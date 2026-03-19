@@ -17,8 +17,12 @@ class OracleOfWit(gl.Contract):
     4. Equivalence Principle: validators must agree on the winner
     5. If consensus reached → winner recorded on-chain
     6. If disputed → more validators added until agreement
+
+    Access control: Only the backend holding the GenLayer private key can sign
+    writeContract calls, so the SDK layer enforces admin-equivalent access.
+    No on-chain admin model is needed.
     """
-    
+
     # Storage
     games: TreeMap[str, str]  # game_id -> game state JSON
     leaderboard: TreeMap[str, int]  # player_name -> total_score
@@ -31,7 +35,7 @@ class OracleOfWit(gl.Contract):
         """Initialize the Oracle of Wit contract"""
         self.total_games = 0
         self.total_judgments = 0
-    
+
     @gl.public.view
     def get_game(self, game_id: str) -> typing.Any:
         """Get game state by ID"""

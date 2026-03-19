@@ -8,14 +8,24 @@
     "test:watch": "vitest --exclude tests/e2e/**",
     "register-commands": "node scripts/register-commands.mjs",
     "capture-screenshots": "node scripts/capture-screenshots.mjs",
+    "build": "vite build",
+    "lint": "eslint .",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.0",
+    "@preact/signals": "^2.8.2",
     "discord-interactions": "^4.1.0",
-    "genlayer-js": "^0.21.1"
+    "genlayer-js": "^0.21.1",
+    "preact": "^10.29.0",
+    "siwe": "^3.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
+    "@preact/preset-vite": "^2.10.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.39.4",
     "jsdom": "^29.0.0",
     "playwright": "^1.58.2",
     "serve": "^14.2.6",

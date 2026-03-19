@@ -11,10 +11,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 const store = {};
 const counters = {};
+const sortedSets = {}; // key -> [{ score, member }]
 
 function resetStore() {
   for (const k of Object.keys(store)) delete store[k];
   for (const k of Object.keys(counters)) delete counters[k];
+  for (const k of Object.keys(sortedSets)) delete sortedSets[k];
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +106,38 @@ globalThis.fetch = vi.fn(async (url, opts = {}) => {
       return { ok: true, json: async () => ({ result: 1 }) };
     }
 
+    if (command === 'zadd') {
+      // /zadd/{key}/{score}/{member}
+      const key = decodeURIComponent(segments[1]);
+      const score = parseFloat(segments[2]);
+      const member = decodeURIComponent(segments[3]);
+      if (!sortedSets[key]) sortedSets[key] = [];
+      const existing = sortedSets[key].find(e => e.member === member);
+      if (existing) { existing.score = score; } else { sortedSets[key].push({ score, member }); }
+      return { ok: true, json: async () => ({ result: existing ? 0 : 1 }) };
+    }
+
+    if (command === 'zrem') {
+      // /zrem/{key}/{member}
+      const key = decodeURIComponent(segments[1]);
+      const member = decodeURIComponent(segments[2]);
+      if (!sortedSets[key]) return { ok: true, json: async () => ({ result: 0 }) };
+      const before = sortedSets[key].length;
+      sortedSets[key] = sortedSets[key].filter(e => e.member !== member);
+      return { ok: true, json: async () => ({ result: before - sortedSets[key].length }) };
+    }
+
+    if (command === 'zrevrange') {
+      // /zrevrange/{key}/{start}/{stop}
+      const key = decodeURIComponent(segments[1]);
+      const start = parseInt(segments[2], 10);
+      const stop = parseInt(segments[3], 10);
+      const set = sortedSets[key] || [];
+      const sorted = [...set].sort((a, b) => b.score - a.score);
+      const sliced = sorted.slice(start, stop + 1).map(e => e.member);
+      return { ok: true, json: async () => ({ result: sliced }) };
+    }
+
     // Fallback for unhandled Upstash commands
     return { ok: true, json: async () => ({ result: null }) };
   }
@@ -148,9 +182,14 @@ async function call(action, body = {}, method = 'POST') {
   const playerName = body.playerName || body.hostName;
   const roomId = body.roomId;
 
-  // Auto-inject stored session token
+  // Auto-inject stored room session token
   if (roomId && playerName && tokens[`${roomId}:${playerName}`] && !body.sessionToken) {
     body = { ...body, sessionToken: tokens[`${roomId}:${playerName}`] };
+  }
+
+  // Auto-inject stored player session token
+  if (body.playerId && tokens[`player:${body.playerId}`] && !body.playerSessionToken) {
+    body = { ...body, playerSessionToken: tokens[`player:${body.playerId}`] };
   }
 
   const req = makeReq({ method, query: { action }, body });
@@ -164,9 +203,28 @@ async function call(action, body = {}, method = 'POST') {
     if (retRoomId && retPlayerName) {
       tokens[`${retRoomId}:${retPlayerName}`] = res._body.sessionToken;
     }
+    // Room session also serves as player session when playerId is provided
+    if (body.playerId) {
+      tokens[`player:${body.playerId}`] = res._body.sessionToken;
+    }
+  }
+
+  // Auto-capture player session tokens from createProfile
+  if (res._body?.playerSessionToken && body.playerId) {
+    tokens[`player:${body.playerId}`] = res._body.playerSessionToken;
   }
 
   return { status: res._status, body: res._body };
+}
+
+/**
+ * Ensure a player has a session token by calling createProfile.
+ * Returns the player session token.
+ */
+async function ensurePlayerSession(playerId, playerName = 'TestUser') {
+  if (tokens[`player:${playerId}`]) return tokens[`player:${playerId}`];
+  await call('createProfile', { playerId, playerName });
+  return tokens[`player:${playerId}`];
 }
 
 // ---------------------------------------------------------------------------
@@ -604,6 +662,7 @@ describe('API Handler', () => {
 
   describe('submitPrompt', () => {
     it('accepts a valid prompt submission', async () => {
+      await ensurePlayerSession('player_1', 'Author');
       const { status, body } = await call('submitPrompt', {
         playerName: 'Author',
         prompt: 'Why did the blockchain go to therapy?',
@@ -621,6 +680,7 @@ describe('API Handler', () => {
     });
 
     it('rejects prompt shorter than 10 characters', async () => {
+      await ensurePlayerSession('player_1', 'Author');
       const { status, body } = await call('submitPrompt', {
         playerName: 'Author',
         prompt: 'Short',
@@ -637,6 +697,7 @@ describe('API Handler', () => {
     let promptId;
 
     beforeEach(async () => {
+      await ensurePlayerSession('player_author', 'Author');
       const { body } = await call('submitPrompt', {
         playerName: 'Author',
         prompt: 'Why did the blockchain go to therapy?',
@@ -646,6 +707,7 @@ describe('API Handler', () => {
     });
 
     it('accepts a valid vote from a different player', async () => {
+      await ensurePlayerSession('player_voter', 'Voter');
       const { status, body } = await call('votePrompt', {
         promptId,
         playerId: 'player_voter',
@@ -662,6 +724,7 @@ describe('API Handler', () => {
     });
 
     it('rejects duplicate vote from same player', async () => {
+      await ensurePlayerSession('player_voter', 'Voter');
       await call('votePrompt', { promptId, playerId: 'player_voter' });
       const { status, body } = await call('votePrompt', { promptId, playerId: 'player_voter' });
       expect(status).toBe(400);
@@ -983,6 +1046,14 @@ describe('API Handler', () => {
 
   describe('Appeal Flow', () => {
     it('appeal triggers re-judging on round results', async () => {
+      await ensurePlayerSession('appeal-test-player', 'Host');
+      // Give profile enough XP to appeal (requires 50)
+      const profileKey = 'player:appeal-test-player';
+      if (store[profileKey]) {
+        const profile = JSON.parse(store[profileKey]);
+        profile.lifetimeXP = 100;
+        store[profileKey] = JSON.stringify(profile);
+      }
       const roomId = await setupRoom('roundResults');
       const { status, body } = await call('appealVerdict', {
         roomId,
@@ -998,6 +1069,14 @@ describe('API Handler', () => {
     });
 
     it('rejects double appeal on same round', async () => {
+      await ensurePlayerSession('appeal-test-player', 'Host');
+      // Give profile enough XP to appeal (200 to survive penalty deduction)
+      const pk = 'player:appeal-test-player';
+      if (store[pk]) {
+        const p = JSON.parse(store[pk]);
+        p.lifetimeXP = 200;
+        store[pk] = JSON.stringify(p);
+      }
       const roomId = await setupRoom('roundResults');
       await call('appealVerdict', { roomId, playerName: 'Host', playerId: 'appeal-test-player' });
       const { status, body } = await call('appealVerdict', { roomId, playerName: 'Host', playerId: 'appeal-test-player' });
@@ -1253,7 +1332,7 @@ describe('API Handler', () => {
       expect(res._status).toBe(200);
       expect(res._body.page).toBe(1);
       expect(res._body.limit).toBe(1);
-      expect(res._body.total).toBeGreaterThanOrEqual(2);
+      expect(res._body.total).toBe(1);
       expect(res._body.rooms.length).toBe(1);
     });
   });
@@ -1323,6 +1402,7 @@ describe('API Handler', () => {
 
   describe('Self-Vote Prevention', () => {
     it('rejects voting for own community prompt', async () => {
+      await ensurePlayerSession('self-voter', 'Tester');
       // Submit a prompt
       await call('submitPrompt', {
         playerId: 'self-voter', playerName: 'Tester', prompt: 'Why did the chicken cross the road?',

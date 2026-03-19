@@ -8,9 +8,9 @@ export default defineConfig({
         headless: true,
     },
     webServer: {
-        command: 'npx serve -l 5173 -s .',
+        command: 'npx vite --port 5173',
         port: 5173,
         reuseExistingServer: true,
-        timeout: 10000,
+        timeout: 15000,
     },
 });

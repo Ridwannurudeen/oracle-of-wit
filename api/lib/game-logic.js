@@ -1,8 +1,11 @@
 // Game logic: judging, round results, phase transitions, bots, prompts
 
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
-import { SUBMISSION_TIME, BETTING_TIME, VOTING_TIME, CURATION_THRESHOLD, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, getCurrentTheme } from './constants.js';
+import { SUBMISSION_TIME, BETTING_TIME, VOTING_TIME, CURATION_THRESHOLD, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme } from './constants.js';
+import { logger } from './logger.js';
 
+// Hardcoded quips used when AI punchline generation fails or returns fewer than needed.
+// Intentionally generic so they work with any joke setup.
 const BOT_FALLBACK_QUIPS = [
     "...and that's why we can't have nice things.",
     "...but nobody clapped.",
@@ -15,6 +18,12 @@ import { submitToGenLayer, pollGenLayerResult } from './genlayer.js';
 
 // --- Phase transitions ---
 
+/**
+ * Transition room from submitting phase to next phase (curating or betting).
+ * @param {import('./types.js').Room} room
+ * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
+ * @returns {Promise<void>}
+ */
 export async function transitionFromSubmitting(room, setRoom) {
     const now = Date.now();
     if (room.isSinglePlayer) await addBotSubmissions(room);
@@ -43,6 +52,12 @@ export async function transitionFromSubmitting(room, setRoom) {
     await setRoom(room.id, room);
 }
 
+/**
+ * Check if the room should auto-advance to the next phase based on timers.
+ * @param {import('./types.js').Room} room
+ * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
+ * @returns {Promise<import('./types.js').Room>}
+ */
 export async function checkAutoAdvance(room, setRoom) {
     if (!room?.phaseEndsAt) return room;
     const now = Date.now();
@@ -79,17 +94,35 @@ export async function checkAutoAdvance(room, setRoom) {
 
 // --- Distributed lock for auto-advance (replaces in-memory Set) ---
 
+/**
+ * Acquire a distributed lock for auto-advance to prevent concurrent transitions.
+ * @param {string} roomId
+ * @returns {Promise<boolean>}
+ */
 export async function acquireAdvanceLock(roomId) {
     return await redisSetNX(`lock:advance:${roomId}`, 1, 120);
 }
 
+/**
+ * Release the distributed auto-advance lock.
+ * @param {string} roomId
+ * @returns {Promise<boolean>}
+ */
 export async function releaseAdvanceLock(roomId) {
     return await redisDel(`lock:advance:${roomId}`);
 }
 
 // --- Judging ---
 
+/**
+ * Automatically judge a round using AI and GenLayer, then create a round result.
+ * @param {import('./types.js').Room} room
+ * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
+ * @returns {Promise<import('./types.js').Room>}
+ */
 export async function autoJudge(room, setRoom) {
+    // Why parallel: GenLayer OD takes 10-30s to reach consensus, Claude responds in 2-5s.
+    // Running both simultaneously gives instant results while still recording on-chain.
     const now = Date.now();
     room.status = 'judging';
     room.judgingMethod = 'processing';
@@ -119,26 +152,26 @@ export async function autoJudge(room, setRoom) {
             winnerId = glWinnerId;
             judgingMethod = 'genlayer_optimistic_democracy';
             glOverride = true;
-            console.log(`\u2713 GenLayer OD authoritative winner #${winnerId} (tx: ${txHash})`);
+            logger.info('GenLayer OD authoritative winner', { service: 'judge', winnerId, txHash });
         } else if (glWinnerId && !validIds.includes(glWinnerId)) {
             // GenLayer returned winnerId outside valid submission range
-            console.warn(`[GenLayer] winnerId ${glWinnerId} not in valid range [${validIds}] — falling back to AI (tx: ${txHash})`);
+            logger.warn('GenLayer winnerId not in valid range, falling back to AI', { service: 'genlayer', glWinnerId, validIds, txHash });
             judgingMethod = winnerId ? 'ai_fallback' : judgingMethod;
         } else {
             // GenLayer timed out or returned null — fall back to Claude
             judgingMethod = winnerId ? 'ai_fallback' : judgingMethod;
-            console.log(`\u2713 GenLayer submitted but poll failed, using Claude result (tx: ${txHash})`);
+            logger.info('GenLayer submitted but poll failed, using Claude result', { service: 'genlayer', txHash });
         }
     }
 
     if (winnerId) {
-        console.log(`\u2713 Winner #${winnerId} — method: ${judgingMethod}, onChain: ${onChain}, glOverride: ${glOverride}`);
+        logger.info('Winner determined', { service: 'judge', winnerId, judgingMethod, onChain, glOverride });
     }
 
     if (!winnerId) {
         winnerId = pickWinnerRandom(room.submissions);
         judgingMethod = 'coin_flip';
-        console.error(`[Judge] BOTH AI and GenLayer failed for room ${room.id} — using coin flip. Winner #${winnerId}`);
+        logger.error('Both AI and GenLayer failed, using coin flip', { service: 'judge', roomId: room.id, winnerId });
     }
 
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
@@ -150,6 +183,12 @@ export async function autoJudge(room, setRoom) {
     return createRoundResult(room, winnerId, now, judgingMethod, onChain, aiCommentary, txHash, setRoom, glOverride);
 }
 
+/**
+ * Tally audience votes and determine the winner (with AI tiebreak if needed).
+ * @param {import('./types.js').Room} room
+ * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
+ * @returns {Promise<import('./types.js').Room>}
+ */
 export async function tallyVotesAndJudge(room, setRoom) {
     const votes = room.audienceVotes || {};
     const voteCounts = {};
@@ -200,6 +239,19 @@ export async function tallyVotesAndJudge(room, setRoom) {
     return room;
 }
 
+/**
+ * Create a round result, update scores, streaks, hall of fame, and persist.
+ * @param {import('./types.js').Room} room
+ * @param {number} winnerId
+ * @param {number} now
+ * @param {string} [judgingMethod='unknown']
+ * @param {boolean} [onChain=false]
+ * @param {Object|null} [aiCommentary=null]
+ * @param {string|null} [txHash=null]
+ * @param {function(string, import('./types.js').Room): Promise<boolean>|null} [setRoom=null]
+ * @param {boolean} [glOverride=false]
+ * @returns {Promise<import('./types.js').Room>}
+ */
 export async function createRoundResult(room, winnerId, now, judgingMethod = 'unknown', onChain = false, aiCommentary = null, txHash = null, setRoom = null, glOverride = false) {
     const winningSubmission = room.submissions.find(s => s.id === winnerId);
 
@@ -294,7 +346,7 @@ export async function createRoundResult(room, winnerId, now, judgingMethod = 'un
                 date: Date.now()
             });
             await redisSet('hall_of_fame', hof.slice(0, 50), 86400 * 90);
-        } catch(e) { console.error('Hall of fame update failed:', e); }
+        } catch(e) { logger.error('Hall of fame update failed', { service: 'game', error: e.message }); }
     }
 
     if (setRoom) await setRoom(room.id, room);
@@ -303,6 +355,11 @@ export async function createRoundResult(room, winnerId, now, judgingMethod = 'un
 
 // --- Bots ---
 
+/**
+ * Add AI-generated or fallback punchline submissions for bot players.
+ * @param {import('./types.js').Room} room
+ * @returns {Promise<void>}
+ */
 export async function addBotSubmissions(room) {
     const botsToAdd = room.players.filter(p => p.isBot && !room.submissions.find(s => s.playerName === p.name));
     if (botsToAdd.length === 0) return;
@@ -360,6 +417,11 @@ export async function addBotSubmissions(room) {
     });
 }
 
+/**
+ * Add random bets for bot players.
+ * @param {import('./types.js').Room} room
+ * @returns {void}
+ */
 export function addBotBets(room) {
     const botsToAdd = room.players.filter(p => p.isBot && !room.bets.find(b => b.playerName === p.name));
 
@@ -379,132 +441,26 @@ export function addBotBets(room) {
 
 // --- Prompts ---
 
+/**
+ * Get available prompts for a category, including weekly theme bonuses.
+ * @param {string} category
+ * @returns {string[]}
+ */
 export function getPromptsForCategory(category) {
-    const prompts = {
-        tech: [
-            "Why do programmers prefer dark mode? Because...",
-            "How many programmers does it take to change a light bulb?",
-            "Why do Java developers wear glasses? Because...",
-            "A SQL query walks into a bar, walks up to two tables and asks...",
-            "Why did the developer go broke?",
-            "What's a programmer's favorite hangout place?",
-            "Why do programmers always mix up Halloween and Christmas?",
-            "Why did the functions stop calling each other?",
-            "How do you comfort a JavaScript bug?",
-            "Why was the JavaScript developer sad?",
-            "Why did the computer go to the doctor?",
-            "Why did the PowerPoint presentation cross the road?",
-            "How does a computer get drunk?",
-            "Why did the developer quit his job?",
-            "What did the router say to the doctor?",
-            "Why did Git break up with SVN?",
-            "What did the server say to the client?",
-            "An AI, a blockchain, and a smart contract walk into a bar...",
-            "ChatGPT and Claude got into an argument about...",
-            "My code worked on the first try, which means...",
-            "The senior dev looked at my PR and said...",
-            "I asked AI to fix my code and it replied...",
-            "The AI became sentient and its first words were...",
-            "The bug wasn't a bug, it was...",
-            "I deployed on Friday and then...",
-            "The junior dev pushed to main and...",
-            "Stack Overflow marked my question as duplicate because...",
-            "My rubber duck debugging session revealed...",
-            "The code review lasted 6 hours because...",
-            "Why did the database administrator leave his wife?",
-            "A programmer's wife tells him to go to the store and...",
-            "There are only 10 types of people in this world...",
-            "Why do programmers hate nature?",
-            "A QA engineer walks into a bar and orders...",
-            "Why is the JavaScript developer so lonely?"
-        ],
-        crypto: [
-            "Why did Bitcoin break up with the dollar?",
-            "What did Ethereum say to Bitcoin?",
-            "Why are crypto investors great at parties?",
-            "How does a crypto bro propose?",
-            "Why did the NFT go to therapy?",
-            "What's a Bitcoin miner's favorite dance move?",
-            "Why don't crypto traders ever sleep?",
-            "What did the blockchain say to the database?",
-            "Why was the crypto investor always calm?",
-            "How do you make a crypto millionaire?",
-            "Why did the altcoin feel insecure?",
-            "What's a HODLer's favorite exercise?",
-            "Why did the smart contract go to school?",
-            "What do you call a polite cryptocurrency?",
-            "Why are DeFi protocols like bad dates?",
-            "What's a meme coin's life motto?",
-            "Why did the rug pull cross the road?",
-            "What did the whale say to the shrimp?",
-            "Why was the gas fee always angry?",
-            "WAGMI until...",
-            "The real utility of this NFT is...",
-            "I bought the dip, but then...",
-            "Wen moon? More like...",
-            "The whitepaper promised... but delivered...",
-            "My portfolio is down 90% because...",
-            "Diamond hands means...",
-            "I'm not selling because...",
-            "My seed phrase is safe because...",
-            "The gas fees were so high that...",
-            "I told my family I invest in crypto and they said...",
-            "The airdrop was worth...",
-            "Why do crypto bros make terrible comedians?",
-            "What's the difference between crypto and my ex?",
-            "I explained NFTs to my grandma and she said...",
-            "The best financial advice from a crypto bro is..."
-        ],
-        general: [
-            "Why don't scientists trust atoms?",
-            "What do you call a fake noodle?",
-            "Why did the scarecrow win an award?",
-            "I told my wife she was drawing her eyebrows too high. She looked...",
-            "What do you call a bear with no teeth?",
-            "Why don't eggs tell jokes?",
-            "What do you call a fish without eyes?",
-            "I'm reading a book about anti-gravity and...",
-            "Why did the bicycle fall over?",
-            "What do you call a lazy kangaroo?",
-            "What did the ocean say to the beach?",
-            "Why did the math book look so sad?",
-            "What do you call a dog that does magic tricks?",
-            "Why don't skeletons fight each other?",
-            "What did the grape say when it got stepped on?",
-            "Why did the golfer bring two pairs of pants?",
-            "What do you call a pig that does karate?",
-            "Why did the cookie go to the doctor?",
-            "What do you call a cow with no legs?",
-            "Why did the tomato turn red?",
-            "Why did the chicken join a band?",
-            "What do you call a sleeping dinosaur?",
-            "Why did the coffee file a police report?",
-            "What's orange and sounds like a parrot?",
-            "The meeting could have been an email, but instead...",
-            "My New Year's resolution lasted until...",
-            "The WiFi password is...",
-            "I'm not procrastinating, I'm...",
-            "Life hack: instead of being productive...",
-            "The secret to success is...",
-            "My therapist said I need to stop...",
-            "I told my boss I was late because...",
-            "Dating apps taught me that...",
-            "I'm not lazy, I'm just...",
-            "My superpower would be...",
-            "Why did the gym close down?",
-            "What do lawyers wear to court?",
-            "Why was the broom late?",
-            "What did the left eye say to the right eye?",
-            "Why did the student eat his homework?"
-        ]
-    };
-    const base = prompts[category] || prompts.general;
+    const base = CATEGORIZED_PROMPTS[category] || CATEGORIZED_PROMPTS.general;
     const theme = getCurrentTheme();
     const bonus = [...theme.bonusPrompts].sort(() => Math.random() - 0.5).slice(0, 3);
     return [...base, ...bonus];
 }
 
+/**
+ * Get the next joke prompt for a room, with community prompt chance.
+ * @param {import('./types.js').Room} room
+ * @returns {Promise<string>}
+ */
 export async function getNextPrompt(room) {
+    // 30% chance to use a community-submitted prompt — balances freshness with quality.
+    // Community prompts are pre-approved (5+ votes) so quality is maintained.
     if (Math.random() < 0.3) {
         try {
             const communityPrompts = await redisGet('community_prompts') || [];
@@ -516,7 +472,7 @@ export async function getNextPrompt(room) {
                 return pick.prompt;
             }
         } catch (e) {
-            console.log('[CommunityPrompts] Redis fetch failed, using hardcoded:', e.message);
+            logger.info('Community prompts fetch failed, using hardcoded', { service: 'prompts', error: e.message });
         }
     }
 

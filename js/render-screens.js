@@ -1,8 +1,15 @@
-// Oracle of Wit — Secondary Screen Renderers (ES Module)
+/**
+ * @module render-screens
+ * @description Secondary screen renderers: daily challenge, profile, hall of fame, community prompts.
+ */
 
 import { state } from './state.js';
 import { esc } from './render-helpers.js';
 
+/**
+ * Render the daily challenge screen (prompt, submission form, or result).
+ * @returns {string} HTML string.
+ */
 export function renderDailyChallenge() {
     const dc = state.dailyChallenge;
     if (!dc) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
@@ -101,6 +108,10 @@ export function renderDailyChallenge() {
         </div>`;
 }
 
+/**
+ * Render the player profile screen with stats, level progress, and achievements.
+ * @returns {string} HTML string.
+ */
 export function renderProfileScreen() {
     const p = state.profile;
     if (!p) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-circle mx-auto" style="width:80px;height:80px"></div><div class="skeleton skeleton-text mx-auto" style="width:40%"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:140px"></div></div>';
@@ -194,6 +205,10 @@ export function renderProfileScreen() {
         </div>`;
 }
 
+/**
+ * Render the hall of fame screen with top winning jokes.
+ * @returns {string} HTML string.
+ */
 export function renderHallOfFame() {
     return `
         <div class="space-y-4">
@@ -224,7 +239,10 @@ export function renderHallOfFame() {
         </div>`;
 }
 
-// --- Render: Community Prompts ---
+/**
+ * Render the community prompts screen with submission form and voting list.
+ * @returns {string} HTML string.
+ */
 export function renderCommunityPrompts() {
     return `
         <div class="space-y-4">

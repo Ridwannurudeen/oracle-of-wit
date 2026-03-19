@@ -1,9 +1,16 @@
-// Oracle of Wit — Game Phase Renderers (ES Module)
+/**
+ * @module render-game
+ * @description Game phase screen renderers: submitting, curating, voting, betting, judging.
+ */
 
 import { state } from './state.js';
 import { esc, glLogo, renderTimer } from './render-helpers.js';
 import { startValidatorVoting } from './effects.js';
 
+/**
+ * Render the punchline submission phase screen.
+ * @returns {string} HTML string.
+ */
 export function renderSubmitting() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
@@ -56,6 +63,10 @@ export function renderSubmitting() {
 }
 
 
+/**
+ * Render the AI curation phase (large-room filtering to top 8).
+ * @returns {string} HTML string.
+ */
 export function renderCurating() {
     const r = state.room;
     if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
@@ -85,6 +96,10 @@ export function renderCurating() {
     `;
 }
 
+/**
+ * Render the audience voting phase for curated submissions.
+ * @returns {string} HTML string.
+ */
 export function renderVoting() {
     const r = state.room;
     if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
@@ -138,6 +153,10 @@ export function renderVoting() {
     `;
 }
 
+/**
+ * Render the betting phase with submission selection, reactions, and bet slider.
+ * @returns {string} HTML string.
+ */
 export function renderBetting() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
@@ -222,6 +241,11 @@ export function renderBetting() {
     `;
 }
 
+/**
+ * Render the judging phase with animated validator voting sequence
+ * and live vote distribution visualization.
+ * @returns {string} HTML string.
+ */
 export function renderJudging() {
     // Start the validator voting animation if not already started
     if (!state.validatorVotingStarted) {

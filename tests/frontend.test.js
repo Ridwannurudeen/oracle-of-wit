@@ -9,18 +9,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Import pure functions from actual source modules
-import { esc, formatTime, formatEventTime } from '../js/render-helpers.js';
+import { esc, formatTime, formatEventTime, getNextLevelXPClient, html, raw } from '../js/render-helpers.js';
+import { patchDOM } from '../js/api.js';
 
-// Functions that depend on deep import chains are kept local to avoid
-// pulling in DOM-heavy modules (effects.js/Three.js) in test env
-function getNextLevelXPClient(xp) {
-    const thresholds = [0, 500, 1500, 3000, 6000, 10000, 20000, 40000, 75000, 150000];
-    for (const t of thresholds) {
-        if (xp < t) return t;
-    }
-    return null;
-}
-
+// Remaining functions below use different signatures from their source counterparts:
+// - getPollInterval: source (getAdaptivePollInterval) uses module state; test version is pure
+// - sanitizeInput: backend-only (api/game.js), not a frontend import
+// - updateConnectionBanner: source uses module-scoped pollBackoff/currentPollInterval
+// - syncTimer: source uses module-scoped state; test version takes state param
 function getPollInterval(room) {
     const BASE = 1500;
     const playerCount = room?.players?.length || 0;
@@ -1122,5 +1118,103 @@ describe('Leave Room Flow', () => {
         expect(state.appealInProgress).toBe(false);
         expect(state.appealResult).toBeNull();
         expect(sessionToken).toBeNull();
+    });
+});
+
+// =========================================================================
+// 12. html TAGGED TEMPLATE
+// =========================================================================
+describe('html tagged template', () => {
+    it('auto-escapes interpolated values', () => {
+        const result = html`<p>${'<script>alert("xss")</script>'}</p>`;
+        expect(result).toBe('<p>&lt;script&gt;alert("xss")&lt;/script&gt;</p>');
+        expect(result).not.toContain('<script>');
+    });
+
+    it('passes through raw() values unescaped', () => {
+        const inner = '<span class="bold">safe</span>';
+        const result = html`<div>${raw(inner)}</div>`;
+        expect(result).toBe('<div><span class="bold">safe</span></div>');
+    });
+
+    it('handles null and undefined gracefully', () => {
+        const result = html`<p>${null}${undefined}</p>`;
+        expect(result).toBe('<p></p>');
+    });
+});
+
+// =========================================================================
+// 13. patchDOM — TARGETED DOM PATCHING
+// =========================================================================
+describe('patchDOM', () => {
+    it('returns false when status changes', () => {
+        const result = patchDOM(
+            { status: 'submitting', currentRound: 1, submissions: { length: 2 }, bets: { length: 0 }, roundResults: [] },
+            { status: 'betting', currentRound: 1, submissions: { length: 2 }, bets: { length: 0 }, roundResults: [] }
+        );
+        expect(result).toBe(false);
+    });
+
+    it('returns false when round changes', () => {
+        const result = patchDOM(
+            { status: 'submitting', currentRound: 1, submissions: { length: 0 }, bets: { length: 0 }, roundResults: [] },
+            { status: 'submitting', currentRound: 2, submissions: { length: 0 }, bets: { length: 0 }, roundResults: [] }
+        );
+        expect(result).toBe(false);
+    });
+
+    it('returns false when new submissions appear during submitting', () => {
+        const result = patchDOM(
+            { status: 'submitting', currentRound: 1, submissions: { length: 1 }, bets: { length: 0 }, roundResults: [] },
+            { status: 'submitting', currentRound: 1, submissions: { length: 2 }, bets: { length: 0 }, roundResults: [] }
+        );
+        expect(result).toBe(false);
+    });
+
+    it('returns false when roundResults length changes', () => {
+        const result = patchDOM(
+            { status: 'roundResults', currentRound: 1, submissions: { length: 3 }, bets: { length: 0 }, roundResults: [{}] },
+            { status: 'roundResults', currentRound: 1, submissions: { length: 3 }, bets: { length: 0 }, roundResults: [{}, {}] }
+        );
+        expect(result).toBe(false);
+    });
+
+    it('returns false for same-phase change when no DOM elements exist', () => {
+        // No DOM elements to patch (jsdom empty), so returns false since nothing was patched
+        const result = patchDOM(
+            { status: 'betting', currentRound: 1, submissions: { length: 3 }, bets: { length: 1 }, roundResults: [], players: [] },
+            { status: 'betting', currentRound: 1, submissions: { length: 3 }, bets: { length: 2 }, roundResults: [], players: [] }
+        );
+        expect(result).toBe(false);
+    });
+
+    it('patches submission counter when DOM element exists', () => {
+        document.body.innerHTML = '<span data-hud="submitted">0/0 SUBMITTED</span>';
+        const result = patchDOM(
+            { status: 'submitting', currentRound: 1, submissions: { length: 2 }, bets: { length: 0 }, roundResults: [] },
+            { status: 'submitting', currentRound: 1, submissions: [1, 2], bets: { length: 0 }, roundResults: [], players: [{ name: 'A', isBot: false }, { name: 'B', isBot: false }, { name: 'Bot', isBot: true }] }
+        );
+        expect(result).toBe(true);
+        expect(document.querySelector('[data-hud="submitted"]').textContent).toBe('2/2 SUBMITTED');
+    });
+
+    it('patches bet counter when DOM element exists', () => {
+        document.body.innerHTML = '<span data-hud="bets">0/0 BET</span>';
+        const result = patchDOM(
+            { status: 'betting', currentRound: 1, submissions: { length: 3 }, bets: { length: 0 }, roundResults: [] },
+            { status: 'betting', currentRound: 1, submissions: { length: 3 }, bets: [1], roundResults: [], players: [{ name: 'A', isBot: false }, { name: 'B', isBot: false }] }
+        );
+        expect(result).toBe(true);
+        expect(document.querySelector('[data-hud="bets"]').textContent).toBe('1/2 BET');
+    });
+
+    it('patches player count in HUD bar', () => {
+        document.body.innerHTML = '<div class="consensus-hud"><span>3P</span></div>';
+        const result = patchDOM(
+            { status: 'submitting', currentRound: 1, submissions: { length: 1 }, bets: { length: 0 }, roundResults: [] },
+            { status: 'submitting', currentRound: 1, submissions: { length: 1 }, bets: { length: 0 }, roundResults: [], players: [1, 2, 3, 4, 5] }
+        );
+        expect(result).toBe(true);
+        expect(document.querySelector('.consensus-hud span').textContent).toBe('5P');
     });
 });

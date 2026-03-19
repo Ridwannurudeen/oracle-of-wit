@@ -1,5 +1,7 @@
 // GenLayer SDK integration — Testnet Bradbury
 
+import { logger } from './logger.js';
+
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
 const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
@@ -9,6 +11,10 @@ let _lastGLSubmit = 0;
 const GL_COOLDOWN = parseInt(process.env.GL_COOLDOWN) || 15000;
 const GL_POLL_TIMEOUT = parseInt(process.env.GL_POLL_TIMEOUT) || 30000;
 
+/**
+ * Get or initialize the GenLayer SDK client (singleton).
+ * @returns {Promise<Object|null>} The GenLayer client, or null if not configured.
+ */
 export async function getGenLayerClient() {
     if (_glClient) return _glClient;
     if (!GENLAYER_PRIVATE_KEY || !GENLAYER_CONTRACT_ADDRESS) return null;
@@ -17,24 +23,32 @@ export async function getGenLayerClient() {
         const { testnetBradbury } = await import('genlayer-js/chains');
         const account = createAccount(GENLAYER_PRIVATE_KEY);
         _glClient = createClient({ chain: testnetBradbury, account });
-        console.log('[GenLayer] SDK client initialized for Bradbury testnet, account:', account.address);
+        logger.info('SDK client initialized for Bradbury testnet', { service: 'genlayer', account: account.address });
         return _glClient;
     } catch (e) {
-        console.error('[GenLayer] SDK init failed:', e.message);
+        logger.error('SDK init failed', { service: 'genlayer', error: e.message });
         return null;
     }
 }
 
+/**
+ * Submit a round's submissions to GenLayer for on-chain judging.
+ * @param {import('./types.js').Submission[]} submissions
+ * @param {string} jokePrompt
+ * @param {string} category
+ * @param {string} gameId
+ * @returns {Promise<import('./types.js').GenLayerSubmitResult|null>}
+ */
 export async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
     const client = await getGenLayerClient();
     if (!client) {
-        console.log('[GenLayer] Not configured (missing key or address)');
+        logger.info('Not configured (missing key or address)', { service: 'genlayer' });
         return null;
     }
 
     const now = Date.now();
     if (now - _lastGLSubmit < GL_COOLDOWN) {
-        console.log('[GenLayer] Cooldown active, skipping (last submit was', now - _lastGLSubmit, 'ms ago)');
+        logger.info('Cooldown active, skipping', { service: 'genlayer', msSinceLast: now - _lastGLSubmit });
         return null;
     }
 
@@ -45,7 +59,7 @@ export async function submitToGenLayer(submissions, jokePrompt, category, gameId
             punchline: s.punchline
         })));
 
-        console.log(`[GenLayer] Submitting judge_round for ${gameId} (${submissions.length} submissions)`);
+        logger.info('Submitting judge_round', { service: 'genlayer', gameId, submissions: submissions.length });
         _lastGLSubmit = now;
 
         const txHash = await client.writeContract({
@@ -55,14 +69,20 @@ export async function submitToGenLayer(submissions, jokePrompt, category, gameId
             value: 0n,
         });
 
-        console.log(`[GenLayer] judge_round submitted to OD: ${txHash} (game: ${gameId})`);
+        logger.info('judge_round submitted to OD', { service: 'genlayer', txHash, gameId });
         return { txHash, onChain: true };
     } catch (error) {
-        console.error('[GenLayer] judge_round failed:', error.message);
+        logger.error('judge_round failed', { service: 'genlayer', error: error.message });
         return null;
     }
 }
 
+/**
+ * Poll GenLayer for a transaction result (winner ID).
+ * @param {string} txHash
+ * @param {number} [timeoutMs]
+ * @returns {Promise<number|null>} The winning submission ID, or null on timeout/failure.
+ */
 export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
     const client = await getGenLayerClient();
     if (!client || !txHash) return null;
@@ -77,7 +97,7 @@ export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
         });
 
         if (!receipt?.data) {
-            console.warn(`[GenLayer] Poll receipt has no data (tx: ${txHash})`);
+            logger.warn('Poll receipt has no data', { service: 'genlayer', txHash });
             return null;
         }
 
@@ -85,17 +105,23 @@ export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
             ? receipt.data.winner_id
             : parseInt(String(receipt.data));
         if (typeof winnerId !== 'number' || isNaN(winnerId) || winnerId <= 0) {
-            console.warn(`[GenLayer] Poll returned invalid winnerId: ${winnerId}, raw receipt:`, JSON.stringify(receipt.data));
+            logger.warn('Poll returned invalid winnerId', { service: 'genlayer', winnerId, rawReceipt: JSON.stringify(receipt.data) });
             return null;
         }
-        console.log(`[GenLayer] Poll result: winner_id=${winnerId}`);
+        logger.info('Poll result', { service: 'genlayer', winnerId });
         return winnerId;
     } catch (e) {
-        console.log(`[GenLayer] Poll timed out or failed: ${e.message}`);
+        logger.info('Poll timed out or failed', { service: 'genlayer', error: e.message });
         return null;
     }
 }
 
+/**
+ * Record final game scores on-chain via GenLayer.
+ * @param {string} gameId
+ * @param {import('./types.js').Player[]} finalScores
+ * @returns {Promise<string|false>} The transaction hash, or false on failure.
+ */
 export async function recordOnChain(gameId, finalScores) {
     const client = await getGenLayerClient();
     if (!client) return false;
@@ -106,7 +132,7 @@ export async function recordOnChain(gameId, finalScores) {
             score: p.score
         })));
 
-        console.log(`[GenLayer] Recording game ${gameId} results on-chain`);
+        logger.info('Recording game results on-chain', { service: 'genlayer', gameId });
 
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
@@ -115,20 +141,27 @@ export async function recordOnChain(gameId, finalScores) {
             value: 0n,
         });
 
-        console.log(`[GenLayer] record_game_result tx: ${txHash}`);
+        logger.info('record_game_result tx', { service: 'genlayer', txHash });
         return txHash;
     } catch (error) {
-        console.error('[GenLayer] record_game_result failed:', error.message);
+        logger.error('record_game_result failed', { service: 'genlayer', error: error.message });
         return false;
     }
 }
 
+/**
+ * Create a new game on-chain via GenLayer.
+ * @param {string} gameId
+ * @param {string} hostName
+ * @param {string} category
+ * @returns {Promise<string|false>} The transaction hash, or false on failure.
+ */
 export async function createGameOnChain(gameId, hostName, category) {
     const client = await getGenLayerClient();
     if (!client) return false;
 
     try {
-        console.log(`[GenLayer] Creating game ${gameId} on-chain (host: ${hostName}, category: ${category})`);
+        logger.info('Creating game on-chain', { service: 'genlayer', gameId, hostName, category });
 
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
@@ -137,14 +170,23 @@ export async function createGameOnChain(gameId, hostName, category) {
             value: 0n,
         });
 
-        console.log(`[GenLayer] create_game tx: ${txHash}`);
+        logger.info('create_game tx', { service: 'genlayer', txHash });
         return txHash;
     } catch (error) {
-        console.error('[GenLayer] create_game failed:', error.message);
+        logger.error('create_game failed', { service: 'genlayer', error: error.message });
         return false;
     }
 }
 
+/**
+ * Submit an appeal to GenLayer for re-judging a round.
+ * @param {string} gameId
+ * @param {string} jokePrompt
+ * @param {string} category
+ * @param {import('./types.js').Submission[]} submissions
+ * @param {number} originalWinnerId
+ * @returns {Promise<import('./types.js').GenLayerSubmitResult|null>}
+ */
 export async function appealWithGenLayer(gameId, jokePrompt, category, submissions, originalWinnerId) {
     const client = await getGenLayerClient();
     if (!client) return null;
@@ -156,7 +198,7 @@ export async function appealWithGenLayer(gameId, jokePrompt, category, submissio
             punchline: s.punchline
         })));
 
-        console.log(`[GenLayer] Submitting appeal_judgment for ${gameId}`);
+        logger.info('Submitting appeal_judgment', { service: 'genlayer', gameId });
 
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
@@ -165,14 +207,19 @@ export async function appealWithGenLayer(gameId, jokePrompt, category, submissio
             value: 0n,
         });
 
-        console.log(`[GenLayer] appeal_judgment submitted to OD: ${txHash}`);
+        logger.info('appeal_judgment submitted to OD', { service: 'genlayer', txHash });
         return { txHash, onChain: true };
     } catch (error) {
-        console.error('[GenLayer] appeal_judgment failed:', error.message);
+        logger.error('appeal_judgment failed', { service: 'genlayer', error: error.message });
         return null;
     }
 }
 
+/**
+ * Post game results to the Discord webhook.
+ * @param {import('./types.js').Room} room
+ * @returns {Promise<void>}
+ */
 export async function postGameToDiscord(room) {
     if (!DISCORD_WEBHOOK_URL) return;
 
@@ -215,8 +262,8 @@ export async function postGameToDiscord(room) {
             body: JSON.stringify({ username: 'Oracle of Wit', embeds: [embed] }),
         });
         clearTimeout(discordTimeout);
-        console.log('[Discord] Game results posted');
+        logger.info('Game results posted', { service: 'discord' });
     } catch (err) {
-        console.error('[Discord] Webhook failed:', err.message);
+        logger.error('Webhook failed', { service: 'discord', error: err.message });
     }
 }

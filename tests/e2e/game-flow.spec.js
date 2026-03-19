@@ -195,7 +195,7 @@ test.describe('Welcome Screen', () => {
         await mockAPI(page);
         await loadApp(page);
 
-        const heading = page.locator('h1:has-text("ORACLE OF WIT")');
+        const heading = page.locator('h1:has-text("ORACLE OF WIT")').first();
         await expect(heading).toBeVisible();
     });
 
@@ -232,9 +232,9 @@ test.describe('Welcome Screen', () => {
         await btn.click();
 
         // Boot sequence runs for ~1.6s (4 steps x 400ms), then navigates to lobby
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
-        const lobbyHeading = page.locator('text=GAME LOBBY');
+        const lobbyHeading = page.locator('#app h2:has-text("GAME LOBBY")');
         await expect(lobbyHeading).toBeVisible();
     });
 });
@@ -251,16 +251,16 @@ test.describe('Lobby Screen', () => {
         await nameInput.dispatchEvent('input');
 
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
     }
 
     test('lobby shows game creation options for solo and multiplayer', async ({ page }) => {
         await goToLobby(page);
 
-        const soloHeading = page.locator('text=SOLO MODE');
+        const soloHeading = page.locator('#app h3:has-text("SOLO MODE")');
         await expect(soloHeading).toBeVisible();
 
-        const multiHeading = page.locator('text=MULTIPLAYER');
+        const multiHeading = page.locator('#app h3:has-text("MULTIPLAYER")').first();
         await expect(multiHeading).toBeVisible();
     });
 
@@ -356,13 +356,13 @@ test.describe('Single Player Game Flow', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // Click solo tech category
         await page.locator('[data-action="createRoom"][data-category="tech"][data-single-player="true"]').click();
 
         // Should see waiting screen with SOLO MODE
-        await page.waitForSelector('text=SOLO MODE', { timeout: 3000 });
+        await page.locator('#app :has-text("SOLO MODE")').first().waitFor({ timeout: 3000 });
 
         // Click start game
         await page.locator('[data-action="startGame"]').click();
@@ -418,11 +418,11 @@ test.describe('Single Player Game Flow', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // Create solo game
         await page.locator('[data-action="createRoom"][data-category="tech"][data-single-player="true"]').click();
-        await page.waitForSelector('text=SOLO MODE', { timeout: 3000 });
+        await page.locator('#app :has-text("SOLO MODE")').first().waitFor({ timeout: 3000 });
         await page.locator('[data-action="startGame"]').click();
         await page.waitForSelector('#punchline', { timeout: 3000 });
 
@@ -436,8 +436,8 @@ test.describe('Single Player Game Flow', () => {
         await expect(submitBtn).toBeVisible();
         await submitBtn.click();
 
-        // After submission, should see SUBMITTED confirmation
-        await page.waitForSelector('text=SUBMITTED', { timeout: 3000 });
+        // After submission, should see SUBMITTED confirmation (the green text, not the counter)
+        await page.locator('p.text-green-400:has-text("SUBMITTED")').waitFor({ timeout: 3000 });
         await expect(page.locator('text=AWAITING TIMER EXPIRY')).toBeVisible();
     });
 });
@@ -454,14 +454,14 @@ test.describe('Room Creation', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // Create multiplayer room
         await page.locator('[data-action="createRoom"][data-category="tech"][data-single-player="false"]').click();
 
-        // Should see room code
+        // Should see room code (scoped to the select-all display element)
         await page.waitForSelector('text=ROOM CODE', { timeout: 3000 });
-        await expect(page.locator('text=TEST01')).toBeVisible();
+        await expect(page.locator('.select-all:has-text("TEST01")')).toBeVisible();
 
         // Copy button should be present
         const copyBtn = page.locator('[data-action="copyRoomCode"]');
@@ -476,18 +476,19 @@ test.describe('Room Creation', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         await page.locator('[data-action="createRoom"][data-category="tech"][data-single-player="false"]').click();
         await page.waitForSelector('text=ROOM CODE', { timeout: 3000 });
 
-        // Player list visible
-        await expect(page.locator('text=TestPlayer')).toBeVisible();
-        await expect(page.locator('text=BotAlpha')).toBeVisible();
-        await expect(page.locator('text=BotBeta')).toBeVisible();
+        // Player list visible (scope to #app content, not header)
+        const appContent = page.locator('#app');
+        await expect(appContent.locator('text=TestPlayer').first()).toBeVisible();
+        await expect(appContent.locator('text=BotAlpha').first()).toBeVisible();
+        await expect(appContent.locator('text=BotBeta').first()).toBeVisible();
 
         // Connected count
-        await expect(page.locator('text=CONNECTED')).toBeVisible();
+        await expect(appContent.locator('text=CONNECTED').first()).toBeVisible();
     });
 });
 
@@ -502,7 +503,7 @@ test.describe('Navigation', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
     }
 
     test('profile screen is accessible from lobby', async ({ page }) => {
@@ -512,7 +513,7 @@ test.describe('Navigation', () => {
         await page.locator('[data-action="goToProfile"]').click();
 
         // Should see profile screen with statistics
-        await page.waitForSelector('text=Statistics', { timeout: 3000 });
+        await page.locator('#app :has-text("Statistics")').first().waitFor({ timeout: 3000 });
         await expect(page.locator('text=Games Played')).toBeVisible();
         await expect(page.locator('text=Games Won')).toBeVisible();
     });
@@ -540,12 +541,12 @@ test.describe('Navigation', () => {
 
         // Navigate to profile
         await page.locator('[data-action="goToProfile"]').click();
-        await page.waitForSelector('text=Statistics', { timeout: 3000 });
+        await page.locator('#app :has-text("Statistics")').first().waitFor({ timeout: 3000 });
 
         // Navigate back
         await page.locator('[data-action="backToLobby"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 3000 });
-        await expect(page.locator('text=GAME LOBBY')).toBeVisible();
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 3000 });
+        await expect(page.locator('#app h2:has-text("GAME LOBBY")')).toBeVisible();
     });
 
     test('back to lobby navigation works from community prompts', async ({ page }) => {
@@ -555,8 +556,8 @@ test.describe('Navigation', () => {
         await page.waitForSelector('text=COMMUNITY PROMPTS', { timeout: 3000 });
 
         await page.locator('[data-action="backToLobbyFromCommunity"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 3000 });
-        await expect(page.locator('text=GAME LOBBY')).toBeVisible();
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 3000 });
+        await expect(page.locator('#app h2:has-text("GAME LOBBY")')).toBeVisible();
     });
 });
 
@@ -620,7 +621,7 @@ test.describe('Input Validation', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // Create game and get to submission
         await page.locator('[data-action="createRoom"][data-category="tech"][data-single-player="true"]').click();
@@ -650,7 +651,7 @@ test.describe('UI Responsiveness', () => {
         await loadApp(page);
 
         // Key elements visible
-        await expect(page.locator('h1:has-text("ORACLE OF WIT")')).toBeVisible();
+        await expect(page.locator('h1:has-text("ORACLE OF WIT")').first()).toBeVisible();
         await expect(page.locator('#player-name-input')).toBeVisible();
         await expect(page.locator('[data-action="startBootSequence"]')).toBeVisible();
     });
@@ -660,12 +661,12 @@ test.describe('UI Responsiveness', () => {
         await mockAPI(page);
         await loadApp(page);
 
-        await expect(page.locator('h1:has-text("ORACLE OF WIT")')).toBeVisible();
+        await expect(page.locator('h1:has-text("ORACLE OF WIT")').first()).toBeVisible();
         await expect(page.locator('#player-name-input')).toBeVisible();
         await expect(page.locator('[data-action="startBootSequence"]')).toBeVisible();
 
         // How It Works cards should be visible on desktop
-        await expect(page.locator('text=HOW IT WORKS')).toBeVisible();
+        await expect(page.locator('#app :has-text("HOW IT WORKS")').first()).toBeVisible();
         await expect(page.locator('.data-card-wit')).toBeVisible();
     });
 
@@ -678,7 +679,7 @@ test.describe('UI Responsiveness', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // Solo category buttons visible
         const techBtn = page.locator('[data-action="createRoom"][data-category="tech"][data-single-player="true"]');
@@ -700,7 +701,7 @@ test.describe('Header and Global UI', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // Header should show Oracle of Wit
         const header = page.locator('#main-header');
@@ -717,7 +718,7 @@ test.describe('Header and Global UI', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         const soundBtn = page.locator('[data-action="toggleSound"]');
         await expect(soundBtn).toBeVisible();
@@ -734,7 +735,7 @@ test.describe('Header and Global UI', () => {
         await nameInput.fill('TestPlayer');
         await nameInput.dispatchEvent('input');
         await page.locator('[data-action="startBootSequence"]').click();
-        await page.waitForSelector('text=GAME LOBBY', { timeout: 5000 });
+        await page.locator('#app h2:has-text("GAME LOBBY")').waitFor({ timeout: 5000 });
 
         // The header should show the player's profile level/title or name
         const header = page.locator('#main-header');

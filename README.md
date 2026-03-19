@@ -8,7 +8,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-A855F7?style=for-the-badge&logo=vercel&logoColor=white)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-2DD4BF?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-204_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-297_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-FBBF24?style=for-the-badge)](LICENSE)
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
@@ -16,6 +16,7 @@
 ![Three.js](https://img.shields.io/badge/Three.js-000?style=flat-square&logo=threedotjs&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-000?style=flat-square&logo=vercel&logoColor=white)
 ![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=flat-square&logo=vitest&logoColor=white)
+![ESLint](https://img.shields.io/badge/ESLint-4B32C3?style=flat-square&logo=eslint&logoColor=white)
 ![Redis](https://img.shields.io/badge/Upstash_Redis-DC382D?style=flat-square&logo=redis&logoColor=white)
 
 [Play Now](https://oracle-of-wit.vercel.app) | [Report Bug](https://github.com/Ridwannurudeen/oracle-of-wit/issues) | [GenLayer Docs](https://docs.genlayer.com)
@@ -270,9 +271,10 @@ oracle-of-wit/
 │   ├── render.js              # All render*() functions, HUD, reveal
 │   └── app.js                 # Game actions, timer, boot, event handlers
 ├── api/
-│   ├── game.js                # Serverless API handler (~400 lines)
+│   ├── game.js                # Serverless API handler (auth, routing, CORS)
 │   ├── discord.js             # Discord bot — slash commands via Interactions API
-│   └── lib/                   # Extracted modules (split from monolithic game.js)
+│   ├── handlers/              # Action handler modules (room, gameplay, profile, social, meta)
+│   └── lib/                   # Shared modules (redis, auth, ai, genlayer, constants, profiles)
 │       ├── redis.js           # Upstash REST helpers (GET/SET/INCR/SETNX/DEL)
 │       ├── auth.js            # Session tokens, CORS whitelist, rate limiting
 │       ├── constants.js       # Timers, levels, achievements, themes, prompts
@@ -287,8 +289,10 @@ oracle-of-wit/
 │   ├── register-commands.mjs  # Register Discord slash commands
 │   └── capture-screenshots.mjs # Screenshot capture for README (Playwright)
 ├── tests/
-│   ├── contract.test.js       # Contract logic unit tests (22 tests)
-│   ├── api.test.js            # API integration tests (56 tests)
+│   ├── game-logic.test.js     # Core game-logic unit tests (44 tests)
+│   ├── contract.test.js       # Contract logic unit tests (60 tests)
+│   ├── api.test.js            # API integration tests (93 tests)
+│   ├── frontend.test.js       # Frontend unit tests (76 tests)
 │   └── discord.test.js        # Discord bot tests (16 tests)
 ├── docs/
 │   └── images/                # README screenshots (8 PNGs)
@@ -356,7 +360,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **204 tests** across four test suites:
+Oracle of Wit has **297 tests** across five test suites:
 
 ```bash
 # Run all tests
@@ -368,8 +372,10 @@ npm run test:watch
 
 | Suite | File | Tests | Coverage |
 |-------|------|-------|----------|
-| **Contract** | `tests/contract.test.js` | 22 | Game creation, OD judging, leaderboard, appeals, seasons, idempotency, JSON safety |
-| **API** | `tests/api.test.js` | 56 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth (session tokens), rate limiting, input validation, CORS |
+| **Game Logic** | `tests/game-logic.test.js` | 44 | autoJudge, transitionFromSubmitting, tallyVotesAndJudge, createRoundResult, checkAutoAdvance, bot submissions/bets, prompts |
+| **API** | `tests/api.test.js` | 93 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth (session tokens), rate limiting, input validation, CORS |
+| **Frontend** | `tests/frontend.test.js` | 84 | XSS escaping, auto-escape templates, DOM patching, timer formatting, state management, game events, adaptive polling |
+| **Contract** | `tests/contract.test.js` | 60 | Game creation, OD judging, leaderboard, appeals, seasons, admin access control, idempotency, JSON safety, player history |
 | **Discord** | `tests/discord.test.js` | 16 | Ed25519 signatures, slash commands, error handling |
 
 ---

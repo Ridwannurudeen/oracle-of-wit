@@ -1,18 +1,26 @@
 // Oracle of Wit — Game Actions, Timer, Boot, Event Handlers (ES Module)
 
 import { state, sessionToken, setSessionToken, headerFloating, setHeaderFloating, timerRAF, setTimerRAF, lastTimerSecond, setLastTimerSecond } from './state.js';
-import { API_URL, api, fetchRoom, startPolling, stopPolling, fetchPublicRooms, fetchLeaderboard, soundEnabled, setSoundEnabled, isTyping, setIsTyping, typingTimeout, updateTimerDisplay, setTyping } from './api.js';
+import { API_URL, api, fetchRoom, startPolling, stopPolling, fetchPublicRooms, fetchLeaderboard, soundEnabled, setSoundEnabled, isTyping, setIsTyping, typingTimeout, updateTimerDisplay, setTyping, audioCtx, setOptimisticGuard, clearOptimisticGuard } from './api.js';
 import { playSound, initAudio, createConfetti, oracleEye3D, startRevealSequence, stopRevealSequence, startValidatorVoting, stopValidatorVoting } from './effects.js';
-import { addGameEvent, formatTime } from './render-helpers.js';
+import { addGameEvent, formatTime, getNextLevelXPClient } from './render-helpers.js';
 import { render } from './render.js';
 
 // ─── Timer Functions ────────────────────────────────────────────
 
+/**
+ * Synchronise the local timeLeft counter with the server's phaseEndsAt timestamp.
+ * @returns {void}
+ */
 export function syncTimer() {
     if (!state.room?.phaseEndsAt) { state.timeLeft = 0; return; }
     state.timeLeft = Math.max(0, Math.floor((state.room.phaseEndsAt - Date.now()) / 1000));
 }
 
+/**
+ * Start the requestAnimationFrame-based countdown timer with sound effects.
+ * @returns {void}
+ */
 function startTimer() {
     stopTimer();
     setLastTimerSecond(-1);
@@ -31,6 +39,10 @@ function startTimer() {
     setTimerRAF(requestAnimationFrame(tick));
 }
 
+/**
+ * Stop the countdown timer and cancel the animation frame.
+ * @returns {void}
+ */
 function stopTimer() {
     if (timerRAF) { cancelAnimationFrame(timerRAF); setTimerRAF(null); }
     setLastTimerSecond(-1);
@@ -38,6 +50,13 @@ function stopTimer() {
 
 // ─── Phase Change Handler ───────────────────────────────────────
 
+/**
+ * Handle transitions between game phases. Cleans up previous phase state
+ * (timers, reveals, typing), plays sound effects, and initialises the new phase.
+ * @param {string} oldStatus - The previous room status.
+ * @param {string} newStatus - The new room status.
+ * @returns {void}
+ */
 export function handlePhaseChange(oldStatus, newStatus) {
     // Always clean up reveal state on any phase transition
     stopRevealSequence();
@@ -109,7 +128,11 @@ export function handlePhaseChange(oldStatus, newStatus) {
 
 // ─── Generate Validator Votes ───────────────────────────────────
 
-// Generate validator votes based on actual round result
+/**
+ * Generate 5 simulated validator votes based on the actual round result.
+ * Majority (4-5) agree with the AI winner; 1 may dissent for visual variety.
+ * @returns {void}
+ */
 export function generateFinalValidatorVotes() {
     const result = state.room?.roundResults?.[state.room.roundResults.length - 1];
     if (!result) return;
@@ -137,6 +160,12 @@ export function generateFinalValidatorVotes() {
 
 // ─── Game Actions ───────────────────────────────────────────────
 
+/**
+ * Create a new game room and transition to the waiting screen.
+ * @param {string} category - Joke category for the room.
+ * @param {boolean} [singlePlayer=false] - Whether this is a single-player game.
+ * @returns {Promise<void>}
+ */
 export async function createRoom(category, singlePlayer = false) {
     initAudio();
     playSound('click');
@@ -153,6 +182,11 @@ export async function createRoom(category, singlePlayer = false) {
     } catch (e) { state.error = 'Failed to create room. Try again.'; render(); }
 }
 
+/**
+ * Join an existing game room by its room code.
+ * @param {string|null|undefined} roomId - Room code to join.
+ * @returns {Promise<void>}
+ */
 export async function joinRoom(roomId) {
     if (!roomId?.trim()) { state.error = 'Enter room code'; render(); return; }
     initAudio();
@@ -170,6 +204,10 @@ export async function joinRoom(roomId) {
     } catch (e) { state.error = e.message || 'Room not found or full.'; render(); }
 }
 
+/**
+ * Start the game in the current room (host-only).
+ * @returns {Promise<void>}
+ */
 export async function startGame() {
     if (state.loading) return; // Prevent double-click
     playSound('start');
@@ -185,6 +223,10 @@ export async function startGame() {
     } catch (e) { state.error = e.message || 'Failed to start game.'; render(); }
 }
 
+/**
+ * Submit the player's punchline for the current round with optimistic update.
+ * @returns {Promise<void>}
+ */
 export async function submitPunchline() {
     const text = state.punchlineText.trim();
     if (!text) { state.error = 'Write a punchline first'; render(true); return; }
@@ -192,39 +234,53 @@ export async function submitPunchline() {
     setIsTyping(false);
     if (typingTimeout) clearTimeout(typingTimeout);
     playSound('submit');
-    // Optimistic update
+    // Optimistic update with guard
     state.hasSubmitted = true;
+    setOptimisticGuard(2000);
     render(true);
     try {
         await api('submitPunchline', { roomId: state.roomId, playerName: state.playerName, punchline: text });
     } catch (e) {
         state.hasSubmitted = false; // Revert on error
+        clearOptimisticGuard();
         state.error = e.message || 'Failed to submit. Try again.';
         render(true);
     }
 }
 
+/**
+ * Cast a vote for a curated submission during the voting phase.
+ * @param {number} submissionId - ID of the submission to vote for.
+ * @returns {Promise<void>}
+ */
 export async function castVote(submissionId) {
     if (state.votedFor) return;
     playSound('bet');
-    // Optimistic update
+    // Optimistic update with guard
     state.votedFor = submissionId;
     if (state.room?.audienceVotes) state.room.audienceVotes[state.playerName] = submissionId;
+    setOptimisticGuard(2000);
     render();
     try {
         await api('castVote', { roomId: state.roomId, playerName: state.playerName, submissionId });
     } catch (e) {
         state.votedFor = null; // Revert on error
+        clearOptimisticGuard();
         if (state.room?.audienceVotes) delete state.room.audienceVotes[state.playerName];
         if (e.message) { state.error = e.message; render(); }
     }
 }
 
+/**
+ * Place a bet on the currently selected submission with optimistic update.
+ * @returns {Promise<void>}
+ */
 export async function placeBet() {
     if (!state.selectedSubmission) { state.error = 'Select a submission first'; render(); return; }
     playSound('bet');
-    // Optimistic update
+    // Optimistic update with guard
     state.hasBet = true;
+    setOptimisticGuard(2000);
     render();
     try {
         const result = await api('placeBet', { roomId: state.roomId, playerName: state.playerName, submissionId: state.selectedSubmission, amount: state.betAmount });
@@ -234,20 +290,36 @@ export async function placeBet() {
         render();
     } catch (e) {
         state.hasBet = false; // Revert on error
+        clearOptimisticGuard();
         if (e.message?.includes('No budget')) { state.error = 'No betting budget left!'; }
         render();
     }
 }
 
+/**
+ * Send an emoji reaction on a submission (max 3 per player per round).
+ * @param {number} submissionId - ID of the submission to react to.
+ * @param {string} emoji - Emoji character to send.
+ * @returns {Promise<void>}
+ */
 export async function sendReaction(submissionId, emoji) {
     if (state.sentReactions >= 3) return;
+    // Optimistic update
+    state.sentReactions++;
+    setOptimisticGuard(1500);
+    render();
     try {
         await api('sendReaction', { roomId: state.roomId, playerName: state.playerName, submissionId, emoji });
-        state.sentReactions++;
-        render();
-    } catch (e) {}
+    } catch (_e) {
+        state.sentReactions = Math.max(0, state.sentReactions - 1); // Revert on error
+        clearOptimisticGuard();
+    }
 }
 
+/**
+ * Manually advance the game to the next phase (host-only).
+ * @returns {Promise<void>}
+ */
 export async function advancePhase() {
     playSound('click');
     try {
@@ -257,6 +329,11 @@ export async function advancePhase() {
     } catch (e) { state.error = e.message || 'Failed to advance phase.'; render(); }
 }
 
+/**
+ * Advance to the next round or finish the game. Updates profile, shows
+ * achievements, and handles room expiration recovery.
+ * @returns {Promise<void>}
+ */
 export async function nextRound() {
     playSound('click');
     try {
@@ -296,6 +373,10 @@ export async function nextRound() {
     }
 }
 
+/**
+ * Leave the current room, clean up all game state, and return to the lobby.
+ * @returns {void}
+ */
 export function leaveRoom() {
     playSound('click');
     stopPolling();
@@ -320,6 +401,10 @@ export function leaveRoom() {
 
 // ─── Lobby / Profile Functions ──────────────────────────────────
 
+/**
+ * Load the current weekly theme from the server.
+ * @returns {Promise<void>}
+ */
 export async function loadWeeklyTheme() {
     try {
         const res = await fetch(`${API_URL}?action=getWeeklyTheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -328,6 +413,10 @@ export async function loadWeeklyTheme() {
     } catch(e) { console.warn('Failed to load weekly theme:', e.message); }
 }
 
+/**
+ * Run the animated boot/login sequence, then navigate to the lobby.
+ * @returns {void}
+ */
 export function startBootSequence() {
     if (!state.playerName.trim()) { state.error = 'Enter your name'; render(); return; }
     initAudio();
@@ -373,6 +462,11 @@ export function startBootSequence() {
     showStep();
 }
 
+/**
+ * Navigate to the lobby screen. Initialises playerId if needed, fetches
+ * public rooms, leaderboard, weekly theme, and player profile.
+ * @returns {void}
+ */
 export function goToLobby() {
     if (!state.playerName.trim()) { state.error = 'Enter your name'; render(); return; }
     initAudio();
@@ -390,6 +484,10 @@ export function goToLobby() {
     render();
 }
 
+/**
+ * Fetch or create the player profile from the server.
+ * @returns {Promise<void>}
+ */
 export async function fetchProfile() {
     if (!state.playerId) return;
     try {
@@ -407,6 +505,10 @@ export async function fetchProfile() {
     } catch(e) { console.warn('Failed to fetch profile:', e.message); }
 }
 
+/**
+ * Fetch today's daily challenge and navigate to the daily screen.
+ * @returns {Promise<void>}
+ */
 export async function fetchDailyChallenge() {
     try {
         const res = await fetch(`${API_URL}?action=getDailyChallenge`, {
@@ -422,6 +524,10 @@ export async function fetchDailyChallenge() {
     } catch(e) { console.warn('Failed to fetch daily challenge:', e.message); }
 }
 
+/**
+ * Submit a punchline for the daily challenge and display results.
+ * @returns {Promise<void>}
+ */
 export async function submitDailyChallenge() {
     const text = document.getElementById('daily-punchline')?.value?.trim();
     if (!text) { state.error = 'Write a punchline first'; render(true); return; }
@@ -445,6 +551,10 @@ export async function submitDailyChallenge() {
     } catch(e) { state.dailySubmitting = false; render(true); }
 }
 
+/**
+ * Fetch the hall of fame entries and display them.
+ * @returns {Promise<void>}
+ */
 export async function fetchHallOfFame() {
     try {
         const res = await fetch(`${API_URL}?action=getHallOfFame`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -453,6 +563,10 @@ export async function fetchHallOfFame() {
     } catch(e) { console.warn('Failed to fetch hall of fame:', e.message); }
 }
 
+/**
+ * Appeal the current round verdict using AI re-judging and GenLayer.
+ * @returns {Promise<void>}
+ */
 export async function appealVerdict() {
     if (state.appealInProgress || state.appealResult) return;
     state.appealInProgress = true;
@@ -478,6 +592,11 @@ export async function appealVerdict() {
 
 // ─── UI Utilities ───────────────────────────────────────────────
 
+/**
+ * Display a toast notification when an achievement is unlocked.
+ * @param {string} achievementId - ID of the unlocked achievement.
+ * @returns {void}
+ */
 export function showAchievementToast(achievementId) {
     const a = state.allAchievements.find(x => x.id === achievementId);
     if (!a) return;
@@ -488,7 +607,15 @@ export function showAchievementToast(achievementId) {
     setTimeout(() => { toast.classList.add('toast-out'); setTimeout(() => toast.remove(), 500); }, 3000);
 }
 
-// Share card generation (Canvas API)
+/**
+ * Generate a share card image using the Canvas API.
+ * @param {string} prompt - The joke prompt.
+ * @param {string} punchline - The winning punchline.
+ * @param {string} playerName - The winner's name.
+ * @param {number} score - XP score to display.
+ * @param {string|null} roast - Optional AI commentary/roast.
+ * @returns {HTMLCanvasElement} Canvas element with the rendered card.
+ */
 export function generateShareCard(prompt, punchline, playerName, score, roast) {
     const canvas = document.createElement('canvas');
     canvas.width = 600; canvas.height = 400;
@@ -538,6 +665,16 @@ export function generateShareCard(prompt, punchline, playerName, score, roast) {
     return canvas;
 }
 
+/**
+ * Wrap and draw text on a canvas context, returning the final Y position.
+ * @param {CanvasRenderingContext2D} ctx - Canvas 2D context.
+ * @param {string} text - Text to wrap and draw.
+ * @param {number} x - Center X coordinate.
+ * @param {number} y - Starting Y coordinate.
+ * @param {number} maxWidth - Maximum line width in pixels.
+ * @param {number} lineHeight - Pixels between lines.
+ * @returns {number} The Y coordinate of the last drawn line.
+ */
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     const words = text.split(' ');
     let line = '', curY = y;
@@ -552,6 +689,15 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     return curY;
 }
 
+/**
+ * Share a generated card image via Web Share API or download fallback.
+ * @param {string} prompt - The joke prompt.
+ * @param {string} punchline - The winning punchline.
+ * @param {string} playerName - The winner's name.
+ * @param {number} score - XP score to display.
+ * @param {string|null} roast - Optional AI commentary.
+ * @returns {void}
+ */
 export function shareImage(prompt, punchline, playerName, score, roast) {
     const canvas = generateShareCard(prompt, punchline, playerName, score, roast);
     canvas.toBlob(blob => {
@@ -569,6 +715,13 @@ export function shareImage(prompt, punchline, playerName, score, roast) {
     }, 'image/png');
 }
 
+/**
+ * Copy a text summary of the game result to the clipboard.
+ * @param {number} score - Player's XP score.
+ * @param {number} roundsWon - Number of rounds won.
+ * @param {number} totalRounds - Total rounds played.
+ * @returns {void}
+ */
 export function copyShareText(score, roundsWon, totalRounds) {
     const wins = roundsWon > 0 ? ` | ${roundsWon}/${totalRounds} rounds won` : '';
     const text = `Oracle of Wit | ${score} XP${wins} | oracle-of-wit.vercel.app`;
@@ -578,12 +731,23 @@ export function copyShareText(score, roundsWon, totalRounds) {
     }).catch(() => {});
 }
 
+/**
+ * Open a Twitter/X intent to tweet the game result.
+ * @param {number} score - Player's XP score.
+ * @param {number} roundsWon - Number of rounds won.
+ * @param {number} totalRounds - Total rounds played.
+ * @returns {void}
+ */
 export function tweetResult(score, roundsWon, totalRounds) {
     const wins = roundsWon > 0 ? ` ${roundsWon}/${totalRounds} rounds won.` : '';
     const text = encodeURIComponent(`I scored ${score} XP on Oracle of Wit!${wins}\n\nThe AI humor prediction game powered by @GenLayer\noracle-of-wit.vercel.app`);
     window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
 }
 
+/**
+ * Create a friend challenge link and copy it to the clipboard.
+ * @returns {Promise<void>}
+ */
 export async function createChallengeLink() {
     if (!state.room) return;
     const result = state.room.roundResults?.[state.room.roundResults.length - 1];
@@ -601,10 +765,14 @@ export async function createChallengeLink() {
                 if (btn) { btn.textContent = 'Link Copied!'; setTimeout(() => { btn.textContent = 'Challenge a Friend'; }, 2000); }
             }).catch(() => {});
         }
-    } catch(e) {}
+    } catch (_e) { /* silently ignore challenge creation errors */ }
 }
 
-// Detect challenge link on page load
+/**
+ * Detect a challenge link in the URL query string on page load.
+ * Fetches the challenge data and cleans the URL.
+ * @returns {Promise<void>}
+ */
 export async function detectChallenge() {
     const params = new URLSearchParams(window.location.search);
     const challengeId = params.get('challenge');
@@ -616,23 +784,36 @@ export async function detectChallenge() {
             state.challengeData = data.challenge;
             // Auto-start single-player with that prompt after entering name
         }
-    } catch(e) {}
+    } catch (_e) { /* silently ignore challenge detection errors */ }
     // Clean URL
     window.history.replaceState({}, '', window.location.pathname);
 }
 
+/**
+ * Toggle sound effects on/off.
+ * @returns {void}
+ */
 export function toggleSound() {
     setSoundEnabled(!soundEnabled);
     if (soundEnabled) { initAudio(); playSound('click'); }
     render();
 }
 
+/**
+ * Select a submission for betting.
+ * @param {number} id - Submission ID to select.
+ * @returns {void}
+ */
 export function selectSubmission(id) {
     state.selectedSubmission = id;
     playSound('click');
     render();
 }
 
+/**
+ * Update the bet amount display and button text without a full re-render.
+ * @returns {void}
+ */
 export function updateBetDisplay() {
     const el = document.getElementById('bet-amount-display');
     if (el) el.textContent = state.betAmount;
@@ -640,6 +821,11 @@ export function updateBetDisplay() {
     if (btn) btn.textContent = 'BET ON #' + (state.selectedSubmission || '?');
 }
 
+/**
+ * Copy a room code to the clipboard with visual feedback.
+ * @param {string} code - Room code to copy.
+ * @returns {void}
+ */
 export function copyRoomCode(code) {
     navigator.clipboard.writeText(code).then(() => {
         playSound('click');
@@ -660,6 +846,10 @@ export function copyRoomCode(code) {
     });
 }
 
+/**
+ * Toggle the help/how-to-play section visibility.
+ * @returns {void}
+ */
 export function toggleHelp() {
     state.showHelp = !state.showHelp;
     playSound('click');
@@ -674,6 +864,10 @@ export function toggleHelp() {
 
 // ─── Share Functions ────────────────────────────────────────────
 
+/**
+ * Share the current round's winning result as an image.
+ * @returns {void}
+ */
 export function shareRoundResult() {
     if (!state.room) return;
     const r = state.room;
@@ -682,6 +876,10 @@ export function shareRoundResult() {
     shareImage(r.jokePrompt, result.winningPunchline, result.winnerName, result.scores?.[result.winnerName] || 100, result.aiCommentary?.winnerComment || null);
 }
 
+/**
+ * Share the final game result as an image.
+ * @returns {void}
+ */
 export function shareFinalResult() {
     if (!state.room) return;
     const r = state.room;
@@ -690,18 +888,113 @@ export function shareFinalResult() {
     shareImage(r.jokePrompt || 'Oracle of Wit', winner.name + ' won!', state.playerName, r.players.find(p => p.name === state.playerName)?.score || 0, null);
 }
 
-// ─── Client Helpers ─────────────────────────────────────────────
+// getNextLevelXPClient is imported from render-helpers.js
+export { getNextLevelXPClient } from './render-helpers.js';
 
-export function getNextLevelXPClient(xp) {
-    const thresholds = [0,500,1500,3000,6000,10000,20000,40000,75000,150000];
-    for (const t of thresholds) {
-        if (xp < t) return t;
+// ─── Wallet Authentication ──────────────────────────────────────
+
+/**
+ * Connect a wallet via MetaMask (EIP-4361 / SIWE flow).
+ * @returns {Promise<void>}
+ */
+export async function connectWallet() {
+    if (!window.ethereum) { state.error = 'MetaMask not detected. Install MetaMask to connect.'; render(true); return; }
+    if (state.walletConnecting) return;
+    state.walletConnecting = true;
+    render();
+    try {
+        // Request accounts
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const address = accounts[0];
+
+        // Get nonce from server
+        const nonceRes = await fetch(`${API_URL}?action=requestNonce`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+        });
+        const nonceData = await nonceRes.json();
+        if (!nonceData.success) throw new Error('Failed to get nonce');
+
+        // Build SIWE message
+        const domain = window.location.host;
+        const origin = window.location.origin;
+        const message = [
+            `${domain} wants you to sign in with your Ethereum account:`,
+            address,
+            '',
+            'Sign in to Oracle of Wit',
+            '',
+            `URI: ${origin}`,
+            'Version: 1',
+            `Chain ID: 1`,
+            `Nonce: ${nonceData.nonce}`,
+            `Issued At: ${new Date().toISOString()}`,
+        ].join('\n');
+
+        // Request signature
+        const signature = await window.ethereum.request({
+            method: 'personal_sign',
+            params: [message, address],
+        });
+
+        // Verify on server
+        const verifyRes = await fetch(`${API_URL}?action=verifyWallet`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, signature, displayName: state.playerName || undefined })
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) throw new Error(verifyData.error || 'Verification failed');
+
+        // Update state
+        state.walletAddress = verifyData.walletAddress;
+        state.isWalletConnected = true;
+        state.playerId = verifyData.playerId;
+        state.profile = verifyData.profile;
+        state.nextLevelXP = verifyData.nextLevelXP;
+        state.allAchievements = verifyData.achievements || [];
+
+        // Persist
+        localStorage.setItem('walletAddress', verifyData.walletAddress);
+        localStorage.setItem('playerId', verifyData.playerId);
+
+        state.walletConnecting = false;
+        playSound('start');
+        render();
+    } catch (e) {
+        state.walletConnecting = false;
+        if (e.code !== 4001) { // 4001 = user rejected
+            state.error = e.message || 'Wallet connection failed';
+        }
+        render(true);
     }
-    return null;
+}
+
+/**
+ * Disconnect the wallet and revert to UUID-based identity.
+ * @returns {void}
+ */
+export function disconnectWallet() {
+    state.walletAddress = null;
+    state.isWalletConnected = false;
+    localStorage.removeItem('walletAddress');
+    // Revert to UUID-based playerId
+    if (!localStorage.getItem('playerId')?.startsWith('wallet:')) {
+        // Already has a non-wallet playerId, keep it
+    } else {
+        const newId = crypto.randomUUID();
+        state.playerId = newId;
+        localStorage.setItem('playerId', newId);
+    }
+    playSound('click');
+    fetchProfile();
+    render();
 }
 
 // ─── Community Prompts ──────────────────────────────────────────
 
+/**
+ * Fetch community prompt submissions and navigate to the community screen.
+ * @returns {Promise<void>}
+ */
 export async function fetchCommunityPrompts() {
     try {
         const res = await fetch(`${API_URL}?action=getPromptSubmissions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -715,6 +1008,10 @@ export async function fetchCommunityPrompts() {
     } catch(e) { console.warn('Failed to fetch community prompts:', e.message); }
 }
 
+/**
+ * Submit a new community prompt from the input field.
+ * @returns {Promise<void>}
+ */
 export async function submitCommunityPrompt() {
     const input = document.getElementById('community-prompt-input');
     if (!input || !input.value.trim()) return;
@@ -722,14 +1019,19 @@ export async function submitCommunityPrompt() {
         await api('submitPrompt', { playerName: state.playerName, prompt: input.value.trim(), playerId: state.playerId });
         input.value = '';
         fetchCommunityPrompts();
-    } catch(e) {}
+    } catch (_e) { /* silently ignore */ }
 }
 
+/**
+ * Vote for a community prompt by its ID.
+ * @param {string} promptId - ID of the prompt to vote for.
+ * @returns {Promise<void>}
+ */
 export async function voteCommunityPrompt(promptId) {
     try {
         await api('votePrompt', { promptId, playerId: state.playerId });
         fetchCommunityPrompts();
-    } catch(e) {}
+    } catch (_e) { /* silently ignore */ }
 }
 
 // ─── Event Listeners ────────────────────────────────────────────
@@ -765,7 +1067,7 @@ document.addEventListener('mouseenter', e => {
         gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
         osc.start(audioCtx.currentTime);
         osc.stop(audioCtx.currentTime + 0.05);
-    } catch(e) {}
+    } catch (_e) { /* audio may not be available */ }
 }, true);
 
 

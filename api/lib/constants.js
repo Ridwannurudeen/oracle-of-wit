@@ -1,10 +1,15 @@
 // Game constants: timers, levels, achievements, themes, bot names, prompt punchlines
 
+/** @type {number} Submission phase duration in ms */
 export const SUBMISSION_TIME = parseInt(process.env.SUBMISSION_TIME) || 40000;
+/** @type {number} Betting phase duration in ms */
 export const BETTING_TIME = parseInt(process.env.BETTING_TIME) || 30000;
+/** @type {number} Voting phase duration in ms */
 export const VOTING_TIME = parseInt(process.env.VOTING_TIME) || 20000;
+/** @type {number} Minimum submissions before curation kicks in */
 export const CURATION_THRESHOLD = parseInt(process.env.CURATION_THRESHOLD) || 8;
 
+/** @type {import('./types.js').LevelThreshold[]} */
 export const LEVEL_THRESHOLDS = [
     { xp: 0, level: 1, title: 'Joke Rookie' },
     { xp: 500, level: 2, title: 'Pun Apprentice' },
@@ -18,6 +23,7 @@ export const LEVEL_THRESHOLDS = [
     { xp: 150000, level: 10, title: 'Supreme Oracle' }
 ];
 
+/** @type {import('./types.js').Achievement[]} */
 export const ACHIEVEMENTS = [
     { id: 'first_win', name: 'First Blood', icon: '\u{1F5E1}\u{FE0F}' },
     { id: 'five_wins', name: 'Funny Five', icon: '\u{270B}' },
@@ -115,8 +121,10 @@ export const WEEKLY_THEMES = [
     }
 ];
 
+/** @type {string[]} */
 export const BOT_NAMES = ['WittyBot', 'JokesMaster', 'PunLord', 'ComedyAI', 'LaughBot', 'HumorEngine'];
 
+/** @type {Object<string, string[]>} Map of joke prompts to their punchline options */
 export const PROMPT_PUNCHLINES = {
     "Why do programmers prefer dark mode? Because...": [
         "light attracts bugs.",
@@ -780,6 +788,7 @@ export const PROMPT_PUNCHLINES = {
     ]
 };
 
+/** @type {Object<string, string[]>} Fallback punchlines by category when no prompt-specific ones exist */
 export const FALLBACK_PUNCHLINES = {
     tech: [
         "...and that's why we can't have nice things in production.",
@@ -804,6 +813,31 @@ export const FALLBACK_PUNCHLINES = {
     ]
 };
 
+/**
+ * Derive categorized prompt lists from PROMPT_PUNCHLINES keys (single source of truth).
+ * @returns {{tech: string[], crypto: string[], general: string[]}}
+ */
+function categorizePrompts() {
+    const techKw = ['program', 'code', 'developer', 'javascript', 'java ', 'sql', 'git', 'server', 'AI ', 'ai ', 'bug', 'deploy', 'stack overflow', 'rubber duck', 'code review', 'database', 'QA ', 'computer', 'powerpoint', 'router', 'chatgpt', 'claude', 'binary', 'function'];
+    const cryptoKw = ['bitcoin', 'ethereum', 'crypto', 'nft', 'defi', 'blockchain', 'token', 'coin', 'wallet', 'hodl', 'rug pull', 'whale', 'gas fee', 'wagmi', 'airdrop', 'whitepaper', 'portfolio', 'seed phrase', 'altcoin', 'miner', 'dip', 'moon', 'diamond hands', 'selling'];
+
+    const result = { tech: [], crypto: [], general: [] };
+    for (const prompt of Object.keys(PROMPT_PUNCHLINES)) {
+        const lower = prompt.toLowerCase();
+        if (techKw.some(kw => lower.includes(kw))) result.tech.push(prompt);
+        else if (cryptoKw.some(kw => lower.includes(kw))) result.crypto.push(prompt);
+        else result.general.push(prompt);
+    }
+    return result;
+}
+
+/** @type {{tech: string[], crypto: string[], general: string[]}} */
+export const CATEGORIZED_PROMPTS = categorizePrompts();
+
+/**
+ * Get the current ISO week number.
+ * @returns {number}
+ */
 export function getCurrentWeekNumber() {
     const now = new Date();
     const start = new Date(now.getFullYear(), 0, 1);
@@ -812,6 +846,10 @@ export function getCurrentWeekNumber() {
     return Math.floor(diff / oneWeek);
 }
 
+/**
+ * Get the current weekly theme based on the week number.
+ * @returns {import('./types.js').WeeklyTheme}
+ */
 export function getCurrentTheme() {
     const weekNum = getCurrentWeekNumber();
     return WEEKLY_THEMES[weekNum % WEEKLY_THEMES.length];

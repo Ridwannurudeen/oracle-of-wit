@@ -1,7 +1,20 @@
 {
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/*.js": {
+      "runtime": "@vercel/node@3"
+    }
+  },
   "rewrites": [
     { "source": "/share/:id", "destination": "/api/game?action=ogPreview&id=:id" },
-    { "source": "/((?!api/|js/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/advance-games",
+      "schedule": "* * * * *"
+    }
   ],
   "headers": [
     {

@@ -1,8 +1,15 @@
-// Oracle of Wit — Lobby Screen Renderers (ES Module)
+/**
+ * @module render-lobby
+ * @description Lobby screen renderers: welcome, lobby, and waiting room.
+ */
 
 import { state } from './state.js';
 import { esc, glLogo, renderProfileCard, getTodayKeyClient } from './render-helpers.js';
 
+/**
+ * Render the welcome/landing screen with protocol info and login form.
+ * @returns {string} HTML string.
+ */
 export function renderWelcome() {
     return `
         <!-- HERO SECTION — full width -->
@@ -114,6 +121,19 @@ export function renderWelcome() {
                             INITIALIZE SESSION
                         </button>
                     </div>
+                    ${state.isWalletConnected ? `
+                        <div class="mt-3 flex items-center justify-between p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                                <span class="text-[11px] font-mono text-green-400 truncate max-w-[200px]">${esc(state.walletAddress)}</span>
+                            </div>
+                            <button data-action="disconnectWallet" class="text-[10px] font-mono text-gray-500 hover:text-red-400 transition-colors">DISCONNECT</button>
+                        </div>
+                    ` : `
+                        <button data-action="connectWallet" data-hover-sound="true" class="btn w-full mt-3 py-3 rounded-xl text-sm font-mono tracking-wider border border-oracle/30 text-oracle hover:bg-oracle/10 transition-all ${state.walletConnecting ? 'opacity-50 pointer-events-none' : ''}">
+                            ${state.walletConnecting ? '<span class="spinner inline-block w-4 h-4 mr-2 align-middle"></span>CONNECTING...' : 'CONNECT WALLET'}
+                        </button>
+                    `}
                 </div>
                 <div class="mt-4 text-center">
                     <a href="https://www.genlayer.com" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-[10px] font-mono text-oracle/40 hover:text-oracle transition-colors tracking-wider"><span class="opacity-60">${glLogo(14, 'rgb(45,212,191)')}</span>POWERED BY GENLAYER &rarr;</a>
@@ -123,6 +143,11 @@ export function renderWelcome() {
     `;
 }
 
+/**
+ * Render the game lobby with solo/multiplayer modes, daily challenge,
+ * community prompts, and leaderboard/hall of fame tabs.
+ * @returns {string} HTML string.
+ */
 export function renderLobby() {
     const gamesPlayedToday = parseInt(localStorage.getItem('gamesToday_' + getTodayKeyClient()) || '0');
     return `
@@ -308,6 +333,10 @@ export function renderLobby() {
     `;
 }
 
+/**
+ * Render the waiting room with player list, room code, and start button.
+ * @returns {string} HTML string.
+ */
 export function renderWaiting() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;

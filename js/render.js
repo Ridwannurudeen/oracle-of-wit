@@ -8,9 +8,14 @@ import { renderWelcome, renderLobby, renderWaiting } from './render-lobby.js';
 import { renderSubmitting, renderCurating, renderVoting, renderBetting, renderJudging } from './render-game.js';
 import { renderRevealing, renderRoundResults, renderFinalResults } from './render-results.js';
 import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderCommunityPrompts } from './render-screens.js';
+import { syncFromLegacyState } from './signals.js';
 
 // === HUD WING PANELS ===
 
+/**
+ * Render the inner HTML content for the left HUD wing (live activity feed).
+ * @returns {string} HTML string.
+ */
 export function renderLeftWingContent() {
     const events = gameEvents.slice(0, 5);
     return `
@@ -45,6 +50,10 @@ export function renderLeftWingContent() {
     `;
 }
 
+/**
+ * Render the full left HUD wing aside element.
+ * @returns {string} HTML string.
+ */
 export function renderLeftWing() {
     return `
         <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
@@ -53,6 +62,10 @@ export function renderLeftWing() {
     `;
 }
 
+/**
+ * Render the inner HTML content for the right HUD wing (network status, leaderboard, budget).
+ * @returns {string} HTML string.
+ */
 export function renderRightWingContent() {
     const r = state.room;
     const budget = r?.betBudgets?.[state.playerName];
@@ -147,6 +160,10 @@ export function renderRightWingContent() {
     `;
 }
 
+/**
+ * Render the full right HUD wing aside element.
+ * @returns {string} HTML string.
+ */
 export function renderRightWing() {
     return `
         <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
@@ -155,7 +172,11 @@ export function renderRightWing() {
     `;
 }
 
-// === SCREEN DISPATCHER ===
+/**
+ * Screen dispatcher: returns the HTML for the current game screen/phase.
+ * Intercepts the reveal animation phase before delegating to screen renderers.
+ * @returns {string} HTML string for the active screen.
+ */
 export function renderScreen() {
     // Reveal phase intercepts roundResults
     if (state.revealPhase === 'revealing') return renderRevealing();
@@ -178,7 +199,14 @@ export function renderScreen() {
     }
 }
 
-// === MAIN RENDER ===
+/**
+ * Main render function. Rebuilds the entire app DOM.
+ * Skips rendering while user is typing (unless forced), throttles to
+ * MIN_RENDER_INTERVAL, preserves textarea focus/cursor, plays screen
+ * transition sounds, and mounts 3D oracle eyes after paint.
+ * @param {boolean} [force=false] - Force render even during typing/throttle.
+ * @returns {void}
+ */
 export function render(force = false) {
     // Skip render completely while typing (unless forced)
     // Also check if textarea is focused — isTyping timeout may have expired while user is still in the field
@@ -202,7 +230,8 @@ export function render(force = false) {
     }
     setLastRenderTime(now);
 
-    // Preserve textarea focus and cursor position
+    // Preserve textarea state across innerHTML rebuilds. Without this,
+    // typing a punchline would lose focus and cursor position on every poll-triggered render.
     const activeEl = document.activeElement;
     const wasTextareaFocused = activeEl && activeEl.id === 'punchline';
     let selectionStart = 0, selectionEnd = 0;
@@ -291,6 +320,9 @@ export function render(force = false) {
             textarea.setSelectionRange(selectionStart, selectionEnd);
         }
     }
+
+    // Sync Preact signals from legacy state (bridges islands architecture)
+    syncFromLegacyState(state);
 
     // Mount 3D oracle eyes after render
     requestAnimationFrame(() => {

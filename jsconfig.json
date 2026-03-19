@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "checkJs": true,
+        "strict": false,
+        "target": "ES2022",
+        "module": "ES2022",
+        "moduleResolution": "bundler",
+        "noEmit": true,
+        "skipLibCheck": true,
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+        "paths": {
+            "#lib/*": ["./api/lib/*"],
+            "#handlers/*": ["./api/handlers/*"]
+        }
+    },
+    "include": ["api/**/*.js", "js/**/*.js"],
+    "exclude": ["node_modules", "dist", "tests"]
+}
