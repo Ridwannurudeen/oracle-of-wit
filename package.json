@@ -4,18 +4,21 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --exclude tests/e2e/**",
+    "test:watch": "vitest --exclude tests/e2e/**",
     "register-commands": "node scripts/register-commands.mjs",
-    "capture-screenshots": "node scripts/capture-screenshots.mjs"
+    "capture-screenshots": "node scripts/capture-screenshots.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "discord-interactions": "^4.1.0",
     "genlayer-js": "^0.21.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "jsdom": "^29.0.0",
     "playwright": "^1.58.2",
+    "serve": "^14.2.6",
     "vitest": "^3.0.0"
   }
 }

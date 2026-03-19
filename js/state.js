@@ -1,7 +1,6 @@
-// Oracle of Wit — Global State
-// Loaded first. All variables are global scope.
+// Oracle of Wit — Global State (ES Module)
 
-let state = {
+export let state = {
     screen: 'welcome',
     playerName: localStorage.getItem('playerName') || '',
     roomId: null,
@@ -58,17 +57,34 @@ let state = {
     votedFor: null,
 };
 
-let pollInterval = null;
-let timerRAF = null;
-let lastTimerSecond = -1;
-let renderPending = false;
-let lastRenderTime = 0;
-const MIN_RENDER_INTERVAL = 100; // Minimum ms between renders
+export let pollInterval = null;
+export function setPollInterval(val) { pollInterval = val; }
 
-let validatorVotingInterval = null;
-let gameEvents = []; // Track live game events for left wing
-let revealTimeouts = [];
-let headerFloating = false;
+export let timerRAF = null;
+export function setTimerRAF(val) { timerRAF = val; }
+
+export let lastTimerSecond = -1;
+export function setLastTimerSecond(val) { lastTimerSecond = val; }
+
+export let renderPending = false;
+export function setRenderPending(val) { renderPending = val; }
+
+export let lastRenderTime = 0;
+export function setLastRenderTime(val) { lastRenderTime = val; }
+
+export const MIN_RENDER_INTERVAL = 100; // Minimum ms between renders
+
+export let validatorVotingInterval = null;
+export function setValidatorVotingInterval(val) { validatorVotingInterval = val; }
+
+export let gameEvents = []; // Track live game events for left wing
+
+export let revealTimeouts = [];
+export function setRevealTimeouts(val) { revealTimeouts = val; }
+
+export let headerFloating = false;
+export function setHeaderFloating(val) { headerFloating = val; }
 
 // Session token for auth (set on createRoom/joinRoom)
-let sessionToken = null;
+export let sessionToken = null;
+export function setSessionToken(val) { sessionToken = val; }

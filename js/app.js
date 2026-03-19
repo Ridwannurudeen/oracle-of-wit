@@ -1,50 +1,49 @@
-// Oracle of Wit — Game Actions, Timer, Boot, Event Handlers
-// Depends on: state.js, effects.js, api.js, render.js
+// Oracle of Wit — Game Actions, Timer, Boot, Event Handlers (ES Module)
+
+import { state, sessionToken, setSessionToken, headerFloating, setHeaderFloating, timerRAF, setTimerRAF, lastTimerSecond, setLastTimerSecond } from './state.js';
+import { API_URL, api, fetchRoom, startPolling, stopPolling, fetchPublicRooms, fetchLeaderboard, soundEnabled, setSoundEnabled, isTyping, setIsTyping, typingTimeout, updateTimerDisplay, setTyping } from './api.js';
+import { playSound, initAudio, createConfetti, oracleEye3D, startRevealSequence, stopRevealSequence, startValidatorVoting, stopValidatorVoting } from './effects.js';
+import { addGameEvent, formatTime } from './render-helpers.js';
+import { render } from './render.js';
 
 // ─── Timer Functions ────────────────────────────────────────────
 
-function syncTimer() {
+export function syncTimer() {
     if (!state.room?.phaseEndsAt) { state.timeLeft = 0; return; }
     state.timeLeft = Math.max(0, Math.floor((state.room.phaseEndsAt - Date.now()) / 1000));
 }
 
 function startTimer() {
     stopTimer();
-    lastTimerSecond = -1;
+    setLastTimerSecond(-1);
     function tick() {
-        // Always recalculate from phaseEndsAt — no drift, no freeze
         if (state.room?.phaseEndsAt) {
             state.timeLeft = Math.max(0, Math.floor((state.room.phaseEndsAt - Date.now()) / 1000));
         }
-        // Only update DOM + play sounds when the second actually changes
         if (state.timeLeft !== lastTimerSecond) {
-            lastTimerSecond = state.timeLeft;
+            setLastTimerSecond(state.timeLeft);
             if (state.timeLeft <= 5 && state.timeLeft > 0) playSound('tick');
             if (state.timeLeft === 10) playSound('warning');
             updateTimerDisplay();
         }
-        timerRAF = requestAnimationFrame(tick);
+        setTimerRAF(requestAnimationFrame(tick));
     }
-    timerRAF = requestAnimationFrame(tick);
+    setTimerRAF(requestAnimationFrame(tick));
 }
 
 function stopTimer() {
-    if (timerRAF) { cancelAnimationFrame(timerRAF); timerRAF = null; }
-    lastTimerSecond = -1;
-}
-
-function formatTime(s) {
-    return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+    if (timerRAF) { cancelAnimationFrame(timerRAF); setTimerRAF(null); }
+    setLastTimerSecond(-1);
 }
 
 // ─── Phase Change Handler ───────────────────────────────────────
 
-function handlePhaseChange(oldStatus, newStatus) {
+export function handlePhaseChange(oldStatus, newStatus) {
     // Always clean up reveal state on any phase transition
     stopRevealSequence();
     state._isRevealing = false;
     // Reset typing flag on phase change
-    isTyping = false;
+    setIsTyping(false);
     if (typingTimeout) clearTimeout(typingTimeout);
 
     state.screen = newStatus === 'roundResults' ? 'roundResults' : newStatus;
@@ -111,7 +110,7 @@ function handlePhaseChange(oldStatus, newStatus) {
 // ─── Generate Validator Votes ───────────────────────────────────
 
 // Generate validator votes based on actual round result
-function generateFinalValidatorVotes() {
+export function generateFinalValidatorVotes() {
     const result = state.room?.roundResults?.[state.room.roundResults.length - 1];
     if (!result) return;
 
@@ -138,13 +137,13 @@ function generateFinalValidatorVotes() {
 
 // ─── Game Actions ───────────────────────────────────────────────
 
-async function createRoom(category, singlePlayer = false) {
+export async function createRoom(category, singlePlayer = false) {
     initAudio();
     playSound('click');
     try {
         const result = await api('createRoom', { hostName: state.playerName, category, singlePlayer });
         state.roomId = result.roomId;
-        sessionToken = result.sessionToken || null;
+        setSessionToken(result.sessionToken || null);
         state.room = result.room;
         state.isHost = true;
         state.screen = 'waiting';
@@ -154,14 +153,14 @@ async function createRoom(category, singlePlayer = false) {
     } catch (e) { state.error = 'Failed to create room. Try again.'; render(); }
 }
 
-async function joinRoom(roomId) {
+export async function joinRoom(roomId) {
     if (!roomId?.trim()) { state.error = 'Enter room code'; render(); return; }
     initAudio();
     playSound('click');
     try {
         const result = await api('joinRoom', { roomId: roomId.toUpperCase(), playerName: state.playerName });
         state.roomId = roomId.toUpperCase();
-        sessionToken = result.sessionToken || null;
+        setSessionToken(result.sessionToken || null);
         state.room = result.room;
         state.isHost = state.room.host === state.playerName;
         state.screen = 'waiting';
@@ -171,7 +170,7 @@ async function joinRoom(roomId) {
     } catch (e) { state.error = e.message || 'Room not found or full.'; render(); }
 }
 
-async function startGame() {
+export async function startGame() {
     if (state.loading) return; // Prevent double-click
     playSound('start');
     try {
@@ -186,11 +185,11 @@ async function startGame() {
     } catch (e) { state.error = e.message || 'Failed to start game.'; render(); }
 }
 
-async function submitPunchline() {
+export async function submitPunchline() {
     const text = state.punchlineText.trim();
     if (!text) { state.error = 'Write a punchline first'; render(true); return; }
     // Reset typing flag since user is done typing
-    isTyping = false;
+    setIsTyping(false);
     if (typingTimeout) clearTimeout(typingTimeout);
     playSound('submit');
     // Optimistic update
@@ -205,7 +204,7 @@ async function submitPunchline() {
     }
 }
 
-async function castVote(submissionId) {
+export async function castVote(submissionId) {
     if (state.votedFor) return;
     playSound('bet');
     // Optimistic update
@@ -221,7 +220,7 @@ async function castVote(submissionId) {
     }
 }
 
-async function placeBet() {
+export async function placeBet() {
     if (!state.selectedSubmission) { state.error = 'Select a submission first'; render(); return; }
     playSound('bet');
     // Optimistic update
@@ -240,7 +239,7 @@ async function placeBet() {
     }
 }
 
-async function sendReaction(submissionId, emoji) {
+export async function sendReaction(submissionId, emoji) {
     if (state.sentReactions >= 3) return;
     try {
         await api('sendReaction', { roomId: state.roomId, playerName: state.playerName, submissionId, emoji });
@@ -249,7 +248,7 @@ async function sendReaction(submissionId, emoji) {
     } catch (e) {}
 }
 
-async function advancePhase() {
+export async function advancePhase() {
     playSound('click');
     try {
         const result = await api('advancePhase', { roomId: state.roomId, hostName: state.playerName });
@@ -258,7 +257,7 @@ async function advancePhase() {
     } catch (e) { state.error = e.message || 'Failed to advance phase.'; render(); }
 }
 
-async function nextRound() {
+export async function nextRound() {
     playSound('click');
     try {
         const result = await api('nextRound', { roomId: state.roomId, hostName: state.playerName, playerId: state.playerId });
@@ -297,7 +296,7 @@ async function nextRound() {
     }
 }
 
-function leaveRoom() {
+export function leaveRoom() {
     playSound('click');
     stopPolling();
     stopTimer();
@@ -313,7 +312,7 @@ function leaveRoom() {
     state.appealResult = null;
     state._gameCounted = false;
     state.screen = 'lobby';
-    sessionToken = null;
+    setSessionToken(null);
     fetchPublicRooms();
     fetchProfile();
     render();
@@ -321,7 +320,7 @@ function leaveRoom() {
 
 // ─── Lobby / Profile Functions ──────────────────────────────────
 
-async function loadWeeklyTheme() {
+export async function loadWeeklyTheme() {
     try {
         const res = await fetch(`${API_URL}?action=getWeeklyTheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const result = await res.json();
@@ -329,7 +328,7 @@ async function loadWeeklyTheme() {
     } catch(e) { console.warn('Failed to load weekly theme:', e.message); }
 }
 
-function startBootSequence() {
+export function startBootSequence() {
     if (!state.playerName.trim()) { state.error = 'Enter your name'; render(); return; }
     initAudio();
     playSound('click');
@@ -374,7 +373,7 @@ function startBootSequence() {
     showStep();
 }
 
-function goToLobby() {
+export function goToLobby() {
     if (!state.playerName.trim()) { state.error = 'Enter your name'; render(); return; }
     initAudio();
     state.screen = 'lobby';
@@ -391,7 +390,7 @@ function goToLobby() {
     render();
 }
 
-async function fetchProfile() {
+export async function fetchProfile() {
     if (!state.playerId) return;
     try {
         const res = await fetch(`${API_URL}?action=createProfile`, {
@@ -408,7 +407,7 @@ async function fetchProfile() {
     } catch(e) { console.warn('Failed to fetch profile:', e.message); }
 }
 
-async function fetchDailyChallenge() {
+export async function fetchDailyChallenge() {
     try {
         const res = await fetch(`${API_URL}?action=getDailyChallenge`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -423,7 +422,7 @@ async function fetchDailyChallenge() {
     } catch(e) { console.warn('Failed to fetch daily challenge:', e.message); }
 }
 
-async function submitDailyChallenge() {
+export async function submitDailyChallenge() {
     const text = document.getElementById('daily-punchline')?.value?.trim();
     if (!text) { state.error = 'Write a punchline first'; render(true); return; }
     state.dailySubmitting = true;
@@ -446,7 +445,7 @@ async function submitDailyChallenge() {
     } catch(e) { state.dailySubmitting = false; render(true); }
 }
 
-async function fetchHallOfFame() {
+export async function fetchHallOfFame() {
     try {
         const res = await fetch(`${API_URL}?action=getHallOfFame`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const result = await res.json();
@@ -454,7 +453,7 @@ async function fetchHallOfFame() {
     } catch(e) { console.warn('Failed to fetch hall of fame:', e.message); }
 }
 
-async function appealVerdict() {
+export async function appealVerdict() {
     if (state.appealInProgress || state.appealResult) return;
     state.appealInProgress = true;
     render(true);
@@ -479,7 +478,7 @@ async function appealVerdict() {
 
 // ─── UI Utilities ───────────────────────────────────────────────
 
-function showAchievementToast(achievementId) {
+export function showAchievementToast(achievementId) {
     const a = state.allAchievements.find(x => x.id === achievementId);
     if (!a) return;
     const toast = document.createElement('div');
@@ -490,7 +489,7 @@ function showAchievementToast(achievementId) {
 }
 
 // Share card generation (Canvas API)
-function generateShareCard(prompt, punchline, playerName, score, roast) {
+export function generateShareCard(prompt, punchline, playerName, score, roast) {
     const canvas = document.createElement('canvas');
     canvas.width = 600; canvas.height = 400;
     const ctx = canvas.getContext('2d');
@@ -553,7 +552,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     return curY;
 }
 
-function shareImage(prompt, punchline, playerName, score, roast) {
+export function shareImage(prompt, punchline, playerName, score, roast) {
     const canvas = generateShareCard(prompt, punchline, playerName, score, roast);
     canvas.toBlob(blob => {
         if (navigator.share && navigator.canShare?.({ files: [new File([blob], 'oracle-of-wit.png', { type: 'image/png' })] })) {
@@ -570,7 +569,7 @@ function shareImage(prompt, punchline, playerName, score, roast) {
     }, 'image/png');
 }
 
-function copyShareText(score, roundsWon, totalRounds) {
+export function copyShareText(score, roundsWon, totalRounds) {
     const wins = roundsWon > 0 ? ` | ${roundsWon}/${totalRounds} rounds won` : '';
     const text = `Oracle of Wit | ${score} XP${wins} | oracle-of-wit.vercel.app`;
     navigator.clipboard.writeText(text).then(() => {
@@ -579,13 +578,13 @@ function copyShareText(score, roundsWon, totalRounds) {
     }).catch(() => {});
 }
 
-function tweetResult(score, roundsWon, totalRounds) {
+export function tweetResult(score, roundsWon, totalRounds) {
     const wins = roundsWon > 0 ? ` ${roundsWon}/${totalRounds} rounds won.` : '';
     const text = encodeURIComponent(`I scored ${score} XP on Oracle of Wit!${wins}\n\nThe AI humor prediction game powered by @GenLayer\noracle-of-wit.vercel.app`);
     window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
 }
 
-async function createChallengeLink() {
+export async function createChallengeLink() {
     if (!state.room) return;
     const result = state.room.roundResults?.[state.room.roundResults.length - 1];
     if (!result) return;
@@ -606,7 +605,7 @@ async function createChallengeLink() {
 }
 
 // Detect challenge link on page load
-async function detectChallenge() {
+export async function detectChallenge() {
     const params = new URLSearchParams(window.location.search);
     const challengeId = params.get('challenge');
     if (!challengeId) return;
@@ -622,26 +621,26 @@ async function detectChallenge() {
     window.history.replaceState({}, '', window.location.pathname);
 }
 
-function toggleSound() {
-    soundEnabled = !soundEnabled;
+export function toggleSound() {
+    setSoundEnabled(!soundEnabled);
     if (soundEnabled) { initAudio(); playSound('click'); }
     render();
 }
 
-function selectSubmission(id) {
+export function selectSubmission(id) {
     state.selectedSubmission = id;
     playSound('click');
     render();
 }
 
-function updateBetDisplay() {
+export function updateBetDisplay() {
     const el = document.getElementById('bet-amount-display');
     if (el) el.textContent = state.betAmount;
     const btn = document.getElementById('bet-submit-btn');
     if (btn) btn.textContent = 'BET ON #' + (state.selectedSubmission || '?');
 }
 
-function copyRoomCode(code) {
+export function copyRoomCode(code) {
     navigator.clipboard.writeText(code).then(() => {
         playSound('click');
         const feedback = document.getElementById('copy-feedback');
@@ -661,7 +660,7 @@ function copyRoomCode(code) {
     });
 }
 
-function toggleHelp() {
+export function toggleHelp() {
     state.showHelp = !state.showHelp;
     playSound('click');
     // Animate the toggle without full re-render
@@ -675,7 +674,7 @@ function toggleHelp() {
 
 // ─── Share Functions ────────────────────────────────────────────
 
-function shareRoundResult() {
+export function shareRoundResult() {
     if (!state.room) return;
     const r = state.room;
     const result = r.roundResults?.[r.roundResults.length - 1];
@@ -683,7 +682,7 @@ function shareRoundResult() {
     shareImage(r.jokePrompt, result.winningPunchline, result.winnerName, result.scores?.[result.winnerName] || 100, result.aiCommentary?.winnerComment || null);
 }
 
-function shareFinalResult() {
+export function shareFinalResult() {
     if (!state.room) return;
     const r = state.room;
     const standings = [...r.players].sort((a,b) => b.score - a.score);
@@ -693,7 +692,7 @@ function shareFinalResult() {
 
 // ─── Client Helpers ─────────────────────────────────────────────
 
-function getNextLevelXPClient(xp) {
+export function getNextLevelXPClient(xp) {
     const thresholds = [0,500,1500,3000,6000,10000,20000,40000,75000,150000];
     for (const t of thresholds) {
         if (xp < t) return t;
@@ -703,7 +702,7 @@ function getNextLevelXPClient(xp) {
 
 // ─── Community Prompts ──────────────────────────────────────────
 
-async function fetchCommunityPrompts() {
+export async function fetchCommunityPrompts() {
     try {
         const res = await fetch(`${API_URL}?action=getPromptSubmissions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
         const data = await res.json();
@@ -716,7 +715,7 @@ async function fetchCommunityPrompts() {
     } catch(e) { console.warn('Failed to fetch community prompts:', e.message); }
 }
 
-async function submitCommunityPrompt() {
+export async function submitCommunityPrompt() {
     const input = document.getElementById('community-prompt-input');
     if (!input || !input.value.trim()) return;
     try {
@@ -726,7 +725,7 @@ async function submitCommunityPrompt() {
     } catch(e) {}
 }
 
-async function voteCommunityPrompt(promptId) {
+export async function voteCommunityPrompt(promptId) {
     try {
         await api('votePrompt', { promptId, playerId: state.playerId });
         fetchCommunityPrompts();
@@ -741,11 +740,11 @@ window.addEventListener('scroll', () => {
     if (!header) return;
     const scrollY = window.scrollY || document.documentElement.scrollTop;
     if (scrollY > 50 && !headerFloating) {
-        headerFloating = true;
+        setHeaderFloating(true);
         header.classList.add('header-float');
         header.style.borderBottom = 'none';
     } else if (scrollY <= 50 && headerFloating) {
-        headerFloating = false;
+        setHeaderFloating(false);
         header.classList.remove('header-float');
         header.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
     }
@@ -782,6 +781,4 @@ window.addEventListener('online', () => {
     render();
 });
 
-// Init: detect challenge links
-detectChallenge();
-render();
+// Boot calls moved to main.js

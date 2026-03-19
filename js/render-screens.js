@@ -1,8 +1,9 @@
-// Oracle of Wit — Secondary Screen Renderers
-// Depends on: state.js, render-helpers.js
-// Functions: renderDailyChallenge(), renderProfileScreen(), renderHallOfFame(), renderCommunityPrompts()
+// Oracle of Wit — Secondary Screen Renderers (ES Module)
 
-function renderDailyChallenge() {
+import { state } from './state.js';
+import { esc } from './render-helpers.js';
+
+export function renderDailyChallenge() {
     const dc = state.dailyChallenge;
     if (!dc) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const dr = state.dailyResult;
@@ -100,7 +101,7 @@ function renderDailyChallenge() {
         </div>`;
 }
 
-function renderProfileScreen() {
+export function renderProfileScreen() {
     const p = state.profile;
     if (!p) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-circle mx-auto" style="width:80px;height:80px"></div><div class="skeleton skeleton-text mx-auto" style="width:40%"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:140px"></div></div>';
     const nextXP = state.nextLevelXP;
@@ -193,7 +194,7 @@ function renderProfileScreen() {
         </div>`;
 }
 
-function renderHallOfFame() {
+export function renderHallOfFame() {
     return `
         <div class="space-y-4">
             <button data-action="backToLobbyFromHallOfFame" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 hover:text-white text-sm">&larr; Back to Lobby</button>
@@ -224,7 +225,7 @@ function renderHallOfFame() {
 }
 
 // --- Render: Community Prompts ---
-function renderCommunityPrompts() {
+export function renderCommunityPrompts() {
     return `
         <div class="space-y-4">
             <button data-action="backToLobbyFromCommunity" class="btn btn-ghost px-3 py-1.5 rounded-lg text-gray-400 text-sm">&larr; Back to Lobby</button>

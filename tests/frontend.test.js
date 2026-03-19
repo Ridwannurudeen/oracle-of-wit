@@ -3,30 +3,16 @@
 /**
  * Frontend tests for Oracle of Wit.
  *
- * The source code lives in global-scope script files (not ES modules), so we
- * replicate the pure functions here and exercise the same logic.  For
- * DOM-dependent behaviour we build minimal fixtures inside jsdom.
+ * Now imports pure functions directly from ES module source files.
+ * Only test utilities (createDefaultState, resetState) are defined here.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-// =========================================================================
-// Helpers — reproduce pure functions from the source (no source changes)
-// =========================================================================
+// Import pure functions from actual source modules
+import { esc, formatTime, formatEventTime } from '../js/render-helpers.js';
 
-// --- esc()  (js/api.js) --------------------------------------------------
-function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = String(str);
-    return d.innerHTML;
-}
-
-// --- formatTime()  (js/app.js) -------------------------------------------
-function formatTime(s) {
-    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
-}
-
-// --- getNextLevelXPClient()  (js/app.js) ---------------------------------
+// Functions that depend on deep import chains are kept local to avoid
+// pulling in DOM-heavy modules (effects.js/Three.js) in test env
 function getNextLevelXPClient(xp) {
     const thresholds = [0, 500, 1500, 3000, 6000, 10000, 20000, 40000, 75000, 150000];
     for (const t of thresholds) {
@@ -35,7 +21,6 @@ function getNextLevelXPClient(xp) {
     return null;
 }
 
-// --- getPollInterval()  (js/api.js) --------------------------------------
 function getPollInterval(room) {
     const BASE = 1500;
     const playerCount = room?.players?.length || 0;
@@ -43,15 +28,6 @@ function getPollInterval(room) {
     if (playerCount > 20) return 2500;
     if (playerCount > 10) return 2000;
     return BASE;
-}
-
-// --- formatEventTime()  (js/render.js) -----------------------------------
-function formatEventTime(ts) {
-    const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 5) return 'just now';
-    if (diff < 60) return diff + 's ago';
-    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-    return 'earlier';
 }
 
 // --- Default state factory (mirrors js/state.js) -------------------------

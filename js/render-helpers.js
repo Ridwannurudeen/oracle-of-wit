@@ -1,8 +1,14 @@
-// Oracle of Wit — Render Helpers & Shared Fragments
-// Loaded before all other render files. All functions are global scope.
+// Oracle of Wit — Render Helpers & Shared Fragments (ES Module)
+
+import { state, gameEvents } from './state.js';
+
+// Format time as M:SS
+export function formatTime(s) {
+    return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+}
 
 // Prevent XSS from user-supplied content
-function esc(str) {
+export function esc(str) {
     if (!str) return '';
     const d = document.createElement('div');
     d.textContent = String(str);
@@ -10,17 +16,17 @@ function esc(str) {
 }
 
 // GenLayer logo SVG (from studio.genlayer.com)
-function glLogo(size = 16, color = 'currentColor') {
+export function glLogo(size = 16, color = 'currentColor') {
     return `<svg viewBox="0 0 97.76 91.93" width="${size}" height="${size}" fill="${color}" xmlns="http://www.w3.org/2000/svg"><polygon points="44.26 32.35 27.72 67.12 43.29 74.9 0 91.93 44.26 0 44.26 32.35"/><polygon points="53.5 32.35 70.04 67.12 54.47 74.9 97.76 91.93 53.5 0 53.5 32.35"/><polygon points="48.64 43.78 58.33 62.94 48.64 67.69 39.47 62.92 48.64 43.78" opacity="0.3"/></svg>`;
 }
 
 // === HUD WING HELPERS ===
-function addGameEvent(type, text) {
+export function addGameEvent(type, text) {
     gameEvents.unshift({ type, text, time: Date.now() });
     if (gameEvents.length > 8) gameEvents.pop();
 }
 
-function formatEventTime(ts) {
+export function formatEventTime(ts) {
     const diff = Math.floor((Date.now() - ts) / 1000);
     if (diff < 5) return 'just now';
     if (diff < 60) return diff + 's ago';
@@ -28,14 +34,14 @@ function formatEventTime(ts) {
     return 'earlier';
 }
 
-function getTodayKeyClient() {
+export function getTodayKeyClient() {
     const d = new Date();
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
 
 // === SHARED RENDER FRAGMENTS ===
 
-function renderProfileCard() {
+export function renderProfileCard() {
     if (!state.profile) return '';
     const p = state.profile;
     const nextXP = state.nextLevelXP;
@@ -72,7 +78,7 @@ function renderProfileCard() {
         </div>`;
 }
 
-function renderTimer() {
+export function renderTimer() {
     if (state.timeLeft <= 0) return '';
     const isLow = state.timeLeft <= 10;
     const max = state.screen === 'submitting' ? 40 : state.screen === 'voting' ? 20 : 30;

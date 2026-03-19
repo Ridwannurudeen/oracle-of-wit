@@ -1,7 +1,9 @@
-// Oracle of Wit — API, Polling, Helpers
-// Depends on: state.js, effects.js
+// Oracle of Wit — API, Polling, Helpers (ES Module)
 
-const API_URL = '/api/game';
+import { state, pollInterval, setPollInterval, sessionToken } from './state.js';
+import { formatTime } from './render-helpers.js';
+
+export const API_URL = '/api/game';
 
 // Phase-based polling intervals (ms)
 const POLL_INTERVALS = {
@@ -17,16 +19,34 @@ const POLL_INTERVALS = {
 };
 const HIDDEN_TAB_INTERVAL = 30000; // 30s when tab is hidden
 
-// esc() and glLogo() moved to render-helpers.js (loaded after api.js)
 let currentPollInterval = POLL_INTERVALS.waiting;
 let pollBackoff = 1;
-let soundEnabled = true;
-let audioCtx = null;
-let isTyping = false; // Track if user is typing
-let typingTimeout = null;
+export let soundEnabled = true;
+export function setSoundEnabled(val) { soundEnabled = val; }
+export let audioCtx = null;
+export function setAudioCtx(val) { audioCtx = val; }
+export let isTyping = false; // Track if user is typing
+export function setIsTyping(val) { isTyping = val; }
+export let typingTimeout = null;
+export function setTypingTimeout(val) { typingTimeout = val; }
 
 // ETag/change detection — skip render when room data hasn't changed
 let lastRoomHash = null;
+
+// Late-binding references to avoid circular imports
+let _render = null;
+let _leaveRoom = null;
+let _renderLeftWingContent = null;
+let _renderRightWingContent = null;
+let _handlePhaseChange = null;
+let _syncTimer = null;
+
+export function bindRender(fn) { _render = fn; }
+export function bindLeaveRoom(fn) { _leaveRoom = fn; }
+export function bindRenderLeftWingContent(fn) { _renderLeftWingContent = fn; }
+export function bindRenderRightWingContent(fn) { _renderRightWingContent = fn; }
+export function bindHandlePhaseChange(fn) { _handlePhaseChange = fn; }
+export function bindSyncTimer(fn) { _syncTimer = fn; }
 
 function simpleHash(obj) {
     const str = JSON.stringify(obj);
@@ -63,7 +83,7 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         // Tab hidden — slow polling to 30s
         stopPolling();
-        pollInterval = setTimeout(pollLoop, HIDDEN_TAB_INTERVAL);
+        setPollInterval(setTimeout(pollLoop, HIDDEN_TAB_INTERVAL));
     } else {
         // Tab visible — resume immediately with fresh data
         stopPolling();
@@ -81,7 +101,7 @@ function pollLoop() {
 }
 
 // Mark user as typing (prevents full re-renders)
-function setTyping() {
+export function setTyping() {
     isTyping = true;
     if (typingTimeout) clearTimeout(typingTimeout);
     // Keep typing flag active for 3 seconds after last keystroke
@@ -89,7 +109,7 @@ function setTyping() {
 }
 
 // Update ONLY the timer display without re-rendering everything
-function updateTimerDisplay() {
+export function updateTimerDisplay() {
     const timerEl = document.getElementById('timer-display');
     const timerBar = document.getElementById('timer-bar');
     const timerWarning = document.getElementById('timer-warning');
@@ -112,7 +132,7 @@ function updateTimerDisplay() {
 }
 
 // Lightweight DOM patches for polls — avoids full innerHTML rebuild while typing
-function updateHUDPartials(subCount, playerCount, betCount) {
+export function updateHUDPartials(subCount, playerCount, betCount) {
     // Update submission/bet counters if visible
     const submittedEl = document.querySelector('[data-hud="submitted"]');
     if (submittedEl) {
@@ -126,13 +146,13 @@ function updateHUDPartials(subCount, playerCount, betCount) {
     }
     // Update wing content (player list, activity)
     const leftWing = document.querySelector('[data-hud="left-wing"]');
-    if (leftWing) leftWing.innerHTML = renderLeftWingContent();
+    if (leftWing && _renderLeftWingContent) leftWing.innerHTML = _renderLeftWingContent();
     const rightWing = document.querySelector('[data-hud="right-wing"]');
-    if (rightWing) rightWing.innerHTML = renderRightWingContent();
+    if (rightWing && _renderRightWingContent) rightWing.innerHTML = _renderRightWingContent();
 }
 
 // Update character count without re-rendering
-function updateCharCount() {
+export function updateCharCount() {
     const charCount = document.getElementById('char-count');
     if (charCount) {
         const len = state.punchlineText.length;
@@ -142,11 +162,11 @@ function updateCharCount() {
 }
 
 // === API CALL WRAPPER ===
-async function api(action, data = {}) {
+export async function api(action, data = {}) {
     state.loading = true;
     state.error = null;
     // Don't render during loading if user is typing
-    if (!isTyping) render();
+    if (!isTyping && _render) _render();
     try {
         const res = await fetch(`${API_URL}?action=${action}`, {
             method: 'POST',
@@ -156,25 +176,32 @@ async function api(action, data = {}) {
         const result = await res.json();
         state.loading = false;
         if (!res.ok || result.error) throw new Error(result.error || 'Error');
+
+        // After successful mutating action, trigger immediate poll
+        const MUTATING_ACTIONS = new Set(['submitPunchline', 'placeBet', 'castVote', 'sendReaction', 'advancePhase', 'startGame']);
+        if (MUTATING_ACTIONS.has(action) && state.roomId) {
+            setTimeout(() => fetchRoom(), 100); // slight delay to let server process
+        }
+
         return result;
     } catch (e) {
         state.loading = false;
         state.error = e.message;
-        render(true); // Force render to show error
+        if (_render) _render(true); // Force render to show error
         throw e;
     }
 }
 
-async function fetchRoom() {
+export async function fetchRoom() {
     if (!state.roomId) return;
     try {
         const res = await fetch(`${API_URL}?action=getRoom&roomId=${state.roomId}`);
         const result = await res.json();
         if (!result.success || !result.room) {
             // Room expired on server — auto-recover
-            leaveRoom();
+            if (_leaveRoom) _leaveRoom();
             state.error = 'Room expired. Returned to lobby.';
-            render(true);
+            if (_render) _render(true);
             return;
         }
         pollBackoff = 1; // Reset backoff on success
@@ -184,7 +211,7 @@ async function fetchRoom() {
             const newHash = simpleHash(result.room);
             if (newHash === lastRoomHash) {
                 // Data unchanged — skip render, just update timer
-                syncTimer();
+                if (_syncTimer) _syncTimer();
                 updateTimerDisplay();
                 return;
             }
@@ -196,13 +223,13 @@ async function fetchRoom() {
             const oldPlayerCount = state.room?.players?.length || 0;
 
             state.room = result.room;
-            syncTimer();
+            if (_syncTimer) _syncTimer();
 
             // Render on phase change even when typing
             if (state.room.status !== oldStatus) {
                 isTyping = false;
-                handlePhaseChange(oldStatus, state.room.status);
-                render(true); // Force render on phase change
+                if (_handlePhaseChange) _handlePhaseChange(oldStatus, state.room.status);
+                if (_render) _render(true); // Force render on phase change
                 return;
             }
 
@@ -221,7 +248,7 @@ async function fetchRoom() {
                 if (isTyping || document.activeElement?.id === 'punchline') {
                     updateHUDPartials(newSubmissionCount, newPlayerCount, newBetCount);
                 } else {
-                    render();
+                    if (_render) _render();
                 }
             }
             // Always update timer display
@@ -235,7 +262,7 @@ async function fetchRoom() {
 }
 
 // Show/hide connection degradation banner
-function updateConnectionBanner() {
+export function updateConnectionBanner() {
     let banner = document.getElementById('connection-banner');
     if (pollBackoff > 1) {
         if (!banner) {
@@ -251,7 +278,7 @@ function updateConnectionBanner() {
     }
 }
 
-async function fetchLeaderboard() {
+export async function fetchLeaderboard() {
     try {
         const res = await fetch(`${API_URL}?action=getLeaderboard`);
         const result = await res.json();
@@ -259,15 +286,15 @@ async function fetchLeaderboard() {
     } catch (e) {}
 }
 
-async function fetchPublicRooms() {
+export async function fetchPublicRooms() {
     try {
         const res = await fetch(`${API_URL}?action=listRooms`);
         const result = await res.json();
-        if (result.success) { state.publicRooms = result.rooms || []; render(); }
+        if (result.success) { state.publicRooms = result.rooms || []; if (_render) _render(); }
     } catch (e) {}
 }
 
-function startPolling() {
+export function startPolling() {
     stopPolling();
     fetchRoom();
     scheduleNextPoll();
@@ -276,18 +303,18 @@ function startPolling() {
 function scheduleNextPoll() {
     const base = document.hidden ? HIDDEN_TAB_INTERVAL : getAdaptivePollInterval();
     currentPollInterval = base * pollBackoff;
-    pollInterval = setTimeout(() => {
+    setPollInterval(setTimeout(() => {
         fetchRoom();
         if (state.roomId) {
             scheduleNextPoll(); // Recursively schedule with updated interval
         }
-    }, currentPollInterval);
+    }, currentPollInterval));
 }
 
-function stopPolling() {
+export function stopPolling() {
     if (pollInterval) {
         clearTimeout(pollInterval);
-        pollInterval = null;
+        setPollInterval(null);
     }
     lastRoomHash = null; // Reset change detection on stop
 }

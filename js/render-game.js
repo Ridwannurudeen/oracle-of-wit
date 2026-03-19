@@ -1,8 +1,10 @@
-// Oracle of Wit — Game Phase Renderers
-// Depends on: state.js, render-helpers.js
-// Functions: renderSubmitting(), renderCurating(), renderVoting(), renderBetting(), renderJudging()
+// Oracle of Wit — Game Phase Renderers (ES Module)
 
-function renderSubmitting() {
+import { state } from './state.js';
+import { esc, glLogo, renderTimer } from './render-helpers.js';
+import { startValidatorVoting } from './effects.js';
+
+export function renderSubmitting() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const submitted = r.submissions?.filter(s => !r.players.find(p => p.name === s.playerName)?.isBot).length || 0;
@@ -54,7 +56,7 @@ function renderSubmitting() {
 }
 
 
-function renderCurating() {
+export function renderCurating() {
     const r = state.room;
     if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const total = r.submissions?.length || 0;
@@ -83,7 +85,7 @@ function renderCurating() {
     `;
 }
 
-function renderVoting() {
+export function renderVoting() {
     const r = state.room;
     if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
 
@@ -136,7 +138,7 @@ function renderVoting() {
     `;
 }
 
-function renderBetting() {
+export function renderBetting() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const humanBets = r.bets?.filter(b => !r.players.find(p => p.name === b.playerName)?.isBot).length || 0;
@@ -220,7 +222,7 @@ function renderBetting() {
     `;
 }
 
-function renderJudging() {
+export function renderJudging() {
     // Start the validator voting animation if not already started
     if (!state.validatorVotingStarted) {
         state.validatorVotingStarted = true;
@@ -240,7 +242,6 @@ function renderJudging() {
     const votedCount = state.validatorVotes?.length || 0;
     const consensusReached = state.consensusReached || false;
 
-    // Build vote distribution for bar chart
     const voteDist = {};
     (state.validatorVotes || []).forEach(v => { voteDist[v] = (voteDist[v] || 0) + 1; });
     const maxVotes = Math.max(...Object.values(voteDist), 1);

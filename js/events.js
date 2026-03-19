@@ -1,6 +1,18 @@
-// Oracle of Wit — Event Delegation
-// Depends on: state.js, effects.js, api.js, render-helpers.js, render*.js
-// Loaded AFTER all render files but BEFORE app.js
+// Oracle of Wit — Event Delegation (ES Module)
+
+import { state } from './state.js';
+import { setTyping, updateCharCount } from './api.js';
+import { playSound, oracleEye3D, skipReveal } from './effects.js';
+import { render } from './render.js';
+import {
+    toggleSound, startBootSequence, leaveRoom, joinRoom, createRoom,
+    startGame, submitPunchline, advancePhase, selectSubmission,
+    sendReaction, placeBet, castVote, appealVerdict, nextRound,
+    createChallengeLink, shareRoundResult, shareFinalResult,
+    copyShareText, tweetResult, fetchDailyChallenge, submitDailyChallenge,
+    fetchCommunityPrompts, submitCommunityPrompt, voteCommunityPrompt,
+    fetchHallOfFame, copyRoomCode, updateBetDisplay, fetchProfile
+} from './app.js';
 
 // === CLICK EVENT DELEGATION ===
 document.addEventListener('click', function(e) {

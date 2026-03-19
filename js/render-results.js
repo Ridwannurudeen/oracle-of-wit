@@ -1,8 +1,10 @@
-// Oracle of Wit — Results Screen Renderers
-// Depends on: state.js, render-helpers.js
-// Functions: renderRevealing(), renderRoundResults(), renderFinalResults()
+// Oracle of Wit — Results Screen Renderers (ES Module)
 
-function renderRevealing() {
+import { state } from './state.js';
+import { esc, glLogo, getTodayKeyClient } from './render-helpers.js';
+import { renderJudging } from './render-game.js';
+
+export function renderRevealing() {
     if (!state.room) return '';
     const r = state.room;
     const result = r.roundResults[r.roundResults.length - 1];
@@ -15,12 +17,10 @@ function renderRevealing() {
     const isShowingWinner = current?.isWinner;
     const commentary = result.aiCommentary;
 
-    // Crowd reaction meter levels
     const meterLevels = ['Crickets', 'Chuckle', 'Laugh', 'ROFL'];
     const meterIndex = Math.min(revealed.length, meterLevels.length - 1);
     const meterPct = ((revealed.length) / totalJokes) * 100;
 
-    // Aggregate reactions for current joke
     const reactions = r.reactions || [];
     const currentReactions = current ? reactions.filter(rx => rx.submissionId === current.id) : [];
     const emojiCounts = {};
@@ -114,13 +114,12 @@ function renderRevealing() {
     `;
 }
 
-function renderRoundResults() {
+export function renderRoundResults() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const result = r.roundResults[r.roundResults.length - 1];
     if (!result) return renderJudging();
 
-    // Determine judging method badge and info
     const judgingMethod = result.judgingMethod || r.lastJudgingMethod || 'ai';
     const isOnChain = judgingMethod === 'genlayer_optimistic_democracy';
     const isAI = judgingMethod === 'claude_api';
@@ -141,10 +140,8 @@ function renderRoundResults() {
         ? '<span class="text-xs bg-amber-600 px-2 py-1 rounded-full font-medium">\uD83C\uDFB2 Oracle Coin Flip \u2014 couldn\'t decide!</span>'
         : '<span class="text-xs bg-gray-600 px-2 py-1 rounded-full font-medium">\uD83C\uDFB2 Fallback</span>';
 
-    // Get winner ID
     const winnerId = result.winnerId;
 
-    // Generate validator votes if not already generated
     if (!state.validatorVotes || state.validatorVotes.length === 0) {
         const submissions = r.submissions || [];
         const otherIds = submissions.map(s => s.id).filter(id => id !== winnerId);
@@ -166,7 +163,6 @@ function renderRoundResults() {
 
     return `
         <div class="space-y-4">
-            <!-- Winner Card -->
             <div class="glow-card glow-card-gold p-6 text-center">
                 <p class="text-[10px] font-mono text-consensus/60 tracking-[0.3em] mb-2">ROUND ${result.round} WINNER</p>
                 <p class="text-xl font-display font-bold my-2">"${esc(result.winningPunchline)}"</p>
@@ -175,7 +171,6 @@ function renderRoundResults() {
                 <div class="mt-2">${methodBadge}</div>
             </div>
 
-            <!-- Optimistic Democracy Summary -->
             <div class="glow-card glow-card-green p-4">
                 <div class="flex items-center justify-between mb-3">
                     <span class="text-xs font-mono font-bold text-wit tracking-wider">OPTIMISTIC DEMOCRACY</span>
@@ -221,7 +216,6 @@ function renderRoundResults() {
                 </div>
             ` : ''}
 
-            <!-- Standings -->
             <div class="glow-card p-4">
                 <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-3">STANDINGS</p>
                 <div class="space-y-2">
@@ -245,7 +239,6 @@ function renderRoundResults() {
                 </div>
             </div>
 
-            <!-- Appeal Mechanic -->
             ${!result.appealed && !state.appealInProgress ? `
                 <button data-action="appealVerdict" class="btn w-full py-3 rounded-xl font-bold text-white text-xs" style="background:linear-gradient(135deg,#b91c1c,#7f1d1d);box-shadow:0 4px 20px rgba(185,28,28,0.3)">
                     APPEAL VERDICT (50 XP) \u2014 CHALLENGE THE ORACLE
@@ -294,7 +287,7 @@ function renderRoundResults() {
     `;
 }
 
-function renderFinalResults() {
+export function renderFinalResults() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     const standings = [...r.players].sort((a,b)=>b.score-a.score);
@@ -303,7 +296,6 @@ function renderFinalResults() {
     const isWinner = playerRank === 1;
     const playerScore = r.players.find(p=>p.name===state.playerName)?.score || 0;
 
-    // Session stats
     let roundsWon = 0, correctBets = 0, totalXP = playerScore, bestJoke = null;
     for (const rr of (r.roundResults || [])) {
         if (rr.winnerName === state.playerName) {
@@ -312,7 +304,6 @@ function renderFinalResults() {
         }
     }
 
-    // Track games today (only increment once per game via flag)
     const todayKey = 'gamesToday_' + getTodayKeyClient();
     if (!state._gameCounted) {
         state._gameCounted = true;
@@ -333,7 +324,6 @@ function renderFinalResults() {
                 ${winner.isBot ? '<p class="text-gray-500 text-[10px] font-mono tracking-wider uppercase mt-1">Autonomous Agent</p>' : ''}
             </div>
 
-            <!-- Session Recap -->
             <div class="glow-card p-4">
                 <h3 class="font-display font-bold mb-3 text-center text-wit tracking-wider uppercase text-sm">Session Recap</h3>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
@@ -357,7 +347,6 @@ function renderFinalResults() {
                 ${bestJoke ? `<p class="text-center text-sm text-gray-400 mt-3 italic">Best joke: "${esc(bestJoke)}"</p>` : ''}
             </div>
 
-            <!-- Profile Update -->
             ${state.profile ? `
                 <div class="glow-card p-4 bg-obsidian border border-white/[0.04]">
                     <div class="flex items-center gap-3 mb-2">
@@ -391,7 +380,6 @@ function renderFinalResults() {
             </div>
             ${isWinner && !winner.isBot ? '<p class="text-center font-display font-bold tracking-wider text-lg text-consensus">VICTORY</p>' : `<p class="text-center text-gray-500 font-mono text-xs tracking-wider uppercase">Finished #${playerRank}</p>`}
 
-            <!-- Share Buttons -->
             <div class="grid grid-cols-3 gap-2">
                 <button id="copy-share-btn" data-action="copyShareText" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" class="btn btn-ghost py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider">Copy</button>
                 <button data-action="shareFinalResult" class="btn btn-primary py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white">Share</button>

@@ -1,9 +1,17 @@
-// Oracle of Wit — Main Render Dispatcher + HUD
-// Depends on: state.js, effects.js, api.js, render-helpers.js, render-lobby.js, render-game.js, render-results.js, render-screens.js
+// Oracle of Wit — Main Render Dispatcher + HUD (ES Module)
+
+import { state, gameEvents, renderPending, setRenderPending, lastRenderTime, setLastRenderTime, MIN_RENDER_INTERVAL } from './state.js';
+import { esc, formatEventTime, glLogo } from './render-helpers.js';
+import { isTyping, soundEnabled, updateTimerDisplay } from './api.js';
+import { mountOracleEye, oracleEye3D, playScreenTransition } from './effects.js';
+import { renderWelcome, renderLobby, renderWaiting } from './render-lobby.js';
+import { renderSubmitting, renderCurating, renderVoting, renderBetting, renderJudging } from './render-game.js';
+import { renderRevealing, renderRoundResults, renderFinalResults } from './render-results.js';
+import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderCommunityPrompts } from './render-screens.js';
 
 // === HUD WING PANELS ===
 
-function renderLeftWingContent() {
+export function renderLeftWingContent() {
     const events = gameEvents.slice(0, 5);
     return `
                 <div class="flex items-center gap-2 mb-3">
@@ -37,7 +45,7 @@ function renderLeftWingContent() {
     `;
 }
 
-function renderLeftWing() {
+export function renderLeftWing() {
     return `
         <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
             <div data-hud="left-wing" class="glass-panel p-4 rounded-2xl">${renderLeftWingContent()}</div>
@@ -45,7 +53,7 @@ function renderLeftWing() {
     `;
 }
 
-function renderRightWingContent() {
+export function renderRightWingContent() {
     const r = state.room;
     const budget = r?.betBudgets?.[state.playerName];
     const players = r?.players || [];
@@ -139,7 +147,7 @@ function renderRightWingContent() {
     `;
 }
 
-function renderRightWing() {
+export function renderRightWing() {
     return `
         <aside class="hidden lg:block hud-wing" style="width:250px;min-width:250px">
             <div data-hud="right-wing" class="glass-panel p-4 rounded-2xl">${renderRightWingContent()}</div>
@@ -148,7 +156,7 @@ function renderRightWing() {
 }
 
 // === SCREEN DISPATCHER ===
-function renderScreen() {
+export function renderScreen() {
     // Reveal phase intercepts roundResults
     if (state.revealPhase === 'revealing') return renderRevealing();
     switch (state.screen) {
@@ -171,7 +179,7 @@ function renderScreen() {
 }
 
 // === MAIN RENDER ===
-function render(force = false) {
+export function render(force = false) {
     // Skip render completely while typing (unless forced)
     // Also check if textarea is focused — isTyping timeout may have expired while user is still in the field
     const textareaFocused = document.activeElement?.id === 'punchline';
@@ -184,15 +192,15 @@ function render(force = false) {
     const now = Date.now();
     if (now - lastRenderTime < MIN_RENDER_INTERVAL && !force) {
         if (!renderPending) {
-            renderPending = true;
+            setRenderPending(true);
             setTimeout(() => {
-                renderPending = false;
+                setRenderPending(false);
                 render();
             }, MIN_RENDER_INTERVAL);
         }
         return;
     }
-    lastRenderTime = now;
+    setLastRenderTime(now);
 
     // Preserve textarea focus and cursor position
     const activeEl = document.activeElement;

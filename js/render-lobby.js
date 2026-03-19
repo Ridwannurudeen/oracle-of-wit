@@ -1,8 +1,9 @@
-// Oracle of Wit — Lobby Screen Renderers
-// Depends on: state.js, render-helpers.js
-// Functions: renderWelcome(), renderLobby(), renderWaiting()
+// Oracle of Wit — Lobby Screen Renderers (ES Module)
 
-function renderWelcome() {
+import { state } from './state.js';
+import { esc, glLogo, renderProfileCard, getTodayKeyClient } from './render-helpers.js';
+
+export function renderWelcome() {
     return `
         <!-- HERO SECTION — full width -->
         <div class="text-center pt-16 pb-12 px-4">
@@ -122,7 +123,7 @@ function renderWelcome() {
     `;
 }
 
-function renderLobby() {
+export function renderLobby() {
     const gamesPlayedToday = parseInt(localStorage.getItem('gamesToday_' + getTodayKeyClient()) || '0');
     return `
         <div class="mx-auto px-4 lg:px-8 py-8 pb-20" style="max-width:1200px">
@@ -307,7 +308,7 @@ function renderLobby() {
     `;
 }
 
-function renderWaiting() {
+export function renderWaiting() {
     if (!state.room) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
     const r = state.room;
     return `
