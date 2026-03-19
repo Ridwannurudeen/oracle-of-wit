@@ -2,33 +2,82 @@
 // Depends on: state.js, effects.js
 
 const API_URL = '/api/game';
-const BASE_POLL_INTERVAL = 1500;
 
-// Prevent XSS from user-supplied content
-function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = String(str);
-    return d.innerHTML;
-}
-// GenLayer logo SVG (from studio.genlayer.com)
-function glLogo(size = 16, color = 'currentColor') {
-    return `<svg viewBox="0 0 97.76 91.93" width="${size}" height="${size}" fill="${color}" xmlns="http://www.w3.org/2000/svg"><polygon points="44.26 32.35 27.72 67.12 43.29 74.9 0 91.93 44.26 0 44.26 32.35"/><polygon points="53.5 32.35 70.04 67.12 54.47 74.9 97.76 91.93 53.5 0 53.5 32.35"/><polygon points="48.64 43.78 58.33 62.94 48.64 67.69 39.47 62.92 48.64 43.78" opacity="0.3"/></svg>`;
-}
-let currentPollInterval = BASE_POLL_INTERVAL;
+// Phase-based polling intervals (ms)
+const POLL_INTERVALS = {
+    lobby: 5000,        // 5s — lobby is low-activity
+    waiting: 3000,      // 3s — waiting for players
+    submitting: 2000,   // 2s — active phase
+    betting: 2000,      // 2s — active phase
+    judging: 1500,      // 1.5s — want fast updates during judging
+    voting: 2000,       // 2s — active phase
+    roundResults: 4000, // 4s — viewing results, low urgency
+    finished: 10000,    // 10s — game is over
+    idle: 10000,        // 10s — no active game (profile, daily, etc.)
+};
+const HIDDEN_TAB_INTERVAL = 30000; // 30s when tab is hidden
+
+// esc() and glLogo() moved to render-helpers.js (loaded after api.js)
+let currentPollInterval = POLL_INTERVALS.waiting;
 let pollBackoff = 1;
 let soundEnabled = true;
 let audioCtx = null;
 let isTyping = false; // Track if user is typing
 let typingTimeout = null;
 
-// Dynamic polling - slower for larger rooms to reduce server load
-function getPollInterval() {
+// ETag/change detection — skip render when room data hasn't changed
+let lastRoomHash = null;
+
+function simpleHash(obj) {
+    const str = JSON.stringify(obj);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash;
+}
+
+// Adaptive polling based on game phase + player count
+function getAdaptivePollInterval() {
+    // Non-game screens — idle polling
+    const nonGameScreens = ['welcome', 'lobby', 'profile', 'daily', 'community', 'hallOfFame', 'leaderboard'];
+    if (!state.roomId && nonGameScreens.includes(state.screen)) {
+        return POLL_INTERVALS.idle;
+    }
+
+    // In a room — use room status
+    const roomStatus = state.room?.status;
+    let base = POLL_INTERVALS[roomStatus] || POLL_INTERVALS.waiting;
+
+    // Scale up slightly for very large rooms to reduce server load
     const playerCount = state.room?.players?.length || 0;
-    if (playerCount > 50) return 3000;  // 3s for 50+ players
-    if (playerCount > 20) return 2500;  // 2.5s for 20-50 players
-    if (playerCount > 10) return 2000;  // 2s for 10-20 players
-    return BASE_POLL_INTERVAL;          // 1.5s for small rooms
+    if (playerCount > 50) base = Math.max(base, 3000);
+    else if (playerCount > 20) base = Math.max(base, 2500);
+
+    return base;
+}
+
+// Visibility-based polling — slow down when tab is hidden
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        // Tab hidden — slow polling to 30s
+        stopPolling();
+        pollInterval = setTimeout(pollLoop, HIDDEN_TAB_INTERVAL);
+    } else {
+        // Tab visible — resume immediately with fresh data
+        stopPolling();
+        if (state.roomId) {
+            startPolling(); // startPolling calls fetchRoom + scheduleNextPoll
+        }
+    }
+});
+
+function pollLoop() {
+    fetchRoom();
+    if (state.roomId) {
+        scheduleNextPoll();
+    }
 }
 
 // Mark user as typing (prevents full re-renders)
@@ -131,6 +180,16 @@ async function fetchRoom() {
         pollBackoff = 1; // Reset backoff on success
         updateConnectionBanner();
         if (result.success && result.room) {
+            // Change detection — skip render if room data unchanged
+            const newHash = simpleHash(result.room);
+            if (newHash === lastRoomHash) {
+                // Data unchanged — skip render, just update timer
+                syncTimer();
+                updateTimerDisplay();
+                return;
+            }
+            lastRoomHash = newHash;
+
             const oldStatus = state.room?.status;
             const oldSubmissionCount = state.room?.submissions?.length || 0;
             const oldBetCount = state.room?.bets?.length || 0;
@@ -215,7 +274,8 @@ function startPolling() {
 }
 
 function scheduleNextPoll() {
-    currentPollInterval = getPollInterval() * pollBackoff;
+    const base = document.hidden ? HIDDEN_TAB_INTERVAL : getAdaptivePollInterval();
+    currentPollInterval = base * pollBackoff;
     pollInterval = setTimeout(() => {
         fetchRoom();
         if (state.roomId) {
@@ -229,4 +289,5 @@ function stopPolling() {
         clearTimeout(pollInterval);
         pollInterval = null;
     }
+    lastRoomHash = null; // Reset change detection on stop
 }

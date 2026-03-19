@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; font-src https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data:; connect-src 'self'">
     <title>Oracle of Wit - GenLayer Community Game</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -240,7 +241,13 @@
 <script src="/js/state.js"></script>
 <script src="/js/effects.js"></script>
 <script src="/js/api.js"></script>
+<script src="/js/render-helpers.js"></script>
+<script src="/js/render-lobby.js"></script>
+<script src="/js/render-game.js"></script>
+<script src="/js/render-results.js"></script>
+<script src="/js/render-screens.js"></script>
 <script src="/js/render.js"></script>
+<script src="/js/events.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>
