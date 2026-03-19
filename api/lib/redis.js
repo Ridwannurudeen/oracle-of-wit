@@ -3,12 +3,52 @@
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
+// Circuit breaker: skip retries when Redis is known-down
+let _circuitOpen = false;
+let _circuitOpenedAt = 0;
+const CIRCUIT_RESET_MS = 15000; // Try again after 15s
+
+function isCircuitOpen() {
+    if (!_circuitOpen) return false;
+    if (Date.now() - _circuitOpenedAt > CIRCUIT_RESET_MS) {
+        _circuitOpen = false; // Half-open: allow one attempt
+        return false;
+    }
+    return true;
+}
+
+function tripCircuit() {
+    _circuitOpen = true;
+    _circuitOpenedAt = Date.now();
+    console.warn('[Redis] Circuit breaker OPEN — skipping retries for 15s');
+}
+
+function closeCircuit() {
+    if (_circuitOpen) {
+        _circuitOpen = false;
+        console.log('[Redis] Circuit breaker CLOSED — connection restored');
+    }
+}
+
+// Exported for testing
+export function _getCircuitState() { return { open: _circuitOpen, openedAt: _circuitOpenedAt }; }
+export function _resetCircuit() { _circuitOpen = false; _circuitOpenedAt = 0; }
+
 async function withRetry(fn, retries = 2, delayMs = 500) {
+    if (isCircuitOpen()) {
+        console.warn('[Redis] Circuit open, fast-failing');
+        throw new Error('Redis circuit breaker open');
+    }
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-            return await fn();
+            const result = await fn();
+            closeCircuit(); // Success — close circuit if half-open
+            return result;
         } catch (e) {
-            if (attempt >= retries || !(e instanceof TypeError || e.message?.includes('fetch'))) throw e;
+            if (attempt >= retries || !(e instanceof TypeError || e.message?.includes('fetch'))) {
+                tripCircuit();
+                throw e;
+            }
             console.warn(`[Redis] Retry ${attempt + 1}/${retries} after ${delayMs}ms`);
             await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
         }

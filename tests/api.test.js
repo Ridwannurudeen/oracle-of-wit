@@ -119,6 +119,7 @@ process.env.ANTHROPIC_API_KEY = 'sk-ant-fake';
 // Import the handler. Because game.js uses dynamic import() for genlayer-js,
 // and we don't have it installed in test, GenLayer calls will gracefully return null.
 const { default: handler } = await import('../api/game.js');
+const { _resetCircuit } = await import('../api/lib/redis.js');
 
 // ---------------------------------------------------------------------------
 // Helpers to simulate Vercel req/res
@@ -219,6 +220,7 @@ describe('API Handler', () => {
   beforeEach(() => {
     resetStore();
     resetTokens();
+    _resetCircuit(); // Reset circuit breaker between tests
   });
 
   // -- CORS / OPTIONS -------------------------------------------------------
@@ -729,7 +731,7 @@ describe('API Handler', () => {
       expect(body.error).toMatch(/empty/i);
     });
 
-    it('truncates punchline over 200 characters via sanitization', async () => {
+    it('rejects punchline over 200 characters with clear error', async () => {
       const roomId = await setupRoom('submitting');
       const longPunchline = 'A'.repeat(201);
       const { status, body } = await call('submitPunchline', {
@@ -737,12 +739,8 @@ describe('API Handler', () => {
         playerName: 'Host',
         punchline: longPunchline,
       });
-      // sanitizeInput truncates to 200 instead of rejecting
-      expect(status).toBe(200);
-      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
-      const room = JSON.parse(store[key]);
-      const sub = room.submissions.find(s => s.playerName === 'Host');
-      expect(sub.punchline.length).toBe(200);
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
     });
 
     it('defaults invalid category to tech', async () => {
@@ -770,23 +768,20 @@ describe('API Handler', () => {
       expect(body.room.maxPlayers).toBe(100);
     });
 
-    it('truncates hostName longer than 30 characters via sanitization', async () => {
+    it('rejects hostName longer than 30 characters with clear error', async () => {
       const longName = 'A'.repeat(31);
       const { status, body } = await call('createRoom', { hostName: longName });
-      // sanitizeInput truncates to 30 instead of rejecting
-      expect(status).toBe(200);
-      expect(body.room.host.length).toBe(30);
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
     });
 
-    it('truncates playerName longer than 30 characters on joinRoom via sanitization', async () => {
+    it('rejects playerName longer than 30 characters on joinRoom with clear error', async () => {
       const { body: createBody } = await call('createRoom', { hostName: 'Host' });
       const roomId = createBody.roomId;
       const longName = 'B'.repeat(31);
       const { status, body } = await call('joinRoom', { roomId, playerName: longName });
-      // sanitizeInput truncates to 30 instead of rejecting
-      expect(status).toBe(200);
-      const joined = body.room.players.find(p => p.name === 'B'.repeat(30));
-      expect(joined).toBeDefined();
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
     });
   });
 
@@ -900,7 +895,7 @@ describe('API Handler', () => {
       expect(sub.punchline).toBe('HelloWorldTest');
     });
 
-    it('truncates punchline to max length', async () => {
+    it('rejects punchline exceeding max length with descriptive error', async () => {
       const roomId = await setupRoom('submitting');
       const longText = 'A'.repeat(250);
       const { status, body } = await call('submitPunchline', {
@@ -908,12 +903,8 @@ describe('API Handler', () => {
         playerName: 'Host',
         punchline: longText,
       });
-      // Should succeed because sanitizeInput truncates to 200 before the 200-char check
-      expect(status).toBe(200);
-      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
-      const room = JSON.parse(store[key]);
-      const sub = room.submissions.find(s => s.playerName === 'Host');
-      expect(sub.punchline.length).toBeLessThanOrEqual(200);
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long.*200/i);
     });
 
     it('strips control chars from hostName on createRoom', async () => {
@@ -1123,6 +1114,175 @@ describe('API Handler', () => {
       const { status, body } = await call('totallyFakeAction');
       expect(status).toBe(400);
       expect(body.error).toContain('totallyFakeAction');
+    });
+  });
+
+  // =========================================================================
+  // HARDENING PHASE 2 — Remaining fixes for 9/10
+  // =========================================================================
+
+  describe('Input Rejection (not truncation)', () => {
+    it('rejects punchline over 200 chars with clear error message', async () => {
+      const roomId = await setupRoom('submitting');
+      const { status, body } = await call('submitPunchline', {
+        roomId, playerName: 'Host', punchline: 'X'.repeat(201),
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
+      expect(body.error).toMatch(/200/);
+    });
+
+    it('accepts punchline at exactly 200 chars', async () => {
+      const roomId = await setupRoom('submitting');
+      const { status } = await call('submitPunchline', {
+        roomId, playerName: 'Host', punchline: 'X'.repeat(200),
+      });
+      expect(status).toBe(200);
+    });
+
+    it('rejects hostName over 30 chars with clear error', async () => {
+      const { status, body } = await call('createRoom', { hostName: 'Z'.repeat(31) });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
+    });
+
+    it('rejects playerName over 30 chars on joinRoom with clear error', async () => {
+      const { body: c } = await call('createRoom', { hostName: 'Host' });
+      const { status, body } = await call('joinRoom', { roomId: c.roomId, playerName: 'Z'.repeat(31) });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
+    });
+
+    it('rejects prompt over 150 chars on createChallenge', async () => {
+      const { status, body } = await call('createChallenge', {
+        creatorName: 'Test', prompt: 'Q'.repeat(151),
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/too long/i);
+    });
+  });
+
+  describe('Per-Action Rate Limiting', () => {
+    it('returns 429 when mutating action rate limit exceeded', async () => {
+      // Set mutating counter just over the 20/min limit
+      const minute = Math.floor(Date.now() / 60000);
+      counters[`rl:m:127.0.0.1:${minute}`] = 20;
+
+      const { status, body } = await call('createRoom', { hostName: 'Host' });
+      expect(status).toBe(429);
+      expect(body.error).toMatch(/rate limit/i);
+    });
+
+    it('allows read-only actions even when mutating limit is hit', async () => {
+      const minute = Math.floor(Date.now() / 60000);
+      counters[`rl:m:127.0.0.1:${minute}`] = 25; // Over mutating limit
+
+      const req = makeReq({ method: 'GET', query: { action: 'getLeaderboard' } });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res._status).toBe(200); // Read-only is not affected by mutating limit
+    });
+  });
+
+  // =========================================================================
+  // FINAL HARDENING — Remaining fixes for 9+/10
+  // =========================================================================
+
+  describe('Error Message Safety', () => {
+    it('returns generic error on 500 instead of leaking internals', async () => {
+      // Force an internal error by calling with corrupted room state
+      const { body: c } = await call('createRoom', { hostName: 'Host' });
+      const roomId = c.roomId;
+      // Corrupt the room data in store so nextRound throws
+      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
+      store[key] = 'not valid json'; // Will cause JSON.parse to fail in redisGet
+
+      const req = makeReq({ method: 'GET', query: { action: 'getRoom', roomId } });
+      const res = makeRes();
+      await handler(req, res);
+      // Should either recover gracefully or return generic error
+      if (res._status === 500) {
+        expect(res._body.error).toBe('Internal server error');
+        expect(res._body.error).not.toMatch(/parse|syntax|token/i);
+      }
+    });
+  });
+
+  describe('Bet Budget Edge Case', () => {
+    it('rejects bet when budget is below minimum (< 10)', async () => {
+      const roomId = await setupRoom('betting');
+      // Set Host's budget to 5 (below the 10 minimum)
+      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
+      const room = JSON.parse(store[key]);
+      room.betBudgets = room.betBudgets || {};
+      room.betBudgets['Host'] = 5;
+      store[key] = JSON.stringify(room);
+
+      const { status, body } = await call('placeBet', {
+        roomId, playerName: 'Host', submissionId: 2, amount: 50,
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/insufficient|budget/i);
+    });
+  });
+
+  describe('Category Validation on createChallenge', () => {
+    it('defaults invalid category to general', async () => {
+      const { status, body } = await call('createChallenge', {
+        creatorName: 'Test',
+        prompt: 'Why did the blockchain go to therapy?',
+        category: 'invalid_category',
+      });
+      expect(status).toBe(200);
+      // Verify stored challenge has safe category
+      const challengeKey = Object.keys(store).find(k => k.startsWith('challenge:'));
+      const challenge = JSON.parse(store[challengeKey]);
+      expect(challenge.category).toBe('general');
+    });
+  });
+
+  describe('listRooms Pagination', () => {
+    it('returns pagination metadata', async () => {
+      await call('createRoom', { hostName: 'Host1' });
+      await call('createRoom', { hostName: 'Host2' });
+
+      const req = makeReq({ method: 'GET', query: { action: 'listRooms', page: '1', limit: '1' } });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res._status).toBe(200);
+      expect(res._body.page).toBe(1);
+      expect(res._body.limit).toBe(1);
+      expect(res._body.total).toBeGreaterThanOrEqual(2);
+      expect(res._body.rooms.length).toBe(1);
+    });
+  });
+
+  describe('CSP Headers', () => {
+    it('includes Content-Security-Policy header', async () => {
+      const req = makeReq({ method: 'GET', query: { action: 'getLeaderboard' } });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res._headers['Content-Security-Policy']).toBe("default-src 'none'; frame-ancestors 'none'");
+    });
+  });
+
+  describe('submissionId Type Safety', () => {
+    it('rejects non-numeric submissionId on placeBet', async () => {
+      const roomId = await setupRoom('betting');
+      const { status, body } = await call('placeBet', {
+        roomId, playerName: 'Host', submissionId: 'abc', amount: 50,
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/invalid submission/i);
+    });
+
+    it('rejects non-numeric submissionId on castVote', async () => {
+      const roomId = await setupRoom('voting');
+      const { status, body } = await call('castVote', {
+        roomId, playerName: 'Player2', submissionId: 'xyz',
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/invalid submission/i);
     });
   });
 });

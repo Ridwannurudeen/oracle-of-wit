@@ -112,15 +112,20 @@ export async function autoJudge(room, setRoom) {
         txHash = genLayerResult.txHash;
         onChain = true;
 
+        const validIds = room.submissions.map(s => s.id);
         const glWinnerId = await pollGenLayerResult(txHash, 30000);
-        if (glWinnerId && room.submissions.find(s => s.id === glWinnerId)) {
+        if (glWinnerId && validIds.includes(glWinnerId)) {
             // GenLayer is authoritative — use its result
             winnerId = glWinnerId;
             judgingMethod = 'genlayer_optimistic_democracy';
             glOverride = true;
             console.log(`\u2713 GenLayer OD authoritative winner #${winnerId} (tx: ${txHash})`);
+        } else if (glWinnerId && !validIds.includes(glWinnerId)) {
+            // GenLayer returned winnerId outside valid submission range
+            console.warn(`[GenLayer] winnerId ${glWinnerId} not in valid range [${validIds}] — falling back to AI (tx: ${txHash})`);
+            judgingMethod = winnerId ? 'ai_fallback' : judgingMethod;
         } else {
-            // GenLayer timed out or returned invalid — fall back to Claude
+            // GenLayer timed out or returned null — fall back to Claude
             judgingMethod = winnerId ? 'ai_fallback' : judgingMethod;
             console.log(`\u2713 GenLayer submitted but poll failed, using Claude result (tx: ${txHash})`);
         }

@@ -29,11 +29,31 @@ export async function validateSession(roomId, playerName, token) {
     return stored === token;
 }
 
-export async function checkRateLimit(ip) {
+// Per-action rate limit tiers: mutating actions get stricter limits
+const MUTATING_ACTIONS = new Set([
+    'createRoom', 'joinRoom', 'startGame', 'submitPunchline',
+    'placeBet', 'castVote', 'advancePhase', 'nextRound',
+    'sendReaction', 'appealVerdict', 'submitDailyChallenge',
+    'createChallenge', 'submitPrompt', 'votePrompt', 'createProfile', 'createShare'
+]);
+
+export async function checkRateLimit(ip, action) {
     const minute = Math.floor(Date.now() / 60000);
-    const key = `rl:${ip}:${minute}`;
-    const count = await redisIncr(key);
-    if (count === 1) await redisExpire(key, 60);
     const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE) || 60;
-    return count <= RATE_LIMIT_PER_MINUTE;
+
+    // Global rate limit
+    const globalKey = `rl:${ip}:${minute}`;
+    const globalCount = await redisIncr(globalKey);
+    if (globalCount === 1) await redisExpire(globalKey, 60);
+    if (globalCount > RATE_LIMIT_PER_MINUTE) return false;
+
+    // Stricter limit for mutating actions (20/min)
+    if (MUTATING_ACTIONS.has(action)) {
+        const mutateKey = `rl:m:${ip}:${minute}`;
+        const mutateCount = await redisIncr(mutateKey);
+        if (mutateCount === 1) await redisExpire(mutateKey, 60);
+        if (mutateCount > 20) return false;
+    }
+
+    return true;
 }

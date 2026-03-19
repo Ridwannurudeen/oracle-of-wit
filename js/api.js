@@ -129,6 +129,7 @@ async function fetchRoom() {
             return;
         }
         pollBackoff = 1; // Reset backoff on success
+        updateConnectionBanner();
         if (result.success && result.room) {
             const oldStatus = state.room?.status;
             const oldSubmissionCount = state.room?.submissions?.length || 0;
@@ -170,6 +171,24 @@ async function fetchRoom() {
     } catch (e) {
         pollBackoff = Math.min(pollBackoff * 2, 8);
         console.warn(`[Poll] fetchRoom failed (backoff=${pollBackoff}x):`, e.message);
+        updateConnectionBanner();
+    }
+}
+
+// Show/hide connection degradation banner
+function updateConnectionBanner() {
+    let banner = document.getElementById('connection-banner');
+    if (pollBackoff > 1) {
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'connection-banner';
+            banner.className = 'fixed top-0 left-0 right-0 z-50 bg-yellow-900/90 text-yellow-200 text-center text-sm py-1.5 px-4';
+            document.body.prepend(banner);
+        }
+        banner.textContent = `Connection issues — retrying (${Math.round(currentPollInterval / 1000)}s interval)`;
+        banner.style.display = 'block';
+    } else if (banner) {
+        banner.style.display = 'none';
     }
 }
 

@@ -16,10 +16,10 @@ const fallbackLeaderboard = [];
 
 const VALID_CATEGORIES = ['tech', 'crypto', 'general'];
 
-function sanitizeInput(str, maxLen = 200) {
+function sanitizeInput(str) {
     if (typeof str !== 'string') return '';
-    // Strip control chars except newline, trim, enforce max length
-    return str.replace(/[\x00-\x09\x0B-\x1F]/g, '').trim().slice(0, maxLen);
+    // Strip control chars except newline, trim
+    return str.replace(/[\x00-\x09\x0B-\x1F]/g, '').trim();
 }
 
 // --- Room storage helpers ---
@@ -102,16 +102,17 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', getCorsOrigin(origin));
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
 
     if (req.method === 'OPTIONS') return res.status(200).end();
 
-    // Rate limiting
-    const ip = req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    const allowed = await checkRateLimit(ip);
-    if (!allowed) return res.status(429).json({ error: 'Rate limit exceeded. Try again in a minute.' });
-
     const { action } = req.query;
     const body = req.body || {};
+
+    // Rate limiting (per-action granularity)
+    const ip = req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const allowed = await checkRateLimit(ip, action);
+    if (!allowed) return res.status(429).json({ error: 'Rate limit exceeded. Try again in a minute.' });
 
     // Session validation for mutating actions
     if (SESSION_REQUIRED_ACTIONS.has(action)) {
@@ -127,8 +128,9 @@ export default async function handler(req, res) {
         switch (action) {
             case 'createRoom': {
                 const { category, maxPlayers = 100, singlePlayer = false } = body;
-                const hostName = sanitizeInput(body.hostName, 30);
+                const hostName = sanitizeInput(body.hostName);
                 if (!hostName) return res.status(400).json({ error: 'hostName required' });
+                if (hostName.length > 30) return res.status(400).json({ error: 'Host name too long (max 30 characters)' });
                 const safeCategory = VALID_CATEGORIES.includes(category) ? category : 'tech';
                 const clampedMaxPlayers = Math.max(2, Math.min(100, Number(maxPlayers) || 100));
 
@@ -177,8 +179,9 @@ export default async function handler(req, res) {
 
             case 'joinRoom': {
                 const { roomId, spectator } = body;
-                const playerName = sanitizeInput(body.playerName, 30);
+                const playerName = sanitizeInput(body.playerName);
                 if (!roomId || !playerName) return res.status(400).json({ error: 'roomId and playerName required' });
+                if (playerName.length > 30) return res.status(400).json({ error: 'Player name too long (max 30 characters)' });
 
                 let room = await getRoom(roomId);
                 if (!room) return res.status(404).json({ error: 'Room not found. It may have expired.' });
@@ -186,11 +189,14 @@ export default async function handler(req, res) {
                 if (!room.spectators) room.spectators = [];
 
                 if (spectator) {
-                    if (!room.spectators.find(s => s.name === playerName)) {
+                    const existing = room.spectators.find(s => s.name === playerName);
+                    if (existing) {
+                        existing.joinedAt = Date.now();
+                    } else {
                         room.spectators.push({ name: playerName, joinedAt: Date.now() });
-                        room.updatedAt = Date.now();
-                        await setRoom(roomId, room);
                     }
+                    room.updatedAt = Date.now();
+                    await setRoom(roomId, room);
                     return res.status(200).json({ success: true, room, spectating: true });
                 }
 
@@ -219,13 +225,19 @@ export default async function handler(req, res) {
             }
 
             case 'listRooms': {
-                const keys = await redisKeys('room:*');
-                const publicRooms = [];
+                const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+                const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
 
-                for (const key of keys.slice(0, 20)) {
-                    const room = await getRoom(key.replace('room:', ''));
+                const allRooms = [];
+                const seenIds = new Set();
+
+                const keys = await redisKeys('room:*');
+                for (const key of keys) {
+                    const roomId = key.replace('room:', '');
+                    const room = await getRoom(roomId);
                     if (room && !room.isSinglePlayer && room.status !== 'finished') {
-                        publicRooms.push({
+                        seenIds.add(roomId);
+                        allRooms.push({
                             id: room.id, host: room.host, category: room.category,
                             players: room.players.length, maxPlayers: room.maxPlayers,
                             status: room.status, spectators: (room.spectators || []).length,
@@ -235,9 +247,10 @@ export default async function handler(req, res) {
                 }
 
                 for (const roomId in fallbackRooms) {
+                    if (seenIds.has(roomId)) continue;
                     const room = fallbackRooms[roomId];
-                    if (room && !room.isSinglePlayer && room.status !== 'finished' && !publicRooms.find(r => r.id === roomId)) {
-                        publicRooms.push({
+                    if (room && !room.isSinglePlayer && room.status !== 'finished') {
+                        allRooms.push({
                             id: room.id, host: room.host, category: room.category,
                             players: room.players.length, maxPlayers: room.maxPlayers,
                             status: room.status, spectators: (room.spectators || []).length,
@@ -246,7 +259,11 @@ export default async function handler(req, res) {
                     }
                 }
 
-                return res.status(200).json({ success: true, rooms: publicRooms });
+                const total = allRooms.length;
+                const offset = (page - 1) * limit;
+                const rooms = allRooms.slice(offset, offset + limit);
+
+                return res.status(200).json({ success: true, rooms, page, limit, total });
             }
 
             case 'startGame': {
@@ -276,8 +293,9 @@ export default async function handler(req, res) {
 
             case 'submitPunchline': {
                 const { roomId, playerName } = body;
-                const punchline = sanitizeInput(body.punchline, 200);
+                const punchline = sanitizeInput(body.punchline);
                 if (!punchline) return res.status(400).json({ error: 'Punchline cannot be empty' });
+                if (punchline.length > 200) return res.status(400).json({ error: 'Punchline too long (max 200 characters)' });
 
                 let room = await getRoomRaw(roomId);
                 if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -293,7 +311,9 @@ export default async function handler(req, res) {
             }
 
             case 'placeBet': {
-                const { roomId, playerName, submissionId, amount } = body;
+                const { roomId, playerName, amount } = body;
+                const submissionId = parseInt(body.submissionId);
+                if (!submissionId || isNaN(submissionId)) return res.status(400).json({ error: 'Invalid submission ID' });
                 let room = await getRoomRaw(roomId);
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.status !== 'betting') return res.status(400).json({ error: 'Not in betting phase' });
@@ -303,8 +323,8 @@ export default async function handler(req, res) {
 
                 if (!room.betBudgets) room.betBudgets = {};
                 const budget = room.betBudgets[playerName] ?? 300;
-                const betAmount = Math.min(Math.max(amount || 50, 10), Math.min(100, budget));
-                if (budget <= 0) return res.status(400).json({ error: 'No budget remaining' });
+                if (budget < 10) return res.status(400).json({ error: 'Insufficient budget (minimum bet is 10)' });
+                const betAmount = Math.max(10, Math.min(amount || 50, 100, budget));
 
                 room.betBudgets[playerName] = budget - betAmount;
                 room.bets.push({ playerName, submissionId, amount: betAmount, placedAt: Date.now() });
@@ -314,7 +334,9 @@ export default async function handler(req, res) {
             }
 
             case 'castVote': {
-                const { roomId, playerName, submissionId } = body;
+                const { roomId, playerName } = body;
+                const submissionId = parseInt(body.submissionId);
+                if (!submissionId || isNaN(submissionId)) return res.status(400).json({ error: 'Invalid submission ID' });
                 let room = await getRoomRaw(roomId);
                 if (!room) return res.status(404).json({ error: 'Room not found' });
                 if (room.status !== 'voting') return res.status(400).json({ error: 'Not in voting phase' });
@@ -457,7 +479,9 @@ export default async function handler(req, res) {
             }
 
             case 'sendReaction': {
-                const { roomId, playerName, submissionId, emoji } = body;
+                const { roomId, playerName, emoji } = body;
+                const submissionId = parseInt(body.submissionId);
+                if (!submissionId || isNaN(submissionId)) return res.status(400).json({ error: 'Invalid submission ID' });
                 let room = await getRoom(roomId);
                 if (!room || room.status !== 'betting') return res.status(400).json({ error: 'Not in betting phase' });
                 if (!room.players.find(p => p.name === playerName)) return res.status(403).json({ error: 'Not a player' });
@@ -568,10 +592,12 @@ export default async function handler(req, res) {
 
             case 'createChallenge': {
                 const { creatorName, creatorScore, category } = body;
-                const prompt = sanitizeInput(body.prompt, 150);
+                const prompt = sanitizeInput(body.prompt);
                 if (!creatorName || !prompt) return res.status(400).json({ error: 'creatorName and prompt required' });
+                if (prompt.length > 150) return res.status(400).json({ error: 'Prompt too long (max 150 characters)' });
+                const safeCategory = VALID_CATEGORIES.includes(category) ? category : 'general';
                 const challengeId = Math.random().toString(36).substring(2, 10);
-                await redisSet(`challenge:${challengeId}`, { creatorName, creatorScore: creatorScore || 0, prompt, category: category || 'general', createdAt: Date.now() }, 86400 * 7);
+                await redisSet(`challenge:${challengeId}`, { creatorName, creatorScore: creatorScore || 0, prompt, category: safeCategory, createdAt: Date.now() }, 86400 * 7);
                 return res.status(200).json({ success: true, challengeId });
             }
 
@@ -714,9 +740,10 @@ export default async function handler(req, res) {
 
             case 'submitPrompt': {
                 const { playerId } = body;
-                const playerName = sanitizeInput(body.playerName, 30);
-                const userPrompt = sanitizeInput(body.prompt, 150);
+                const playerName = sanitizeInput(body.playerName);
+                const userPrompt = sanitizeInput(body.prompt);
                 if (!playerName || !userPrompt) return res.status(400).json({ error: 'playerName and prompt required' });
+                if (playerName.length > 30) return res.status(400).json({ error: 'Player name too long (max 30 characters)' });
                 if (userPrompt.length < 10 || userPrompt.length > 150) return res.status(400).json({ error: 'Prompt must be 10-150 characters' });
 
                 const prompts = await redisGet('community_prompts') || [];
@@ -751,6 +778,6 @@ export default async function handler(req, res) {
         }
     } catch (error) {
         console.error(`[API Error] action=${action} roomId=${body.roomId || 'N/A'} error=${String(error.message).slice(0, 200)}`);
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 }

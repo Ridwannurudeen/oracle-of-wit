@@ -21,9 +21,9 @@ export async function pickWinnerWithAI(submissions, jokePrompt, category) {
     ).join('\n');
 
     // --- ATTEMPT 1: Full prompt (winner + roast + commentary) ---
+    const controller1 = new AbortController();
+    const timeout1 = setTimeout(() => controller1.abort(), AI_TIMEOUT_FULL);
     try {
-        const controller1 = new AbortController();
-        const timeout1 = setTimeout(() => controller1.abort(), AI_TIMEOUT_FULL);
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             signal: controller1.signal,
@@ -53,7 +53,6 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
             })
         });
 
-        clearTimeout(timeout1);
         if (response.ok) {
             const data = await response.json();
             const aiResponse = data.content?.[0]?.text?.trim();
@@ -84,12 +83,14 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
         console.log('[Judge] Attempt 1 failed, trying simplified prompt');
     } catch (e) {
         console.error('[Judge] Attempt 1 error:', e.message);
+    } finally {
+        clearTimeout(timeout1);
     }
 
     // --- ATTEMPT 2: Simplified prompt (just pick a number) ---
+    const controller2 = new AbortController();
+    const timeout2 = setTimeout(() => controller2.abort(), AI_TIMEOUT_SIMPLE);
     try {
-        const controller2 = new AbortController();
-        const timeout2 = setTimeout(() => controller2.abort(), AI_TIMEOUT_SIMPLE);
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             signal: controller2.signal,
@@ -108,7 +109,6 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
             })
         });
 
-        clearTimeout(timeout2);
         if (response.ok) {
             const data = await response.json();
             const text = data.content?.[0]?.text?.trim();
@@ -121,6 +121,8 @@ Respond with ONLY valid JSON (no markdown, no backticks, no explanation):
         console.log('[Judge] Attempt 2 failed');
     } catch (e) {
         console.error('[Judge] Attempt 2 error:', e.message);
+    } finally {
+        clearTimeout(timeout2);
     }
 
     // --- FINAL FALLBACK: Coin flip ---
@@ -133,10 +135,9 @@ export async function curateSubmissions(submissions, jokePrompt, category) {
     if (!ANTHROPIC_API_KEY || submissions.length < 8) return null;
 
     const submissionsList = submissions.map(s => `[ID:${s.id}] "${s.punchline}"`).join('\n');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_CURATION);
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_CURATION);
-
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -158,7 +159,6 @@ Return ONLY a JSON array of the 8 IDs (numbers), e.g. [1,3,5,7,8,12,15,20]. No t
                 }]
             })
         });
-        clearTimeout(timeout);
 
         if (!response.ok) return null;
         const data = await response.json();
@@ -173,15 +173,16 @@ Return ONLY a JSON array of the 8 IDs (numbers), e.g. [1,3,5,7,8,12,15,20]. No t
     } catch (e) {
         console.log('[Curate] AI curation failed:', e.message);
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
 export async function generateBotPunchlines(jokePrompt, category, count = 3) {
     if (!ANTHROPIC_API_KEY) return null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_BOT);
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_BOT);
-
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -206,7 +207,6 @@ Return ONLY a JSON array of ${count} strings, no markdown:
                 }]
             })
         });
-        clearTimeout(timeout);
 
         if (!response.ok) { console.warn('[Bots] AI response not ok, falling back'); return null; }
         const data = await response.json();
@@ -225,6 +225,8 @@ Return ONLY a JSON array of ${count} strings, no markdown:
     } catch (e) {
         console.warn(`[Bots] AI generation failed (${e.message}), using hardcoded fallback`);
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
