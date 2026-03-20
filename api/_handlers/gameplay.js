@@ -149,7 +149,7 @@ export async function castVote(body, ctx) {
  */
 export async function advancePhase(body, ctx) {
     const { roomId, hostName } = body;
-    let room = await ctx.getRoom(roomId);
+    let room = await ctx.getRoomRaw(roomId);
     if (!room) return { status: 404, data: { error: 'Room not found' } };
     if (room.host !== hostName) return { status: 403, data: { error: 'Only host can advance' } };
 
