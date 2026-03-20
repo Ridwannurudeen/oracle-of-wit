@@ -370,9 +370,16 @@ export async function fetchRoom() {
     if (!state.roomId) return;
     try {
         const res = await fetch(`${API_URL}?action=getRoom&roomId=${state.roomId}`);
+        if (res.status >= 500) {
+            // Server error (e.g. auto-advance timeout) — retry on next poll
+            pollBackoff = Math.min(pollBackoff * 2, 8);
+            console.warn(`[Poll] server error ${res.status}, will retry`);
+            updateConnectionBanner();
+            return;
+        }
         const result = await res.json();
         if (!result.success || !result.room) {
-            // Room expired on server — auto-recover
+            // Room genuinely expired or not found (404)
             if (_leaveRoom) _leaveRoom();
             state.error = 'Room expired. Returned to lobby.';
             if (_render) _render(true);

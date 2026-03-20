@@ -54,6 +54,10 @@ async function getRoom(roomId) {
     if (locked) {
         try {
             room = await checkAutoAdvance(room, setRoom);
+        } catch (e) {
+            // Auto-advance failed (AI timeout, GenLayer error, etc.)
+            // Return the room as-is so the client doesn't see "room expired"
+            logger.error('Auto-advance failed, returning stale room', { service: 'storage', roomId, error: e.message });
         } finally {
             await releaseAdvanceLock(roomId);
         }

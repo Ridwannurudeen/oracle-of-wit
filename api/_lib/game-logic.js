@@ -87,6 +87,10 @@ export async function checkAutoAdvance(room, setRoom) {
             await setRoom(room.id, room);
         }
         room = await autoJudge(room, setRoom);
+    } else if (room.status === 'judging' && room.updatedAt && now - room.updatedAt > 45000) {
+        // Recovery: room stuck in judging (e.g. previous autoJudge timed out)
+        logger.warn('Room stuck in judging, retrying', { service: 'game', roomId: room.id, stuckFor: now - room.updatedAt });
+        room = await autoJudge(room, setRoom);
     }
 
     return room;
@@ -100,7 +104,7 @@ export async function checkAutoAdvance(room, setRoom) {
  * @returns {Promise<boolean>}
  */
 export async function acquireAdvanceLock(roomId) {
-    return await redisSetNX(`lock:advance:${roomId}`, 1, 120);
+    return await redisSetNX(`lock:advance:${roomId}`, 1, 35);
 }
 
 /**
@@ -146,7 +150,7 @@ export async function autoJudge(room, setRoom) {
         onChain = true;
 
         const validIds = room.submissions.map(s => s.id);
-        const glWinnerId = await pollGenLayerResult(txHash, 30000);
+        const glWinnerId = await pollGenLayerResult(txHash, 15000);
         if (glWinnerId && validIds.includes(glWinnerId)) {
             // GenLayer is authoritative — use its result
             winnerId = glWinnerId;
