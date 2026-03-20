@@ -135,7 +135,7 @@ export let lastRenderTime = 0;
 export function setLastRenderTime(val) { lastRenderTime = val; }
 
 /** @type {number} Minimum ms between renders */
-export const MIN_RENDER_INTERVAL = 100;
+export const MIN_RENDER_INTERVAL = 250;
 
 /** @type {number|null} */
 export let validatorVotingInterval = null;

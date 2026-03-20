@@ -312,6 +312,8 @@ export function initAudio() {
  */
 export function playSound(type) {
     if (!soundEnabled || !audioCtx) return;
+    // Resume AudioContext if browser auto-suspended it (e.g. after idle)
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     const sounds = {
         click: [600, 0.1, 'sine'],
         submit: [800, 0.15, 'sine'],

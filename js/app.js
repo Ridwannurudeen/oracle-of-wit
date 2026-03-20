@@ -906,13 +906,15 @@ export async function connectWallet() {
         // Request accounts
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         const address = accounts[0];
+        if (!address) throw new Error('No account returned from wallet');
 
         // Get nonce from server
         const nonceRes = await fetch(`${API_URL}?action=requestNonce`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
         });
+        if (!nonceRes.ok) throw new Error(`Nonce request failed (${nonceRes.status})`);
         const nonceData = await nonceRes.json();
-        if (!nonceData.success) throw new Error('Failed to get nonce');
+        if (!nonceData.success) throw new Error(nonceData.error || 'Failed to get nonce');
 
         // Build SIWE message
         const domain = window.location.host;
@@ -941,6 +943,10 @@ export async function connectWallet() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message, signature, displayName: state.playerName || undefined })
         });
+        if (!verifyRes.ok) {
+            const errBody = await verifyRes.json().catch(() => ({}));
+            throw new Error(errBody.error || `Wallet verification failed (${verifyRes.status})`);
+        }
         const verifyData = await verifyRes.json();
         if (!verifyData.success) throw new Error(verifyData.error || 'Verification failed');
 
@@ -958,8 +964,9 @@ export async function connectWallet() {
 
         state.walletConnecting = false;
         playSound('start');
-        render();
+        render(true); // Force render to ensure wallet state is reflected
     } catch (e) {
+        console.error('[Wallet] Connection failed:', e);
         state.walletConnecting = false;
         if (e.code !== 4001) { // 4001 = user rejected
             state.error = e.message || 'Wallet connection failed';
@@ -1052,23 +1059,8 @@ window.addEventListener('scroll', () => {
     }
 }, { passive: true });
 
-// === ENHANCED SOUND FX ===
-// Add hover tick sound to buttons (very quiet)
-document.addEventListener('mouseenter', e => {
-    if (!soundEnabled || !audioCtx) return;
-    const btn = e.target.closest?.('.btn');
-    if (!btn) return;
-    try {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.frequency.value = 2000; osc.type = 'sine';
-        gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
-        osc.start(audioCtx.currentTime);
-        osc.stop(audioCtx.currentTime + 0.05);
-    } catch (_e) { /* audio may not be available */ }
-}, true);
+// Hover sound for buttons is handled by events.js via [data-hover-sound] attribute.
+// Removed duplicate mouseenter handler that fired on ALL .btn elements.
 
 
 

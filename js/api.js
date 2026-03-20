@@ -430,9 +430,15 @@ export async function fetchRoom() {
                 newPlayerCount !== oldPlayerCount;
 
             if (hasImportantChange) {
+                // Waiting/lobby phases need full renders for player list + start button
+                const needsFullRender = state.room.status === 'waiting' && newPlayerCount !== oldPlayerCount;
+
                 // During active input phases, do lightweight DOM patches instead of full rebuild
-                if (isTyping || document.activeElement?.id === 'punchline') {
+                if (!needsFullRender && (isTyping || document.activeElement?.id === 'punchline')) {
                     updateHUDPartials(newSubmissionCount, newPlayerCount, newBetCount);
+                } else if (needsFullRender) {
+                    // Force full render so player list and start button update
+                    if (_render) _render(true);
                 } else {
                     // Try targeted DOM patching first; fall back to full render
                     const oldSnapshot = {

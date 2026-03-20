@@ -13,7 +13,11 @@ function formatTime(s) {
 }
 
 export function Timer({ maxTime = 40 }) {
-    const [timeLeft, setTimeLeft] = useState(0);
+    // Initialize from signal to prevent flash-to-zero on remount
+    const [timeLeft, setTimeLeft] = useState(() => {
+        const endsAt = room.value?.phaseEndsAt;
+        return endsAt ? Math.max(0, Math.floor((endsAt - Date.now()) / 1000)) : 0;
+    });
     const rafRef = useRef(null);
 
     useEffect(() => {

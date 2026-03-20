@@ -178,13 +178,13 @@ export function renderLobby() {
                     </div>
                     <p class="text-gray-500 text-xs font-mono mb-5">Practice against oracle-calibrated bots</p>
                     <div class="grid grid-cols-3 gap-3">
-                        <button data-action="createRoom" data-category="tech" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-blue-900/80 to-cyan-900/80 rounded-xl text-white border border-cyan-500/30 hover:border-cyan-400/50 transition-all hover:scale-[1.03]">
+                        <button data-action="createRoom" data-category="tech" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-blue-900/80 to-cyan-900/80 rounded-xl text-white border border-cyan-500/30 hover:border-cyan-400/50 transition-all">
                             <span class="text-2xl block mb-1.5">&#129302;</span><span class="text-[10px] font-mono tracking-wider font-bold">TECH</span>
                         </button>
-                        <button data-action="createRoom" data-category="crypto" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-amber-900/80 to-orange-900/80 rounded-xl text-white border border-amber-500/30 hover:border-amber-400/50 transition-all hover:scale-[1.03]">
+                        <button data-action="createRoom" data-category="crypto" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-amber-900/80 to-orange-900/80 rounded-xl text-white border border-amber-500/30 hover:border-amber-400/50 transition-all">
                             <span class="text-2xl block mb-1.5">&#128142;</span><span class="text-[10px] font-mono tracking-wider font-bold">CRYPTO</span>
                         </button>
-                        <button data-action="createRoom" data-category="general" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-purple-900/80 to-pink-900/80 rounded-xl text-white border border-purple-500/30 hover:border-purple-400/50 transition-all hover:scale-[1.03]">
+                        <button data-action="createRoom" data-category="general" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-purple-900/80 to-pink-900/80 rounded-xl text-white border border-purple-500/30 hover:border-purple-400/50 transition-all">
                             <span class="text-2xl block mb-1.5">&#128514;</span><span class="text-[10px] font-mono tracking-wider font-bold">GENERAL</span>
                         </button>
                     </div>
@@ -198,13 +198,13 @@ export function renderLobby() {
                     </div>
                     <p class="text-gray-500 text-xs font-mono mb-5">Create a room and invite players</p>
                     <div class="grid grid-cols-3 gap-3 mb-4">
-                        <button data-action="createRoom" data-category="tech" data-single-player="false" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all hover:scale-[1.03]">
+                        <button data-action="createRoom" data-category="tech" data-single-player="false" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all">
                             <span class="text-2xl block mb-1.5">&#129302;</span><span class="text-[10px] font-mono text-gray-400 font-bold">TECH</span>
                         </button>
-                        <button data-action="createRoom" data-category="crypto" data-single-player="false" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all hover:scale-[1.03]">
+                        <button data-action="createRoom" data-category="crypto" data-single-player="false" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all">
                             <span class="text-2xl block mb-1.5">&#128142;</span><span class="text-[10px] font-mono text-gray-400 font-bold">CRYPTO</span>
                         </button>
-                        <button data-action="createRoom" data-category="general" data-single-player="false" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all hover:scale-[1.03]">
+                        <button data-action="createRoom" data-category="general" data-single-player="false" class="btn cat-btn p-4 bg-obsidian rounded-xl text-white border border-white/[0.06] hover:border-wit/30 transition-all">
                             <span class="text-2xl block mb-1.5">&#128514;</span><span class="text-[10px] font-mono text-gray-400 font-bold">GENERAL</span>
                         </button>
                     </div>

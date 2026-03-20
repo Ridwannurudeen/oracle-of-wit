@@ -11,6 +11,10 @@ import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderComm
 import { syncFromLegacyState } from './signals.js';
 import { mountIslands } from './islands.js';
 
+// === PARTIAL RENDER STATE ===
+let _lastScreen = null;
+let _lastInRoom = false;
+
 // === HUD WING PANELS ===
 
 /**
@@ -201,16 +205,173 @@ export function renderScreen() {
 }
 
 /**
- * Main render function. Rebuilds the entire app DOM.
- * Skips rendering while user is typing (unless forced), throttles to
- * MIN_RENDER_INTERVAL, preserves textarea focus/cursor, plays screen
- * transition sounds, and mounts 3D oracle eyes after paint.
+ * Build the error banner HTML for the current error state.
+ * @param {boolean} inRoom - Whether the player is in a room.
+ * @returns {string} HTML string for error banner, or empty string.
+ */
+function buildErrorHtml(inRoom) {
+    if (!state.error) return '';
+    const inner = `<div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">\u26A0 ${esc(state.error)} <button data-action="dismissError" class="ml-3 text-red-400 hover:text-white">\u00D7</button></div>`;
+    return inRoom ? inner : `<div class="mx-auto px-4 py-2" style="max-width:1400px">${inner}</div>`;
+}
+
+/**
+ * Build the header HTML string.
+ * @returns {string} HTML string for header.
+ */
+function buildHeader() {
+    return `
+        <header id="main-header" class="py-2.5 px-4 border-b border-white/[0.04] sticky top-0 z-50 header-transition" style="background:rgba(5,5,5,0.88);backdrop-filter:blur(24px) saturate(1.2)">
+            <div class="w-full flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <div id="header-eye" class="w-8 h-8 oracle-eye rounded-full flex items-center justify-center shrink-0"></div>
+                    <div>
+                        <h1 class="text-sm font-display font-bold gradient-text leading-tight tracking-wider">ORACLE OF WIT</h1>
+                        <p class="text-[9px] font-mono text-gray-600 tracking-widest flex items-center gap-1"><span class="text-oracle/60">${glLogo(10, 'rgb(45,212,191)')}</span>GENLAYER PROTOCOL</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <div class="hidden sm:flex items-center gap-1.5 mr-2">
+                        <div class="flex items-center gap-1 px-2 py-1 bg-green-500/10 border border-green-500/20 rounded-lg">
+                            ${glLogo(11, 'rgb(34,197,94)')}
+                            <span class="text-[9px] font-mono text-green-400 tracking-wider">TESTNET</span>
+                        </div>
+                    </div>
+                    <button data-action="toggleSound" data-header-sound class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'}</button>
+                    <span data-header-profile class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)${!state.profile && !state.playerName ? ';display:none' : ''}">${state.profile ? `Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span>` : state.playerName ? esc(state.playerName) : ''}</span>
+                    ${state.roomId ? `<span data-header-room class="px-1.5 py-1 bg-obsidian border border-white/[0.06] rounded text-[10px] font-mono text-gray-400">${esc(state.roomId)}</span>` : ''}
+                </div>
+            </div>
+        </header>`;
+}
+
+/**
+ * Patch header elements in-place without rebuilding the header DOM.
+ * This preserves the Three.js canvas mounted in #header-eye.
+ * @returns {void}
+ */
+function patchHeader() {
+    // Update sound button icon
+    const soundBtn = document.querySelector('[data-header-sound]');
+    if (soundBtn) {
+        soundBtn.innerHTML = soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+    }
+    // Update profile/player name badge
+    const profileEl = document.querySelector('[data-header-profile]');
+    if (profileEl) {
+        if (state.profile) {
+            profileEl.innerHTML = `Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span>`;
+            profileEl.style.display = '';
+        } else if (state.playerName) {
+            profileEl.textContent = state.playerName;
+            profileEl.style.display = '';
+        } else {
+            profileEl.style.display = 'none';
+        }
+    }
+    // Update room ID badge
+    const roomEl = document.querySelector('[data-header-room]');
+    if (roomEl) {
+        if (state.roomId) {
+            roomEl.textContent = state.roomId;
+            roomEl.style.display = '';
+        } else {
+            roomEl.style.display = 'none';
+        }
+    }
+}
+
+/**
+ * Build the HUD bar HTML string.
+ * @returns {string} HTML string for HUD bar, or empty string if not in room.
+ */
+function buildHudBar() {
+    if (!state.room) return '';
+    return `
+        <div class="consensus-hud border-b border-white/[0.03] py-1 px-2 sm:px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
+            <div class="w-full flex items-center justify-between text-gray-500 text-[10px] sm:text-xs font-mono">
+                <div class="flex items-center gap-1 sm:gap-3">
+                    <div class="flex items-center gap-1">${glLogo(12, 'rgb(34,197,94)')}<span class="hidden sm:inline">GenLayer</span></div>
+                    <span class="text-white/10 hidden sm:inline">|</span>
+                    <span data-hud-players>${state.room.players?.length || 0}P</span>
+                    <span class="text-white/10">|</span>
+                    <span data-hud-round>R${state.room.currentRound || 0}/${state.room.totalRounds || 5}</span>
+                </div>
+                <div class="flex items-center gap-1 sm:gap-3">
+                    <span data-hud-status class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${esc(state.room.status?.toUpperCase() || 'IDLE')}</span>
+                    <span class="text-white/10">|</span>
+                    <button data-action="confirmLeaveRoom" class="text-red-400/60 hover:text-red-400 transition-colors text-[10px] font-mono tracking-wider">EXIT</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+/**
+ * Patch HUD bar elements in-place.
+ * @returns {void}
+ */
+function patchHudBar() {
+    if (!state.room) return;
+    const players = document.querySelector('[data-hud-players]');
+    if (players) players.textContent = `${state.room.players?.length || 0}P`;
+    const round = document.querySelector('[data-hud-round]');
+    if (round) round.textContent = `R${state.room.currentRound || 0}/${state.room.totalRounds || 5}`;
+    const status = document.querySelector('[data-hud-status]');
+    if (status) {
+        status.textContent = (state.room.status || 'IDLE').toUpperCase();
+        status.className = state.room.status === 'judging' ? 'text-oracle' : '';
+    }
+}
+
+/**
+ * Shared post-render tasks: restore textarea, sync signals, mount islands, schedule error dismiss.
+ * @param {boolean} wasTextareaFocused
+ * @param {number} selectionStart
+ * @param {number} selectionEnd
+ * @param {boolean} mountHeaderEye - Whether to mount the header 3D eye (only on full rebuild).
+ * @returns {void}
+ */
+function postRender(wasTextareaFocused, selectionStart, selectionEnd, mountHeaderEye) {
+    // Restore textarea focus and cursor position
+    if (wasTextareaFocused) {
+        const textarea = document.getElementById('punchline');
+        if (textarea) {
+            textarea.focus();
+            textarea.setSelectionRange(selectionStart, selectionEnd);
+        }
+    }
+
+    // Update tab title
+    const phaseLabel = state.room ? `[R${state.room.currentRound || 0}] ${(state.screen || '').toUpperCase()}` : '';
+    document.title = phaseLabel ? `${phaseLabel} - Oracle of Wit` : 'Oracle of Wit - GenLayer Community Game';
+
+    // Sync Preact signals from legacy state
+    syncFromLegacyState(state);
+
+    // Mount Preact islands + 3D oracle eyes after paint
+    requestAnimationFrame(() => {
+        mountIslands();
+        mountOracleEye('welcome-eye-3d', 160);
+        if (mountHeaderEye) mountOracleEye('header-eye', 32);
+        oracleEye3D.setGameState(state.screen);
+    });
+
+    // Auto-dismiss errors after 5 seconds
+    if (state.error) {
+        clearTimeout(state._errorTimeout);
+        state._errorTimeout = setTimeout(() => { state.error = null; render(); }, 5000);
+    }
+}
+
+/**
+ * Main render function. Uses partial DOM updates when possible to avoid
+ * full innerHTML rebuilds that cause blinking and WebGL context leaks.
+ * Falls back to full rebuild on screen transitions or layout changes.
  * @param {boolean} [force=false] - Force render even during typing/throttle.
  * @returns {void}
  */
 export function render(force = false) {
     // Skip render completely while typing (unless forced)
-    // Also check if textarea is focused — isTyping timeout may have expired while user is still in the field
     const textareaFocused = document.activeElement?.id === 'punchline';
     if ((isTyping || textareaFocused) && !force) {
         updateTimerDisplay();
@@ -231,8 +392,7 @@ export function render(force = false) {
     }
     setLastRenderTime(now);
 
-    // Preserve textarea state across innerHTML rebuilds. Without this,
-    // typing a punchline would lose focus and cursor position on every poll-triggered render.
+    // Preserve textarea state across innerHTML rebuilds
     const activeEl = document.activeElement;
     const wasTextareaFocused = activeEl && activeEl.id === 'punchline';
     let selectionStart = 0, selectionEnd = 0;
@@ -241,101 +401,77 @@ export function render(force = false) {
         selectionEnd = activeEl.selectionEnd;
     }
 
-    // Track screen transitions for sound + tab title
-    const prevScreen = document.getElementById('app')?.dataset?.screen;
+    const appEl = document.getElementById('app');
+    const inRoom = !!state.room;
+    const screenChanged = state.screen !== _lastScreen;
+    const layoutChanged = inRoom !== _lastInRoom;
+
+    // ─── PARTIAL UPDATE PATH ───────────────────────────────────────
+    // When screen and layout haven't changed, update only the content
+    // area. This preserves the header (and its Three.js canvas), HUD bar,
+    // and wings, preventing blinking, WebGL context leaks, and hover jitter.
+    if (!screenChanged && !layoutChanged && _lastScreen !== null) {
+        const mainEl = document.querySelector('#app main');
+        if (mainEl) {
+            appEl.dataset.screen = state.screen;
+
+            // Update main content
+            mainEl.innerHTML = buildErrorHtml(inRoom) + renderScreen();
+
+            // Patch header, HUD bar, wings in-place
+            patchHeader();
+            patchHudBar();
+            const leftWing = document.querySelector('[data-hud="left-wing"]');
+            if (leftWing) leftWing.innerHTML = renderLeftWingContent();
+            const rightWing = document.querySelector('[data-hud="right-wing"]');
+            if (rightWing) rightWing.innerHTML = renderRightWingContent();
+
+            // Update high-stakes mode
+            const wrapper = appEl.firstElementChild;
+            if (wrapper) {
+                const isHighStakes = state.room?.betBudgets?.[state.playerName] !== undefined && (state.room.betBudgets[state.playerName] ?? 300) <= 50;
+                wrapper.className = isHighStakes ? 'high-stakes' : '';
+            }
+
+            postRender(wasTextareaFocused, selectionStart, selectionEnd, false);
+            return;
+        }
+    }
+
+    // ─── FULL REBUILD PATH ─────────────────────────────────────────
+    // Used on screen transitions or layout changes (join/leave room).
+    _lastScreen = state.screen;
+    _lastInRoom = inRoom;
+
+    // Track screen transitions for sound
+    const prevScreen = appEl?.dataset?.screen;
     if (prevScreen && prevScreen !== state.screen) {
         playScreenTransition(prevScreen, state.screen);
     }
-    // Update tab title
-    const phaseLabel = state.room ? `[R${state.room.currentRound || 0}] ${(state.screen || '').toUpperCase()}` : '';
-    document.title = phaseLabel ? `${phaseLabel} - Oracle of Wit` : 'Oracle of Wit - GenLayer Community Game';
 
     const isHighStakes = state.room?.betBudgets?.[state.playerName] !== undefined && (state.room.betBudgets[state.playerName] ?? 300) <= 50;
-    const appEl = document.getElementById('app');
     appEl.dataset.screen = state.screen;
     appEl.innerHTML = `
         <div class="${isHighStakes ? 'high-stakes' : ''}">
-        <header id="main-header" class="py-2.5 px-4 border-b border-white/[0.04] sticky top-0 z-50 header-transition" style="background:rgba(5,5,5,0.88);backdrop-filter:blur(24px) saturate(1.2)">
-            <div class="w-full flex justify-between items-center">
-                <div class="flex items-center gap-2">
-                    <div id="header-eye" class="w-8 h-8 oracle-eye rounded-full flex items-center justify-center shrink-0"></div>
-                    <div>
-                        <h1 class="text-sm font-display font-bold gradient-text leading-tight tracking-wider">ORACLE OF WIT</h1>
-                        <p class="text-[9px] font-mono text-gray-600 tracking-widest flex items-center gap-1"><span class="text-oracle/60">${glLogo(10, 'rgb(45,212,191)')}</span>GENLAYER PROTOCOL</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <div class="hidden sm:flex items-center gap-1.5 mr-2">
-                        <div class="flex items-center gap-1 px-2 py-1 bg-green-500/10 border border-green-500/20 rounded-lg">
-                            ${glLogo(11, 'rgb(34,197,94)')}
-                            <span class="text-[9px] font-mono text-green-400 tracking-wider">TESTNET</span>
-                        </div>
-                    </div>
-                    <button data-action="toggleSound" class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'}</button>
-                    ${state.profile ? `<span class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)">Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span></span>` : state.playerName ? `<span class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)">${esc(state.playerName)}</span>` : ''}
-                    ${state.roomId ? `<span class="px-1.5 py-1 bg-obsidian border border-white/[0.06] rounded text-[10px] font-mono text-gray-400">${esc(state.roomId)}</span>` : ''}
-                </div>
-            </div>
-        </header>
-        ${state.room ? `
-        <div class="consensus-hud border-b border-white/[0.03] py-1 px-2 sm:px-4" style="background:rgba(5,5,5,0.7);backdrop-filter:blur(12px)">
-            <div class="w-full flex items-center justify-between text-gray-500 text-[10px] sm:text-xs font-mono">
-                <div class="flex items-center gap-1 sm:gap-3">
-                    <div class="flex items-center gap-1">${glLogo(12, 'rgb(34,197,94)')}<span class="hidden sm:inline">GenLayer</span></div>
-                    <span class="text-white/10 hidden sm:inline">|</span>
-                    <span>${state.room.players?.length || 0}P</span>
-                    <span class="text-white/10">|</span>
-                    <span>R${state.room.currentRound || 0}/${state.room.totalRounds || 5}</span>
-                </div>
-                <div class="flex items-center gap-1 sm:gap-3">
-                    <span class="${state.room.status === 'judging' ? 'text-oracle' : ''}">${esc(state.room.status?.toUpperCase() || 'IDLE')}</span>
-                    <span class="text-white/10">|</span>
-                    <button data-action="confirmLeaveRoom" class="text-red-400/60 hover:text-red-400 transition-colors text-[10px] font-mono tracking-wider">EXIT</button>
-                </div>
-            </div>
-        </div>
-        ` : ''}
+        ${buildHeader()}
+        ${buildHudBar()}
         ${state.room ? `
         <div class="w-full px-4 lg:px-6 py-5 pb-20 relative z-10 flex gap-6" style="max-width:1600px;margin:0 auto">
             ${renderLeftWing()}
             <main class="flex-1 min-w-0 screen-enter" style="max-width:900px">
-                ${state.error ? `<div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">\u26A0 ${esc(state.error)} <button data-action="dismissError" class="ml-3 text-red-400 hover:text-white">\u00D7</button></div>` : ''}
+                ${buildErrorHtml(true)}
                 ${renderScreen()}
             </main>
             ${renderRightWing()}
         </div>
         ` : `
         <main class="w-full relative z-10 screen-enter">
-            ${state.error ? `<div class="mx-auto px-4 py-2" style="max-width:1400px"><div class="glow-card glow-card-red mb-4 p-3 text-red-300 text-sm font-mono animate-shake">\u26A0 ${esc(state.error)} <button data-action="dismissError" class="ml-3 text-red-400 hover:text-white">\u00D7</button></div></div>` : ''}
+            ${buildErrorHtml(false)}
             ${renderScreen()}
         </main>
         `}
         </div>
     `;
 
-    // Restore textarea focus and cursor position
-    if (wasTextareaFocused) {
-        const textarea = document.getElementById('punchline');
-        if (textarea) {
-            textarea.focus();
-            textarea.setSelectionRange(selectionStart, selectionEnd);
-        }
-    }
-
-    // Sync Preact signals from legacy state (bridges islands architecture)
-    syncFromLegacyState(state);
-
-    // Mount Preact islands + 3D oracle eyes after render
-    requestAnimationFrame(() => {
-        mountIslands();
-        mountOracleEye('welcome-eye-3d', 160);
-        mountOracleEye('header-eye', 32);
-        oracleEye3D.setGameState(state.screen);
-    });
-
-    // Auto-dismiss errors after 5 seconds
-    if (state.error) {
-        clearTimeout(state._errorTimeout);
-        state._errorTimeout = setTimeout(() => { state.error = null; render(); }, 5000);
-    }
+    postRender(wasTextareaFocused, selectionStart, selectionEnd, true);
 }
