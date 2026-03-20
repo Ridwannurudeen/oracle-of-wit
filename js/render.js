@@ -2,7 +2,7 @@
 
 import { state, gameEvents, renderPending, setRenderPending, lastRenderTime, setLastRenderTime, MIN_RENDER_INTERVAL } from './state.js';
 import { esc, formatEventTime, glLogo } from './render-helpers.js';
-import { isTyping, soundEnabled, updateTimerDisplay } from './api.js';
+import { isTyping, soundEnabled } from './api.js';
 import { mountOracleEye, oracleEye3D, playScreenTransition } from './effects.js';
 import { renderWelcome, renderLobby, renderWaiting } from './render-lobby.js';
 import { renderSubmitting, renderCurating, renderVoting, renderBetting, renderJudging } from './render-game.js';
@@ -348,9 +348,12 @@ function postRender(wasTextareaFocused, selectionStart, selectionEnd, mountHeade
     // Sync Preact signals from legacy state
     syncFromLegacyState(state);
 
-    // Mount Preact islands + 3D oracle eyes after paint
+    // Mount Preact islands synchronously so they render in the same frame
+    // (rAF caused a one-frame flash where island containers were empty)
+    mountIslands();
+
+    // Mount 3D oracle eyes after paint (Three.js needs rendered DOM)
     requestAnimationFrame(() => {
-        mountIslands();
         mountOracleEye('welcome-eye-3d', 160);
         if (mountHeaderEye) mountOracleEye('header-eye', 32);
         oracleEye3D.setGameState(state.screen);
@@ -374,7 +377,6 @@ export function render(force = false) {
     // Skip render completely while typing (unless forced)
     const textareaFocused = document.activeElement?.id === 'punchline';
     if ((isTyping || textareaFocused) && !force) {
-        updateTimerDisplay();
         return;
     }
 

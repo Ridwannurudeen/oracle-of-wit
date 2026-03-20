@@ -1,7 +1,7 @@
 // Oracle of Wit — Game Actions, Timer, Boot, Event Handlers (ES Module)
 
 import { state, sessionToken, setSessionToken, headerFloating, setHeaderFloating, timerRAF, setTimerRAF, lastTimerSecond, setLastTimerSecond } from './state.js';
-import { API_URL, api, fetchRoom, startPolling, stopPolling, fetchPublicRooms, fetchLeaderboard, soundEnabled, setSoundEnabled, isTyping, setIsTyping, typingTimeout, updateTimerDisplay, setTyping, audioCtx, setOptimisticGuard, clearOptimisticGuard } from './api.js';
+import { API_URL, api, fetchRoom, startPolling, stopPolling, fetchPublicRooms, fetchLeaderboard, soundEnabled, setSoundEnabled, isTyping, setIsTyping, typingTimeout, setTyping, audioCtx, setOptimisticGuard, clearOptimisticGuard } from './api.js';
 import { playSound, initAudio, createConfetti, oracleEye3D, startRevealSequence, stopRevealSequence, startValidatorVoting, stopValidatorVoting } from './effects.js';
 import { addGameEvent, formatTime, getNextLevelXPClient } from './render-helpers.js';
 import { render } from './render.js';
@@ -32,7 +32,6 @@ function startTimer() {
             setLastTimerSecond(state.timeLeft);
             if (state.timeLeft <= 5 && state.timeLeft > 0) playSound('tick');
             if (state.timeLeft === 10) playSound('warning');
-            updateTimerDisplay();
         }
         setTimerRAF(requestAnimationFrame(tick));
     }

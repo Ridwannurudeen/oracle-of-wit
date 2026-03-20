@@ -2,6 +2,7 @@
 
 import { state, pollInterval, setPollInterval, sessionToken } from './state.js';
 import { formatTime } from './render-helpers.js';
+import { syncFromLegacyState } from './signals.js';
 
 /** @type {string} Base URL for all API calls. */
 export const API_URL = '/api/game';
@@ -254,7 +255,8 @@ export function patchDOM(oldRoom, newRoom) {
     // Full rebuild needed if round results changed
     if ((oldRoom.roundResults?.length ?? 0) !== (newRoom.roundResults?.length ?? 0)) return false;
 
-    let patched = false;
+    // Track whether main-content-area patches happened (not just sidebars)
+    let mainPatched = false;
 
     // Patch submission counter
     const subCounter = document.querySelector('[data-hud="submitted"]');
@@ -262,7 +264,7 @@ export function patchDOM(oldRoom, newRoom) {
         const humanPlayers = newRoom.players?.filter(p => !p.isBot).length || 0;
         const subCount = newRoom.submissions?.length || 0;
         subCounter.textContent = `${subCount}/${humanPlayers} SUBMITTED`;
-        patched = true;
+        mainPatched = true;
     }
 
     // Patch bet counter
@@ -271,7 +273,7 @@ export function patchDOM(oldRoom, newRoom) {
         const humanPlayers = newRoom.players?.filter(p => !p.isBot).length || 0;
         const betCount = newRoom.bets?.length || 0;
         betCounter.textContent = `${betCount}/${humanPlayers} BET`;
-        patched = true;
+        mainPatched = true;
     }
 
     // Patch player count in consensus HUD bar
@@ -281,24 +283,22 @@ export function patchDOM(oldRoom, newRoom) {
         for (const span of playerSpans) {
             if (span.textContent.match(/^\d+P$/)) {
                 span.textContent = `${newRoom.players?.length || 0}P`;
-                patched = true;
+                mainPatched = true;
                 break;
             }
         }
     }
 
-    // Patch score display in leaderboard (right wing)
+    // Patch score display in leaderboard (right wing) — sidebar only
     const rightWing = document.querySelector('[data-hud="right-wing"]');
     if (rightWing && _renderRightWingContent) {
         rightWing.innerHTML = _renderRightWingContent();
-        patched = true;
     }
 
-    // Patch left wing (activity feed)
+    // Patch left wing (activity feed) — sidebar only
     const leftWing = document.querySelector('[data-hud="left-wing"]');
     if (leftWing && _renderLeftWingContent) {
         leftWing.innerHTML = _renderLeftWingContent();
-        patched = true;
     }
 
     // Patch vote counts during voting phase
@@ -314,11 +314,13 @@ export function patchDOM(oldRoom, newRoom) {
                 const id = el.dataset.voteCount;
                 if (id) el.textContent = voteCounts[id] || 0;
             });
-            patched = true;
+            mainPatched = true;
         }
     }
 
-    return patched;
+    // Only return true if main content was patched — wing-only patches
+    // should NOT prevent a full render of the main content area
+    return mainPatched;
 }
 
 /**
@@ -382,9 +384,8 @@ export async function fetchRoom() {
             // Change detection — skip render if room data unchanged
             const newHash = simpleHash(result.room);
             if (newHash === lastRoomHash) {
-                // Data unchanged — skip render, just update timer
+                // Data unchanged — skip render, just sync timer
                 if (_syncTimer) _syncTimer();
-                updateTimerDisplay();
                 return;
             }
             lastRoomHash = newHash;
@@ -402,6 +403,10 @@ export async function fetchRoom() {
             const savedSentReactions = state.sentReactions;
 
             state.room = result.room;
+
+            // Always sync Preact signals when room data changes,
+            // even if no render is triggered (fixes stale island data)
+            syncFromLegacyState(state);
 
             if (guardActive) {
                 if (savedHasSubmitted) state.hasSubmitted = true;
@@ -455,8 +460,6 @@ export async function fetchRoom() {
                     }
                 }
             }
-            // Always update timer display
-            updateTimerDisplay();
         }
     } catch (e) {
         pollBackoff = Math.min(pollBackoff * 2, 8);

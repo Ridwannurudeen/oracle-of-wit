@@ -238,6 +238,14 @@ class OracleEye3D {
 
         for (const inst of this.instances) {
             if (!inst.active || !inst.renderer.domElement.isConnected) {
+                // Dispose WebGL resources to prevent context leak
+                if (inst.active !== false) {
+                    try {
+                        inst.renderer.dispose();
+                        inst.outerMat.dispose();
+                        inst.spriteMat.dispose();
+                    } catch (_) { /* already disposed */ }
+                }
                 inst.active = false;
                 continue;
             }
@@ -480,6 +488,8 @@ export function stopValidatorVoting() {
  */
 export function startRevealSequence() {
     stopRevealSequence();
+    // Re-set revealPhase AFTER stop (which resets it to null)
+    state.revealPhase = 'revealing';
     const r = state.room;
     const result = r.roundResults[r.roundResults.length - 1];
     if (!result) return;
