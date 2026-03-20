@@ -8,7 +8,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-A855F7?style=for-the-badge&logo=vercel&logoColor=white)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-2DD4BF?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-290_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-303_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-FBBF24?style=for-the-badge)](LICENSE)
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
@@ -102,28 +102,28 @@ The winner is crowned with a gold card, confetti, and Oracle commentary. XP gain
 ```mermaid
 flowchart TB
     subgraph Client ["Browser (SPA)"]
-        UI[index.html<br/>Vanilla JS + TailwindCSS + Three.js]
+        UI["index.html\nVanilla JS + TailwindCSS + Three.js"]
     end
 
     subgraph Vercel ["Vercel Serverless"]
-        API[api/game.js<br/>Room management, scoring,<br/>phase transitions]
+        API["api/game.js\nRoom management, scoring,\nphase transitions"]
     end
 
     subgraph Storage ["Upstash Redis"]
-        Rooms[(room:*)]
-        LB[(leaderboard)]
-        Players[(player:*)]
-        HoF[(hall_of_fame)]
+        Rooms[("room:*")]
+        LB[("leaderboard")]
+        Players[("player:*")]
+        HoF[("hall_of_fame")]
     end
 
     subgraph AI ["AI Judging (parallel)"]
-        Claude[Claude Haiku<br/>Fast winner + roast]
-        GL[GenLayer OD<br/>On-chain consensus proof]
+        Claude["Claude Haiku\nFast winner + roast"]
+        GL["GenLayer OD\nOn-chain consensus proof"]
     end
 
     subgraph GenLayer ["GenLayer Testnet Bradbury"]
-        Contract[oracle_of_wit.py<br/>Intelligent Contract]
-        Validators[AI Validators<br/>GPT-4, Claude, LLaMA,<br/>Gemini, Mixtral]
+        Contract["oracle_of_wit.py\nIntelligent Contract"]
+        Validators["AI Validators\nGPT-4, Claude, LLaMA,\nGemini, Mixtral"]
     end
 
     UI -- "HTTP poll / POST" --> API
@@ -135,7 +135,7 @@ flowchart TB
     API -- "genlayer-js SDK" --> GL
     GL -- "writeContract" --> Contract
     Contract -- "gl.exec_prompt" --> Validators
-    Validators -- "gl.eq_principle_prompt_comparative" --> Contract
+    Validators -- "eq_principle_prompt_comparative" --> Contract
 ```
 
 **Dual-judge architecture:** GenLayer OD is the authoritative source when available (~2-3 validator rotations with `prompt_comparative`). Claude Haiku serves as a fast fallback if GenLayer times out or fails. Both run in parallel — GenLayer's result is preferred when it arrives within 30s.
@@ -319,9 +319,11 @@ oracle-of-wit/
 │   ├── register-commands.mjs  # Register Discord slash commands
 │   └── capture-screenshots.mjs # Screenshot capture for README (Playwright)
 ├── tests/
+│   ├── test-helpers.js        # Shared test infrastructure (mocks, helpers)
 │   ├── game-logic.test.js     # Core game-logic unit tests (44 tests)
 │   ├── contract.test.js       # Contract logic unit tests (53 tests)
-│   ├── api.test.js            # API integration tests (93 tests)
+│   ├── api.test.js            # API handler tests (93 tests)
+│   ├── integration.test.js    # Integration tests — lifecycle, race conditions (13 tests)
 │   ├── frontend.test.js       # Frontend unit tests (84 tests)
 │   ├── discord.test.js        # Discord bot tests (16 tests)
 │   └── e2e/                   # End-to-end tests
@@ -391,7 +393,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **290 tests** across five test suites:
+Oracle of Wit has **303 tests** across six test suites:
 
 ```bash
 # Run all tests
@@ -407,6 +409,7 @@ npm run test:watch
 | **API** | `tests/api.test.js` | 93 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth (session tokens), rate limiting, input validation, CORS |
 | **Frontend** | `tests/frontend.test.js` | 84 | XSS escaping, auto-escape templates, DOM patching, timer formatting, state management, game events, adaptive polling |
 | **Contract** | `tests/contract.test.js` | 53 | Game creation, OD judging, leaderboard, appeals, seasons, admin access control, idempotency, JSON safety, player history |
+| **Integration** | `tests/integration.test.js` | 13 | Full lifecycle flows, double-advance prevention, polling resilience, auto-advance recovery, phase timer expiry |
 | **Discord** | `tests/discord.test.js` | 16 | Ed25519 signatures, slash commands, error handling |
 
 ---
