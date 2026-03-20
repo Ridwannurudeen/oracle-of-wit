@@ -77,6 +77,9 @@ export function setTypingTimeout(val) { typingTimeout = val; }
 
 /** @type {number|null} Hash of last fetched room data for change detection. */
 let lastRoomHash = null;
+/** @type {number} Consecutive poll failures before declaring room expired. */
+let consecutivePollFailures = 0;
+const MAX_POLL_FAILURES = 3;
 
 // Late-binding references to avoid circular imports
 /** @type {((force?: boolean) => void)|null} */ let _render = null;
@@ -370,21 +373,34 @@ export async function fetchRoom() {
     if (!state.roomId) return;
     try {
         const res = await fetch(`${API_URL}?action=getRoom&roomId=${state.roomId}`);
-        if (res.status >= 500) {
-            // Server error (e.g. auto-advance timeout) — retry on next poll
+        if (!res.ok) {
+            // Any non-200 response (429 rate limit, 500 server error, etc.)
+            // Retry on next poll — only declare room expired after multiple consecutive failures
+            consecutivePollFailures++;
             pollBackoff = Math.min(pollBackoff * 2, 8);
-            console.warn(`[Poll] server error ${res.status}, will retry`);
+            console.warn(`[Poll] error ${res.status} (${consecutivePollFailures}/${MAX_POLL_FAILURES})`);
             updateConnectionBanner();
+            if (res.status === 404 && consecutivePollFailures >= MAX_POLL_FAILURES) {
+                // Room genuinely gone after multiple confirmations
+                consecutivePollFailures = 0;
+                if (_leaveRoom) _leaveRoom();
+                state.error = 'Room expired. Returned to lobby.';
+                if (_render) _render(true);
+            }
             return;
         }
         const result = await res.json();
         if (!result.success || !result.room) {
-            // Room genuinely expired or not found (404)
-            if (_leaveRoom) _leaveRoom();
-            state.error = 'Room expired. Returned to lobby.';
-            if (_render) _render(true);
+            consecutivePollFailures++;
+            if (consecutivePollFailures >= MAX_POLL_FAILURES) {
+                consecutivePollFailures = 0;
+                if (_leaveRoom) _leaveRoom();
+                state.error = 'Room expired. Returned to lobby.';
+                if (_render) _render(true);
+            }
             return;
         }
+        consecutivePollFailures = 0;
         pollBackoff = 1; // Reset backoff on success
         updateConnectionBanner();
         if (result.success && result.room) {

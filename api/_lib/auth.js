@@ -91,7 +91,7 @@ const MUTATING_ACTIONS = new Set([
  */
 export async function checkRateLimit(ip, action) {
     const minute = Math.floor(Date.now() / 60000);
-    const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE) || 60;
+    const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE) || 120;
 
     // Global rate limit
     const globalKey = `rl:${ip}:${minute}`;
