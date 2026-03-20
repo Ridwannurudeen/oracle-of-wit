@@ -404,16 +404,16 @@ export async function fetchRoom() {
 
             state.room = result.room;
 
-            // Always sync Preact signals when room data changes,
-            // even if no render is triggered (fixes stale island data)
-            syncFromLegacyState(state);
-
             if (guardActive) {
                 if (savedHasSubmitted) state.hasSubmitted = true;
                 if (savedHasBet) state.hasBet = true;
                 if (savedVotedFor) state.votedFor = savedVotedFor;
                 if (savedSentReactions > 0) state.sentReactions = savedSentReactions;
             }
+
+            // Sync Preact signals AFTER optimistic guard restoration,
+            // so islands see the correct guarded values
+            syncFromLegacyState(state);
             if (_syncTimer) _syncTimer();
 
             // Render on phase change even when typing

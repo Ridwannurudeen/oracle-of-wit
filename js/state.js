@@ -107,6 +107,8 @@ export let state = {
     walletAddress: localStorage.getItem('walletAddress') || null,
     isWalletConnected: !!localStorage.getItem('walletAddress'),
     walletConnecting: false,
+    // Player session token (for daily challenges, community prompts, appeals)
+    playerSessionToken: localStorage.getItem('playerSessionToken') || null,
 };
 
 /** @type {number|null} */

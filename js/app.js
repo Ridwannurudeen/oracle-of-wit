@@ -499,6 +499,11 @@ export async function fetchProfile() {
             state.profile = result.profile;
             state.nextLevelXP = result.nextLevelXP;
             state.allAchievements = result.achievements || [];
+            // Store player session token for authenticated actions
+            if (result.playerSessionToken) {
+                state.playerSessionToken = result.playerSessionToken;
+                localStorage.setItem('playerSessionToken', result.playerSessionToken);
+            }
             render();
         }
     } catch(e) { console.warn('Failed to fetch profile:', e.message); }
@@ -535,7 +540,7 @@ export async function submitDailyChallenge() {
     try {
         const res = await fetch(`${API_URL}?action=submitDailyChallenge`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ playerId: state.playerId, playerName: state.playerName, punchline: text })
+            body: JSON.stringify({ playerId: state.playerId, playerName: state.playerName, punchline: text, playerSessionToken: state.playerSessionToken })
         });
         const result = await res.json();
         state.dailySubmitting = false;
@@ -573,7 +578,7 @@ export async function appealVerdict() {
     try {
         const res = await fetch(`${API_URL}?action=appealVerdict`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId: state.roomId, playerName: state.playerName, playerId: state.playerId })
+            body: JSON.stringify({ roomId: state.roomId, playerName: state.playerName, playerId: state.playerId, playerSessionToken: state.playerSessionToken })
         });
         const result = await res.json();
         state.appealInProgress = false;
@@ -957,17 +962,24 @@ export async function connectWallet() {
         state.nextLevelXP = verifyData.nextLevelXP;
         state.allAchievements = verifyData.achievements || [];
 
-        // Persist
+        // Persist wallet + session token
         localStorage.setItem('walletAddress', verifyData.walletAddress);
         localStorage.setItem('playerId', verifyData.playerId);
+        if (verifyData.playerSessionToken) {
+            state.playerSessionToken = verifyData.playerSessionToken;
+            localStorage.setItem('playerSessionToken', verifyData.playerSessionToken);
+        }
 
         state.walletConnecting = false;
         playSound('start');
-        render(true); // Force render to ensure wallet state is reflected
+        render(true);
     } catch (e) {
         console.error('[Wallet] Connection failed:', e);
         state.walletConnecting = false;
-        if (e.code !== 4001) { // 4001 = user rejected
+        // Show feedback for ALL errors including user rejection
+        if (e.code === 4001) {
+            state.error = 'Wallet connection cancelled.';
+        } else {
             state.error = e.message || 'Wallet connection failed';
         }
         render(true);
@@ -981,7 +993,9 @@ export async function connectWallet() {
 export function disconnectWallet() {
     state.walletAddress = null;
     state.isWalletConnected = false;
+    state.playerSessionToken = null;
     localStorage.removeItem('walletAddress');
+    localStorage.removeItem('playerSessionToken');
     // Revert to UUID-based playerId
     if (!localStorage.getItem('playerId')?.startsWith('wallet:')) {
         // Already has a non-wallet playerId, keep it
@@ -1022,7 +1036,7 @@ export async function submitCommunityPrompt() {
     const input = document.getElementById('community-prompt-input');
     if (!input || !input.value.trim()) return;
     try {
-        await api('submitPrompt', { playerName: state.playerName, prompt: input.value.trim(), playerId: state.playerId });
+        await api('submitPrompt', { playerName: state.playerName, prompt: input.value.trim(), playerId: state.playerId, playerSessionToken: state.playerSessionToken });
         input.value = '';
         fetchCommunityPrompts();
     } catch (_e) { /* silently ignore */ }
@@ -1035,7 +1049,7 @@ export async function submitCommunityPrompt() {
  */
 export async function voteCommunityPrompt(promptId) {
     try {
-        await api('votePrompt', { promptId, playerId: state.playerId });
+        await api('votePrompt', { promptId, playerId: state.playerId, playerSessionToken: state.playerSessionToken });
         fetchCommunityPrompts();
     } catch (_e) { /* silently ignore */ }
 }
