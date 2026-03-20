@@ -24,6 +24,32 @@ export async function storeNonce(nonce) {
 }
 
 /**
+ * Build a properly formatted SIWE message using the siwe library.
+ * Ensures EIP-55 checksum on the address (required by siwe v3).
+ * @param {string} domain - The requesting domain.
+ * @param {string} address - The wallet address (any case).
+ * @param {string} uri - The requesting URI.
+ * @param {string} nonce - The nonce.
+ * @returns {Promise<string>} The formatted SIWE message string.
+ */
+export async function buildSiweMessage(domain, address, uri, nonce) {
+    const { SiweMessage } = await import('siwe');
+    const { getAddress } = await import('ethers');
+    const checksummed = getAddress(address);
+    const msg = new SiweMessage({
+        domain,
+        address: checksummed,
+        statement: 'Sign in to Oracle of Wit',
+        uri,
+        version: '1',
+        chainId: 1,
+        nonce,
+        issuedAt: new Date().toISOString(),
+    });
+    return msg.prepareMessage();
+}
+
+/**
  * Consume (validate and delete) a nonce. Returns true if valid.
  * @param {string} nonce
  * @returns {Promise<boolean>}

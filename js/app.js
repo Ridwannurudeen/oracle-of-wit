@@ -912,29 +912,17 @@ export async function connectWallet() {
         const address = accounts[0];
         if (!address) throw new Error('No account returned from wallet');
 
-        // Get nonce from server
-        const nonceRes = await fetch(`${API_URL}?action=requestNonce`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+        // Get nonce + server-built SIWE message (ensures EIP-55 checksum)
+        const domain = window.location.host;
+        const origin = window.location.origin;
+        const nonceRes = await fetch(`${API_URL}?action=requestNonce&domain=${encodeURIComponent(domain)}&uri=${encodeURIComponent(origin)}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address })
         });
         if (!nonceRes.ok) throw new Error(`Nonce request failed (${nonceRes.status})`);
         const nonceData = await nonceRes.json();
         if (!nonceData.success) throw new Error(nonceData.error || 'Failed to get nonce');
-
-        // Build SIWE message
-        const domain = window.location.host;
-        const origin = window.location.origin;
-        const message = [
-            `${domain} wants you to sign in with your Ethereum account:`,
-            address,
-            '',
-            'Sign in to Oracle of Wit',
-            '',
-            `URI: ${origin}`,
-            'Version: 1',
-            `Chain ID: 1`,
-            `Nonce: ${nonceData.nonce}`,
-            `Issued At: ${new Date().toISOString()}`,
-        ].join('\n');
+        const message = nonceData.message;
 
         // Request signature
         const signature = await window.ethereum.request({

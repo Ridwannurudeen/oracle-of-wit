@@ -6,7 +6,7 @@ import { pickWinnerWithAI } from '../_lib/ai.js';
 import { getGenLayerClient } from '../_lib/genlayer.js';
 import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey } from '../_lib/profiles.js';
 import { generateToken, storePlayerSession } from '../_lib/auth.js';
-import { generateNonce, storeNonce, consumeNonce, verifySiweMessage } from '../_lib/wallet-auth.js';
+import { generateNonce, storeNonce, consumeNonce, verifySiweMessage, buildSiweMessage } from '../_lib/wallet-auth.js';
 import { tursoUpsertUser } from '../_lib/turso.js';
 
 /**
@@ -201,6 +201,20 @@ export async function getSeasonArchive(body, ctx) {
 export async function requestNonce(body, ctx) {
     const nonce = generateNonce();
     await storeNonce(nonce);
+
+    // If address provided, build a properly formatted SIWE message
+    // (ensures EIP-55 checksum — required by siwe v3)
+    if (body.address) {
+        try {
+            const domain = ctx.query?.domain || 'oracle-of-wit.vercel.app';
+            const uri = ctx.query?.uri || `https://${domain}`;
+            const message = await buildSiweMessage(domain, body.address, uri, nonce);
+            return { status: 200, data: { success: true, nonce, message } };
+        } catch (e) {
+            return { status: 400, data: { error: 'Invalid wallet address' } };
+        }
+    }
+
     return { status: 200, data: { success: true, nonce } };
 }
 
