@@ -324,8 +324,10 @@ export async function advancePhase() {
     try {
         const result = await api('advancePhase', { roomId: state.roomId, hostName: state.playerName });
         state.room = result.room;
-        render();
-    } catch (e) { state.error = e.message || 'Failed to advance phase.'; render(); }
+        state.screen = result.room.status === 'roundResults' ? 'roundResults' : result.room.status;
+        setIsTyping(false);
+        render(true);
+    } catch (e) { state.error = e.message || 'Failed to advance phase.'; render(true); }
 }
 
 /**

@@ -663,10 +663,11 @@ describe('Game Flow Logic', () => {
         const state = createDefaultState();
         const now = Date.now();
 
-        // 30 seconds remaining
+        // ~30 seconds remaining (floor may be 29 or 30 depending on ms drift)
         state.room = { phaseEndsAt: now + 30000 };
         syncTimer(state);
-        expect(state.timeLeft).toBe(30);
+        expect(state.timeLeft).toBeGreaterThanOrEqual(29);
+        expect(state.timeLeft).toBeLessThanOrEqual(30);
 
         // 0 seconds remaining (past)
         state.room = { phaseEndsAt: now - 5000 };
