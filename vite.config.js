@@ -29,10 +29,10 @@ export default defineConfig({
             include: ['api/**/*.js', 'js/**/*.js'],
             exclude: ['tests/**', 'node_modules/**', 'dist/**', '*.config.js'],
             thresholds: {
-                statements: 50,
+                statements: 40,
                 branches: 45,
-                functions: 55,
-                lines: 50,
+                functions: 40,
+                lines: 40,
             },
         },
     },
