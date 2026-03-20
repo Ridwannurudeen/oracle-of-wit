@@ -929,7 +929,7 @@ describe('API Handler', () => {
 
     it('returns 429 when rate limit exceeded', async () => {
       const minute = Math.floor(Date.now() / 60000);
-      counters[`rl:127.0.0.1:${minute}`] = 60;
+      counters[`rl:127.0.0.1:${minute}`] = 120;
       const req = makeReq({ method: 'GET', query: { action: 'getLeaderboard' } });
       const res = makeRes();
       await handler(req, res);
