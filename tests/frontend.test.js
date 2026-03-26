@@ -8,9 +8,20 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// Mock effects.js to prevent startValidatorVoting side effects (intervals, DOM)
+vi.mock('../js/effects.js', () => ({
+    startValidatorVoting: vi.fn(),
+    bindEffectsRender: vi.fn(),
+}));
+
 // Import pure functions from actual source modules
 import { esc, formatTime, formatEventTime, getNextLevelXPClient, html, raw } from '../js/render-helpers.js';
 import { patchDOM } from '../js/api.js';
+
+// Import render functions and shared state for rendering tests
+import { state } from '../js/state.js';
+import { renderRoundResults } from '../js/render-results.js';
+import { renderJudging } from '../js/render-game.js';
 
 // Remaining functions below use different signatures from their source counterparts:
 // - getPollInterval: source (getAdaptivePollInterval) uses module state; test version is pure
@@ -1217,5 +1228,179 @@ describe('patchDOM', () => {
         );
         expect(result).toBe(true);
         expect(document.querySelector('.consensus-hud span').textContent).toBe('5P');
+    });
+});
+
+// =========================================================================
+// 14. RENDER FUNCTION OUTPUT — METHOD BADGES & BANNERS
+// =========================================================================
+describe('Render Function Output', () => {
+    /**
+     * Helper to reset the shared module state before each render test.
+     * We mutate the imported `state` object in-place since render-results.js
+     * and render-game.js read from the same reference.
+     */
+    function resetSharedState(overrides = {}) {
+        Object.assign(state, {
+            screen: 'roundResults',
+            playerName: 'TestPlayer',
+            roomId: 'ROOM1',
+            room: null,
+            isHost: false,
+            selectedSubmission: null,
+            betAmount: 50,
+            hasSubmitted: false,
+            hasBet: false,
+            error: null,
+            loading: false,
+            leaderboard: [],
+            publicRooms: [],
+            timeLeft: 0,
+            punchlineText: '',
+            showHelp: false,
+            validatorVotingStarted: false,
+            validatorVotes: [],
+            consensusReached: false,
+            winningSubmissionId: null,
+            currentWeeklyTheme: null,
+            revealPhase: null,
+            revealIndex: -1,
+            revealTimer: null,
+            revealedJokes: [],
+            sentReactions: 0,
+            floatingEmojis: [],
+            playerId: null,
+            profile: null,
+            allAchievements: [],
+            nextLevelXP: null,
+            dailyChallenge: null,
+            dailyResult: null,
+            dailySubmitting: false,
+            hallOfFame: [],
+            showHallOfFame: false,
+            challengeData: null,
+            challengeResult: null,
+            appealInProgress: false,
+            appealResult: null,
+            communityPrompts: [],
+            showCommunityPrompts: false,
+            votedFor: null,
+            ...overrides,
+        });
+    }
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    describe('renderRoundResults method badges', () => {
+        it('shows AI Fallback badge when judgingMethod is ai_fallback', () => {
+            resetSharedState({
+                room: {
+                    currentRound: 1,
+                    totalRounds: 3,
+                    jokePrompt: 'Why did the chicken...',
+                    players: [
+                        { name: 'TestPlayer', score: 100 },
+                        { name: 'Alice', score: 50 },
+                    ],
+                    submissions: [
+                        { id: 1, playerName: 'TestPlayer', punchline: 'To get to the other side' },
+                        { id: 2, playerName: 'Alice', punchline: 'Because it was free range' },
+                    ],
+                    bets: [],
+                    roundResults: [{
+                        round: 1,
+                        winnerId: 1,
+                        winnerName: 'TestPlayer',
+                        winningPunchline: 'To get to the other side',
+                        judgingMethod: 'ai_fallback',
+                        scores: { TestPlayer: 100, Alice: 0 },
+                    }],
+                    streaks: {},
+                },
+            });
+
+            const html = renderRoundResults();
+            expect(html).toContain('AI Fallback');
+            expect(html).toContain('bg-red-600');
+        });
+
+        it('shows on-chain badge for genlayer_optimistic_democracy with txHash', () => {
+            const txHash = '0xabc123def456789012345678901234567890abcdef1234567890abcdef123456';
+            resetSharedState({
+                room: {
+                    currentRound: 1,
+                    totalRounds: 3,
+                    jokePrompt: 'Why did the chicken...',
+                    players: [
+                        { name: 'TestPlayer', score: 100 },
+                        { name: 'Alice', score: 50 },
+                    ],
+                    submissions: [
+                        { id: 1, playerName: 'TestPlayer', punchline: 'To get to the other side' },
+                        { id: 2, playerName: 'Alice', punchline: 'Because it was free range' },
+                    ],
+                    bets: [],
+                    roundResults: [{
+                        round: 1,
+                        winnerId: 1,
+                        winnerName: 'TestPlayer',
+                        winningPunchline: 'To get to the other side',
+                        judgingMethod: 'genlayer_optimistic_democracy',
+                        txHash: txHash,
+                        scores: { TestPlayer: 100, Alice: 0 },
+                    }],
+                    streaks: {},
+                },
+            });
+
+            const html = renderRoundResults();
+            expect(html).toContain('On-Chain Verified');
+            expect(html).toContain('bg-green-600');
+            expect(html).toContain('explorer-bradbury.genlayer.com');
+            expect(html).toContain(txHash.substring(0, 10));
+        });
+    });
+
+    describe('renderJudging banners', () => {
+        it('shows CHAIN UNAVAILABLE banner when genLayerFailed is true', () => {
+            resetSharedState({
+                // Skip startValidatorVoting call by marking as already started
+                validatorVotingStarted: true,
+                validatorVotes: [],
+                consensusReached: false,
+                room: {
+                    genLayerFailed: true,
+                    submissions: [
+                        { id: 1, playerName: 'TestPlayer', punchline: 'joke' },
+                    ],
+                    players: [{ name: 'TestPlayer', score: 0 }],
+                },
+            });
+
+            const html = renderJudging();
+            expect(html).toContain('CHAIN UNAVAILABLE');
+            expect(html).toContain('AI FALLBACK');
+        });
+
+        it('shows CONNECTED TO GENLAYER banner when genLayerFailed is false', () => {
+            resetSharedState({
+                validatorVotingStarted: true,
+                validatorVotes: [],
+                consensusReached: false,
+                room: {
+                    genLayerFailed: false,
+                    submissions: [
+                        { id: 1, playerName: 'TestPlayer', punchline: 'joke' },
+                    ],
+                    players: [{ name: 'TestPlayer', score: 0 }],
+                },
+            });
+
+            const html = renderJudging();
+            expect(html).toContain('CONNECTED TO GENLAYER');
+            expect(html).not.toContain('CHAIN UNAVAILABLE');
+        });
     });
 });

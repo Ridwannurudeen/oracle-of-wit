@@ -57,6 +57,17 @@ describe('API Handler', () => {
       expect(body.room.players.length).toBe(4); // 1 host + 3 bots
       expect(body.room.players.filter((p) => p.isBot).length).toBe(3);
     });
+
+    it('stores chainGameTxHash on room after chain call', async () => {
+      const { body } = await call('createRoom', { hostName: 'Alice', category: 'tech' });
+      expect(body.success).toBe(true);
+      const roomId = body.roomId;
+      // Verify the room in the store has chainGameTxHash from the mock writeContract
+      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
+      expect(key).toBeDefined();
+      const room = JSON.parse(store[key]);
+      expect(room.chainGameTxHash).toBe('0xmocktxhash');
+    });
   });
 
   // -- joinRoom -------------------------------------------------------------
@@ -239,6 +250,16 @@ describe('API Handler', () => {
       expect(res._status).toBe(200);
       expect(Array.isArray(res._body.leaderboard)).toBe(true);
     });
+
+    it('includes source field in response', async () => {
+      const req = makeReq({ method: 'GET', query: { action: 'getLeaderboard' } });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res._status).toBe(200);
+      expect(res._body.source).toBeDefined();
+      // Mock readContract returns null, so GenLayer fallback to Redis
+      expect(res._body.source).toBe('redis');
+    });
   });
 
   // -- unknown action -------------------------------------------------------
@@ -342,6 +363,24 @@ describe('API Handler', () => {
       expect(status).toBe(200);
       expect(body.room.status).toBe('finished');
     });
+
+    it('stores chainRecordTxHash after recording on chain', async () => {
+      const roomId = await setupRoom('roundResults');
+      // Set currentRound = totalRounds so nextRound triggers game end and chain recording
+      const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
+      if (key) {
+        const room = JSON.parse(store[key]);
+        room.currentRound = room.totalRounds;
+        store[key] = JSON.stringify(room);
+      }
+      const { status, body } = await call('nextRound', { roomId, hostName: 'Host' });
+      expect(status).toBe(200);
+      expect(body.room.status).toBe('finished');
+      // Verify chainRecordTxHash was stored from the mock writeContract
+      const updatedKey = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
+      const updatedRoom = JSON.parse(store[updatedKey]);
+      expect(updatedRoom.chainRecordTxHash).toBe('0xmocktxhash');
+    });
   });
 
   // -- getSeasonalLeaderboard -----------------------------------------------
@@ -373,6 +412,14 @@ describe('API Handler', () => {
       await handler(req, res);
       expect(res._status).toBe(400);
       expect(res._body.error).toMatch(/playerName/i);
+    });
+
+    it('includes source field in response', async () => {
+      const { status, body } = await call('getPlayerHistory', { playerName: 'SomePlayer' }, 'POST');
+      expect(status).toBe(200);
+      expect(body.source).toBeDefined();
+      // Mock readContract returns null, so GenLayer falls through to Redis fallback
+      expect(body.source).toBe('redis_fallback');
     });
   });
 
@@ -825,6 +872,29 @@ describe('API Handler', () => {
       const { status, body } = await call('appealVerdict', { roomId, playerName: 'Host', playerId: 'appeal-test-player' });
       expect(status).toBe(400);
       expect(body.error).toMatch(/already/i);
+    });
+
+    it('appeal response includes onChain field', async () => {
+      await ensurePlayerSession('appeal-chain-player', 'Host');
+      const pk = 'player:appeal-chain-player';
+      if (store[pk]) {
+        const p = JSON.parse(store[pk]);
+        p.lifetimeXP = 100;
+        store[pk] = JSON.stringify(p);
+      }
+      const roomId = await setupRoom('roundResults');
+      const { status, body } = await call('appealVerdict', {
+        roomId,
+        playerName: 'Host',
+        playerId: 'appeal-chain-player',
+      });
+      expect(status).toBe(200);
+      expect(body.appeal).toBeDefined();
+      // The mock writeContract returns '0xmocktxhash', so appeal should be on-chain
+      expect(typeof body.appeal.onChain).toBe('boolean');
+      if (body.appeal.onChain) {
+        expect(body.appeal.txHash).toBe('0xmocktxhash');
+      }
     });
   });
 
