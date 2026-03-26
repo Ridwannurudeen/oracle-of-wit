@@ -375,6 +375,12 @@ export function renderJudging() {
                 <p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider flex items-center justify-center gap-1">${glLogo(11, 'rgb(34,197,94)')} BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p>
             </div>
             ` : `
+            ${state.room?.genLayerFailed ? `
+            <div class="mt-4 glow-card glow-card-red p-3 text-center">
+                <p class="text-xs font-mono font-bold text-red-400 tracking-wider">\u26A0\uFE0F CHAIN UNAVAILABLE \u2014 USING AI FALLBACK</p>
+                <p class="text-[10px] font-mono text-gray-600 mt-1">GenLayer consensus unreachable. AI determining winner.</p>
+            </div>
+            ` : `
             <div class="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-600 tracking-wider">
                 ${glLogo(12, 'rgb(34,197,94)')}
                 <span>CONNECTED TO GENLAYER INTELLIGENT CONTRACTS</span>

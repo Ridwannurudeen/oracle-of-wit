@@ -8,6 +8,26 @@
 import { vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
+// Mock GenLayer SDK (dynamic import) — must be before handler import
+// ---------------------------------------------------------------------------
+const _mockGLClient = {
+  writeContract: vi.fn(async () => '0xmocktxhash'),
+  readContract: vi.fn(async () => null),
+  waitForTransactionReceipt: vi.fn(async () => ({ data: { winner_id: 1 } })),
+};
+
+vi.mock('genlayer-js', () => ({
+  createClient: () => _mockGLClient,
+  createAccount: () => ({ address: '0xmockaddress' }),
+}));
+
+vi.mock('genlayer-js/chains', () => ({
+  testnetBradbury: { id: 'bradbury-test' },
+}));
+
+export { _mockGLClient };
+
+// ---------------------------------------------------------------------------
 // In-memory store that replaces Upstash Redis
 // ---------------------------------------------------------------------------
 export const store = {};
@@ -143,6 +163,8 @@ installFetchMock();
 process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
 process.env.ANTHROPIC_API_KEY = 'sk-ant-fake';
+process.env.GENLAYER_CONTRACT_ADDRESS = '0x1cC5414444E1154B84591f6C6E27959A8EDF4014';
+process.env.GENLAYER_PRIVATE_KEY = '0xfake_private_key_for_testing_only';
 
 // Import the handler and redis utilities
 const { default: handler } = await import('../api/game.js');

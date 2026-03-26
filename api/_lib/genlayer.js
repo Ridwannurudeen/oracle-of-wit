@@ -1,4 +1,6 @@
 // GenLayer SDK integration — Testnet Bradbury
+// GenLayer is the PRIMARY backbone of Oracle of Wit.
+// All judging goes through Optimistic Democracy on-chain.
 
 import { logger } from './logger.js';
 
@@ -7,17 +9,59 @@ const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 let _glClient = null;
-let _lastGLSubmit = 0;
-const GL_COOLDOWN = parseInt(process.env.GL_COOLDOWN) || 15000;
 const GL_POLL_TIMEOUT = parseInt(process.env.GL_POLL_TIMEOUT) || 30000;
+
+// --- Circuit breaker ---
+// Trips after 3 consecutive failures, auto-resets after 60s.
+let _consecutiveFailures = 0;
+let _circuitTrippedAt = 0;
+const CB_THRESHOLD = 3;
+const CB_RESET_MS = 60000;
+
+/**
+ * Check if the GenLayer circuit breaker is closed (available).
+ * @returns {boolean}
+ */
+export function isGenLayerAvailable() {
+    if (_consecutiveFailures < CB_THRESHOLD) return true;
+    if (Date.now() - _circuitTrippedAt >= CB_RESET_MS) {
+        // Auto-reset: allow a probe request
+        _consecutiveFailures = 0;
+        _circuitTrippedAt = 0;
+        return true;
+    }
+    return false;
+}
+
+function _recordSuccess() {
+    _consecutiveFailures = 0;
+    _circuitTrippedAt = 0;
+}
+
+function _recordFailure() {
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= CB_THRESHOLD) {
+        _circuitTrippedAt = Date.now();
+        logger.warn('Circuit breaker OPEN — GenLayer unavailable', { service: 'genlayer', failures: _consecutiveFailures });
+    }
+}
+
+/** Reset circuit breaker (for tests). */
+export function _resetGLCircuit() {
+    _consecutiveFailures = 0;
+    _circuitTrippedAt = 0;
+}
 
 /**
  * Get or initialize the GenLayer SDK client (singleton).
- * @returns {Promise<Object|null>} The GenLayer client, or null if not configured.
+ * REQUIRED — throws if GenLayer is not configured.
+ * @returns {Promise<Object>} The GenLayer client.
  */
 export async function getGenLayerClient() {
     if (_glClient) return _glClient;
-    if (!GENLAYER_PRIVATE_KEY || !GENLAYER_CONTRACT_ADDRESS) return null;
+    if (!GENLAYER_PRIVATE_KEY || !GENLAYER_CONTRACT_ADDRESS) {
+        throw new Error('GenLayer not configured: GENLAYER_PRIVATE_KEY and GENLAYER_CONTRACT_ADDRESS are required');
+    }
     try {
         const { createClient, createAccount } = await import('genlayer-js');
         const { testnetBradbury } = await import('genlayer-js/chains');
@@ -27,7 +71,7 @@ export async function getGenLayerClient() {
         return _glClient;
     } catch (e) {
         logger.error('SDK init failed', { service: 'genlayer', error: e.message });
-        return null;
+        throw e;
     }
 }
 
@@ -40,19 +84,14 @@ export async function getGenLayerClient() {
  * @returns {Promise<import('./types.js').GenLayerSubmitResult|null>}
  */
 export async function submitToGenLayer(submissions, jokePrompt, category, gameId) {
-    const client = await getGenLayerClient();
-    if (!client) {
-        logger.info('Not configured (missing key or address)', { service: 'genlayer' });
-        return null;
-    }
-
-    const now = Date.now();
-    if (now - _lastGLSubmit < GL_COOLDOWN) {
-        logger.info('Cooldown active, skipping', { service: 'genlayer', msSinceLast: now - _lastGLSubmit });
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping submission', { service: 'genlayer' });
         return null;
     }
 
     try {
+        const client = await getGenLayerClient();
+
         const submissionsJson = JSON.stringify(submissions.map(s => ({
             id: s.id,
             playerName: s.playerName,
@@ -60,7 +99,6 @@ export async function submitToGenLayer(submissions, jokePrompt, category, gameId
         })));
 
         logger.info('Submitting judge_round', { service: 'genlayer', gameId, submissions: submissions.length });
-        _lastGLSubmit = now;
 
         const txHash = await client.writeContract({
             address: GENLAYER_CONTRACT_ADDRESS,
@@ -70,9 +108,11 @@ export async function submitToGenLayer(submissions, jokePrompt, category, gameId
         });
 
         logger.info('judge_round submitted to OD', { service: 'genlayer', txHash, gameId });
+        _recordSuccess();
         return { txHash, onChain: true };
     } catch (error) {
         logger.error('judge_round failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
         return null;
     }
 }
@@ -84,10 +124,10 @@ export async function submitToGenLayer(submissions, jokePrompt, category, gameId
  * @returns {Promise<number|null>} The winning submission ID, or null on timeout/failure.
  */
 export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
-    const client = await getGenLayerClient();
-    if (!client || !txHash) return null;
+    if (!txHash) return null;
 
     try {
+        const client = await getGenLayerClient();
         const retries = Math.ceil(timeoutMs / 3000);
         const receipt = await client.waitForTransactionReceipt({
             hash: txHash,
@@ -109,9 +149,11 @@ export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
             return null;
         }
         logger.info('Poll result', { service: 'genlayer', winnerId });
+        _recordSuccess();
         return winnerId;
     } catch (e) {
         logger.info('Poll timed out or failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
         return null;
     }
 }
@@ -123,10 +165,14 @@ export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
  * @returns {Promise<string|false>} The transaction hash, or false on failure.
  */
 export async function recordOnChain(gameId, finalScores) {
-    const client = await getGenLayerClient();
-    if (!client) return false;
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping record', { service: 'genlayer' });
+        return false;
+    }
 
     try {
+        const client = await getGenLayerClient();
+
         const scoresJson = JSON.stringify(finalScores.map(p => ({
             playerName: p.name,
             score: p.score
@@ -142,9 +188,11 @@ export async function recordOnChain(gameId, finalScores) {
         });
 
         logger.info('record_game_result tx', { service: 'genlayer', txHash });
+        _recordSuccess();
         return txHash;
     } catch (error) {
         logger.error('record_game_result failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
         return false;
     }
 }
@@ -157,10 +205,14 @@ export async function recordOnChain(gameId, finalScores) {
  * @returns {Promise<string|false>} The transaction hash, or false on failure.
  */
 export async function createGameOnChain(gameId, hostName, category) {
-    const client = await getGenLayerClient();
-    if (!client) return false;
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping create_game', { service: 'genlayer' });
+        return false;
+    }
 
     try {
+        const client = await getGenLayerClient();
+
         logger.info('Creating game on-chain', { service: 'genlayer', gameId, hostName, category });
 
         const txHash = await client.writeContract({
@@ -171,9 +223,11 @@ export async function createGameOnChain(gameId, hostName, category) {
         });
 
         logger.info('create_game tx', { service: 'genlayer', txHash });
+        _recordSuccess();
         return txHash;
     } catch (error) {
         logger.error('create_game failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
         return false;
     }
 }
@@ -188,10 +242,14 @@ export async function createGameOnChain(gameId, hostName, category) {
  * @returns {Promise<import('./types.js').GenLayerSubmitResult|null>}
  */
 export async function appealWithGenLayer(gameId, jokePrompt, category, submissions, originalWinnerId) {
-    const client = await getGenLayerClient();
-    if (!client) return null;
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping appeal', { service: 'genlayer' });
+        return null;
+    }
 
     try {
+        const client = await getGenLayerClient();
+
         const submissionsJson = JSON.stringify(submissions.map(s => ({
             id: s.id,
             playerName: s.playerName,
@@ -208,9 +266,58 @@ export async function appealWithGenLayer(gameId, jokePrompt, category, submissio
         });
 
         logger.info('appeal_judgment submitted to OD', { service: 'genlayer', txHash });
+        _recordSuccess();
         return { txHash, onChain: true };
     } catch (error) {
         logger.error('appeal_judgment failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Read leaderboard from GenLayer contract.
+ * @param {number} [limit=20]
+ * @returns {Promise<Array|null>} Leaderboard data, or null on failure.
+ */
+export async function readLeaderboard(limit = 20) {
+    if (!isGenLayerAvailable()) return null;
+
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_leaderboard',
+            args: [limit],
+        });
+        _recordSuccess();
+        return result;
+    } catch (e) {
+        logger.warn('readLeaderboard failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Read game stats from GenLayer contract.
+ * @returns {Promise<Object|null>} Stats object, or null on failure.
+ */
+export async function readStats() {
+    if (!isGenLayerAvailable()) return null;
+
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_stats',
+            args: [],
+        });
+        _recordSuccess();
+        return result;
+    } catch (e) {
+        logger.warn('readStats failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
         return null;
     }
 }

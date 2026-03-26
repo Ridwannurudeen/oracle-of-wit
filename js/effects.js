@@ -436,6 +436,7 @@ export function startValidatorVoting() {
     let winningId = submissionIds[0];
     let voteIndex = 0;
 
+    // 2500ms per validator to match real GenLayer consensus timing (10-30s total)
     setValidatorVotingInterval(setInterval(() => {
         if (voteIndex >= 5) {
             state.consensusReached = true;
@@ -467,7 +468,7 @@ export function startValidatorVoting() {
 
         voteIndex++;
         if (_render) _render(true);
-    }, 800));
+    }, 2500));
 }
 
 /**

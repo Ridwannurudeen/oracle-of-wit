@@ -13,7 +13,7 @@ const BOT_FALLBACK_QUIPS = [
     "...and everyone just stared.",
     "...I'm still processing it."
 ];
-import { pickWinnerWithAI, curateSubmissions, generateBotPunchlines, pickWinnerRandom } from './ai.js';
+import { pickWinnerWithAI, getAICommentary, curateSubmissions, generateBotPunchlines, pickWinnerRandom } from './ai.js';
 import { submitToGenLayer, pollGenLayerResult } from './genlayer.js';
 
 // --- Phase transitions ---
@@ -119,63 +119,71 @@ export async function releaseAdvanceLock(roomId) {
 // --- Judging ---
 
 /**
- * Automatically judge a round using AI and GenLayer, then create a round result.
+ * Automatically judge a round: GenLayer is the PRIMARY judge,
+ * Claude provides commentary only. AI fallback if GenLayer fails.
  * @param {import('./types.js').Room} room
  * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
  * @returns {Promise<import('./types.js').Room>}
  */
 export async function autoJudge(room, setRoom) {
-    // Why parallel: GenLayer OD takes 10-30s to reach consensus, Claude responds in 2-5s.
-    // Running both simultaneously gives instant results while still recording on-chain.
     const now = Date.now();
     room.status = 'judging';
     room.judgingMethod = 'processing';
     await setRoom(room.id, room);
 
-    const [genLayerResult, aiResult] = await Promise.all([
+    // Step 1: Submit to GenLayer (primary judge) and get AI commentary in parallel.
+    // Claude does NOT select a winner — only GenLayer or AI fallback does.
+    const [genLayerResult, aiCommentary] = await Promise.all([
         submitToGenLayer(room.submissions, room.jokePrompt, room.category, room.id).catch(() => null),
-        pickWinnerWithAI(room.submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null, aiCommentary: null }))
+        getAICommentary(room.submissions, room.jokePrompt, room.category).catch(() => null)
     ]);
 
-    let winnerId = aiResult.winnerId;
-    let aiCommentary = aiResult.aiCommentary;
-    let judgingMethod = aiResult.judgingMethod || (winnerId ? 'claude_api' : 'coin_flip');
+    let winnerId = null;
+    let judgingMethod = null;
     let onChain = false;
     let txHash = null;
     let glOverride = false;
 
-    // If GenLayer returned a txHash, poll for the authoritative result
-    if (genLayerResult && genLayerResult.txHash) {
+    // Step 2: Poll GenLayer for OD consensus result
+    if (genLayerResult?.txHash) {
         txHash = genLayerResult.txHash;
         onChain = true;
-
         const validIds = room.submissions.map(s => s.id);
-        const glWinnerId = await pollGenLayerResult(txHash, 15000);
+        const glWinnerId = await pollGenLayerResult(txHash);
+
         if (glWinnerId && validIds.includes(glWinnerId)) {
-            // GenLayer is authoritative — use its result
+            // GenLayer authoritative winner via Optimistic Democracy
             winnerId = glWinnerId;
             judgingMethod = 'genlayer_optimistic_democracy';
             glOverride = true;
             logger.info('GenLayer OD authoritative winner', { service: 'judge', winnerId, txHash });
-        } else if (glWinnerId && !validIds.includes(glWinnerId)) {
-            // GenLayer returned winnerId outside valid submission range
-            logger.warn('GenLayer winnerId not in valid range, falling back to AI', { service: 'genlayer', glWinnerId, validIds, txHash });
-            judgingMethod = winnerId ? 'ai_fallback' : judgingMethod;
+        } else if (glWinnerId) {
+            logger.warn('GenLayer winnerId not in valid range', { service: 'genlayer', glWinnerId, validIds, txHash });
         } else {
-            // GenLayer timed out or returned null — fall back to Claude
-            judgingMethod = winnerId ? 'ai_fallback' : judgingMethod;
-            logger.info('GenLayer submitted but poll failed, using Claude result', { service: 'genlayer', txHash });
+            logger.info('GenLayer poll timed out or returned null', { service: 'genlayer', txHash });
         }
+    }
+
+    // Step 3: If GenLayer failed, fall back to AI winner selection
+    if (!winnerId) {
+        room.genLayerFailed = true;
+        const aiResult = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null }));
+        winnerId = aiResult.winnerId;
+        judgingMethod = winnerId ? 'ai_fallback' : null;
+        if (winnerId) {
+            logger.info('AI fallback winner', { service: 'judge', winnerId });
+        }
+    }
+
+    // Step 4: If both fail, coin flip
+    if (!winnerId) {
+        winnerId = pickWinnerRandom(room.submissions);
+        judgingMethod = 'coin_flip';
+        logger.error('Both GenLayer and AI failed, using coin flip', { service: 'judge', roomId: room.id, winnerId });
     }
 
     if (winnerId) {
         logger.info('Winner determined', { service: 'judge', winnerId, judgingMethod, onChain, glOverride });
-    }
-
-    if (!winnerId) {
-        winnerId = pickWinnerRandom(room.submissions);
-        judgingMethod = 'coin_flip';
-        logger.error('Both AI and GenLayer failed, using coin flip', { service: 'judge', roomId: room.id, winnerId });
     }
 
     const winningSubmission = room.submissions.find(s => s.id === winnerId);

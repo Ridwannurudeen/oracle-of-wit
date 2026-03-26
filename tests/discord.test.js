@@ -25,6 +25,20 @@ vi.mock('node:crypto', () => ({
     verify: () => _verifyResult,
 }));
 
+// Mock GenLayer SDK (dynamic import)
+vi.mock('genlayer-js', () => ({
+    createClient: () => ({
+        writeContract: vi.fn(async () => '0xmocktxhash'),
+        readContract: vi.fn(async () => null),
+        waitForTransactionReceipt: vi.fn(async () => ({ data: { winner_id: 1 } })),
+    }),
+    createAccount: () => ({ address: '0xmockaddress' }),
+}));
+
+vi.mock('genlayer-js/chains', () => ({
+    testnetBradbury: { id: 'bradbury-test' },
+}));
+
 // Mock fetch globally — Upstash REST + GenLayer
 globalThis.fetch = vi.fn(async (url, opts) => {
     const urlStr = typeof url === 'string' ? url : url.toString();
@@ -57,6 +71,8 @@ globalThis.fetch = vi.fn(async (url, opts) => {
 process.env.DISCORD_PUBLIC_KEY = 'fake-public-key';
 process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
+process.env.GENLAYER_CONTRACT_ADDRESS = '0x1cC5414444E1154B84591f6C6E27959A8EDF4014';
+process.env.GENLAYER_PRIVATE_KEY = '0xfake_private_key_for_testing_only';
 
 const { default: handler } = await import('../api/discord.js');
 

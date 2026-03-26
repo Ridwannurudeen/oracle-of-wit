@@ -49,18 +49,22 @@ export async function createRoom(body, ctx) {
     // Bind playerId to session if provided
     if (body.playerId) await storePlayerSession(body.playerId, token);
 
-    // GenLayer create with 1 retry
-    (async () => {
-        try {
-            const result = await createGameOnChain(roomId, hostName, room.category);
-            if (!result) {
-                await new Promise(r => setTimeout(r, 2000));
-                await createGameOnChain(roomId, hostName, room.category);
-            }
-        } catch (e) {
-            console.error('[GenLayer] create_game failed after retry:', e.message);
+    // GenLayer create_game — awaited, with 1 retry
+    try {
+        const chainTx = await createGameOnChain(roomId, hostName, room.category);
+        if (chainTx) {
+            room.chainGameTxHash = chainTx;
+        } else {
+            // Retry once after 2s
+            await new Promise(r => setTimeout(r, 2000));
+            const retryTx = await createGameOnChain(roomId, hostName, room.category);
+            if (retryTx) room.chainGameTxHash = retryTx;
         }
-    })();
+    } catch (e) {
+        // Room still created in Redis — visible degradation, not silent
+        room.chainGameFailed = true;
+    }
+    await ctx.setRoom(roomId, room);
 
     return { status: 200, data: { success: true, roomId, room, sessionToken: token } };
 }

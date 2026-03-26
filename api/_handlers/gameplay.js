@@ -198,18 +198,20 @@ export async function nextRound(body, ctx) {
         // Turso game history (fire-and-forget)
         tursoRecordGameHistory(roomId, room).catch(() => {});
 
-        // GenLayer record with 1 retry
-        (async () => {
-            try {
-                const result = await recordOnChain(roomId, room.players);
-                if (!result) {
-                    await new Promise(r => setTimeout(r, 2000));
-                    await recordOnChain(roomId, room.players);
-                }
-            } catch (e) {
-                console.error('[GenLayer] record_game_result failed after retry:', e.message);
+        // GenLayer record — awaited, with 1 retry
+        try {
+            const chainTx = await recordOnChain(roomId, room.players);
+            if (chainTx) {
+                room.chainRecordTxHash = chainTx;
+            } else {
+                await new Promise(r => setTimeout(r, 2000));
+                const retryTx = await recordOnChain(roomId, room.players);
+                if (retryTx) room.chainRecordTxHash = retryTx;
             }
-        })();
+        } catch (e) {
+            room.chainRecordFailed = true;
+        }
+        await ctx.setRoom(roomId, room);
         postGameToDiscord(room).catch(e => console.error('[Discord] error:', e.message));
 
         const leaderboard = await ctx.getLeaderboard();

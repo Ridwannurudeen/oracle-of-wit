@@ -1,7 +1,7 @@
 // Health check endpoint — verifies Redis and GenLayer connectivity
 
 import { redisHealthCheck } from './_lib/redis.js';
-import { getGenLayerClient } from './_lib/genlayer.js';
+import { getGenLayerClient, isGenLayerAvailable } from './_lib/genlayer.js';
 import { getMetrics } from './_lib/monitor.js';
 
 export default async function handler(req, res) {
@@ -20,8 +20,11 @@ export default async function handler(req, res) {
         checks.genlayer = false;
     }
 
-    const healthy = checks.redis; // Redis is required; GenLayer is optional
-    const status = healthy ? 'healthy' : 'degraded';
+    // Circuit breaker status
+    checks.genlayerCircuit = isGenLayerAvailable();
+
+    const healthy = checks.redis && checks.genlayer;
+    const status = healthy ? 'healthy' : checks.redis ? 'degraded' : 'unhealthy';
 
     return res.status(healthy ? 200 : 503).json({
         status,

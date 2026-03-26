@@ -262,6 +262,74 @@ Return ONLY a JSON array of ${count} strings, no markdown:
 }
 
 /**
+ * Generate witty commentary/roasts for submissions WITHOUT selecting a winner.
+ * Used alongside GenLayer judging to provide flavor text.
+ * @param {import('./types.js').Submission[]} submissions
+ * @param {string} jokePrompt
+ * @param {string} category
+ * @returns {Promise<Object|null>} Commentary object with roasts, or null on failure.
+ */
+export async function getAICommentary(submissions, jokePrompt, category) {
+    if (!ANTHROPIC_API_KEY || !submissions?.length) return null;
+
+    const submissionsList = submissions.map(s =>
+        `[ID: ${s.id}] "${s.punchline}"`
+    ).join('\n');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_FULL);
+    try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 400,
+                messages: [{
+                    role: 'user',
+                    content: `You are the Oracle of Wit, a savage comedy judge. Do NOT pick a winner — just roast each punchline.
+
+JOKE SETUP: "${jokePrompt}"
+CATEGORY: ${category}
+
+PUNCHLINES:
+${submissionsList}
+
+For each punchline, write a 1-sentence witty roast. Also write a general "winnerComment" that will accompany whoever the on-chain validators choose.
+
+Respond with ONLY valid JSON (no markdown, no backticks):
+{"winnerComment": "<1 witty sentence about the round>", "roasts": {${submissions.map(s => `"${s.id}": "<1 sentence>"`).join(', ')}}}`
+                }]
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const text = data.content?.[0]?.text?.trim();
+            try {
+                const parsed = JSON.parse(text);
+                logger.info('AI commentary generated', { service: 'commentary', submissions: submissions.length });
+                return { winnerComment: parsed.winnerComment || null, roasts: parsed.roasts || {} };
+            } catch {
+                logger.warn('AI commentary parse failed', { service: 'commentary' });
+                return null;
+            }
+        }
+        return null;
+    } catch (e) {
+        logger.warn('AI commentary failed', { service: 'commentary', error: e.message });
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+/**
  * Pick a random winner from submissions (coin flip fallback).
  * @param {import('./types.js').Submission[]} submissions
  * @returns {number|null} The winning submission ID, or null if no submissions.

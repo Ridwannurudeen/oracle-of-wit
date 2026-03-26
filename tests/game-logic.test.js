@@ -19,6 +19,7 @@ vi.mock('../api/_lib/redis.js', () => ({
 
 vi.mock('../api/_lib/ai.js', () => ({
     pickWinnerWithAI: vi.fn(async () => ({ winnerId: null, aiCommentary: null })),
+    getAICommentary: vi.fn(async () => null),
     curateSubmissions: vi.fn(async () => null),
     generateBotPunchlines: vi.fn(async () => null),
     pickWinnerRandom: vi.fn(() => null),
@@ -49,7 +50,7 @@ import {
 } from '../api/_lib/game-logic.js';
 
 import { redisGet, redisSet } from '../api/_lib/redis.js';
-import { pickWinnerWithAI, generateBotPunchlines, pickWinnerRandom } from '../api/_lib/ai.js';
+import { pickWinnerWithAI, getAICommentary, generateBotPunchlines, pickWinnerRandom } from '../api/_lib/ai.js';
 import { submitToGenLayer, pollGenLayerResult } from '../api/_lib/genlayer.js';
 import { CATEGORIZED_PROMPTS } from '../api/_lib/constants.js';
 
@@ -168,7 +169,7 @@ describe('transitionFromSubmitting', () => {
 });
 
 // =========================================================================
-// 2. autoJudge
+// 2. autoJudge (GenLayer-primary architecture)
 // =========================================================================
 describe('autoJudge', () => {
     it('sets status to judging then creates round result', async () => {
@@ -178,8 +179,10 @@ describe('autoJudge', () => {
             return true;
         });
         const room = makeRoom({ bets: [] });
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: { winnerComment: 'Nice!' } });
-        submitToGenLayer.mockResolvedValueOnce(null);
+        // GenLayer success path (default happy path)
+        submitToGenLayer.mockResolvedValueOnce({ txHash: '0xabc123' });
+        pollGenLayerResult.mockResolvedValueOnce(1);
+        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Nice!' });
         redisGet.mockResolvedValueOnce([]);
 
         const result = await autoJudge(room, setRoom);
@@ -190,25 +193,13 @@ describe('autoJudge', () => {
         expect(result.roundResults).toHaveLength(1);
     });
 
-    it('AI returns winner -> uses AI result', async () => {
+    it('GenLayer success is the DEFAULT happy path', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: { winnerComment: 'Good one!' } });
-        submitToGenLayer.mockResolvedValueOnce(null);
-
-        await autoJudge(room, setRoom);
-
-        const rr = room.roundResults[0];
-        expect(rr.winnerId).toBe(1);
-        expect(rr.winnerName).toBe('Alice');
-    });
-
-    it('GenLayer returns valid winner -> overrides AI (glOverride=true)', async () => {
-        const setRoom = vi.fn(async () => true);
-        const room = makeRoom({ bets: [] });
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xabc123' });
-        pollGenLayerResult.mockResolvedValueOnce(2); // GenLayer picks Bob (id=2)
+        pollGenLayerResult.mockResolvedValueOnce(2); // GenLayer picks Bob
+        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Good one!', roasts: {} });
+        redisGet.mockResolvedValueOnce([]);
 
         await autoJudge(room, setRoom);
 
@@ -219,14 +210,50 @@ describe('autoJudge', () => {
         expect(rr.glOverride).toBe(true);
         expect(rr.txHash).toBe('0xabc123');
         expect(rr.onChain).toBe(true);
+        // AI commentary should still be attached
+        expect(rr.aiCommentary).toEqual({ winnerComment: 'Good one!', roasts: {} });
+    });
+
+    it('GenLayer succeeds, Claude commentary still attached', async () => {
+        const setRoom = vi.fn(async () => true);
+        const room = makeRoom({ bets: [] });
+        submitToGenLayer.mockResolvedValueOnce({ txHash: '0xdef' });
+        pollGenLayerResult.mockResolvedValueOnce(1);
+        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Hilarious!', roasts: { 2: 'Not bad' } });
+        redisGet.mockResolvedValueOnce([]);
+
+        await autoJudge(room, setRoom);
+
+        const rr = room.roundResults[0];
+        expect(rr.judgingMethod).toBe('genlayer_optimistic_democracy');
+        expect(rr.aiCommentary?.winnerComment).toBe('Hilarious!');
+    });
+
+    it('GenLayer fails, falls back to AI with genLayerFailed flag', async () => {
+        const setRoom = vi.fn(async () => true);
+        const room = makeRoom({ bets: [] });
+        submitToGenLayer.mockResolvedValueOnce(null); // GenLayer submit failed
+        getAICommentary.mockResolvedValueOnce(null);
+        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
+        redisGet.mockResolvedValueOnce([]);
+
+        await autoJudge(room, setRoom);
+
+        const rr = room.roundResults[0];
+        expect(rr.winnerId).toBe(1);
+        expect(rr.winnerName).toBe('Alice');
+        expect(rr.judgingMethod).toBe('ai_fallback');
+        expect(room.genLayerFailed).toBe(true);
     });
 
     it('GenLayer returns invalid winnerId -> falls back to AI', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xdef456' });
         pollGenLayerResult.mockResolvedValueOnce(999); // invalid id
+        getAICommentary.mockResolvedValueOnce(null);
+        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
+        redisGet.mockResolvedValueOnce([]);
 
         await autoJudge(room, setRoom);
 
@@ -234,13 +261,32 @@ describe('autoJudge', () => {
         expect(rr.winnerId).toBe(1); // fell back to AI result
         expect(rr.judgingMethod).toBe('ai_fallback');
         expect(rr.glOverride).toBe(false);
+        expect(room.genLayerFailed).toBe(true);
+    });
+
+    it('GenLayer poll times out -> falls back to AI', async () => {
+        const setRoom = vi.fn(async () => true);
+        const room = makeRoom({ bets: [] });
+        submitToGenLayer.mockResolvedValueOnce({ txHash: '0xtimeout' });
+        pollGenLayerResult.mockResolvedValueOnce(null); // poll timed out
+        getAICommentary.mockResolvedValueOnce(null);
+        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 2, aiCommentary: null });
+        redisGet.mockResolvedValueOnce([]);
+
+        await autoJudge(room, setRoom);
+
+        const rr = room.roundResults[0];
+        expect(rr.winnerId).toBe(2);
+        expect(rr.judgingMethod).toBe('ai_fallback');
+        expect(room.genLayerFailed).toBe(true);
     });
 
     it('both fail -> uses coin flip (pickWinnerRandom)', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: null, aiCommentary: null });
         submitToGenLayer.mockResolvedValueOnce(null);
+        getAICommentary.mockResolvedValueOnce(null);
+        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: null, aiCommentary: null });
         pickWinnerRandom.mockReturnValueOnce(2);
 
         await autoJudge(room, setRoom);
@@ -254,13 +300,32 @@ describe('autoJudge', () => {
     it('always creates a roundResult and sets status to roundResults', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 2, aiCommentary: null });
-        submitToGenLayer.mockResolvedValueOnce(null);
+        submitToGenLayer.mockResolvedValueOnce({ txHash: '0x123' });
+        pollGenLayerResult.mockResolvedValueOnce(2);
+        getAICommentary.mockResolvedValueOnce(null);
+        redisGet.mockResolvedValueOnce([]);
 
         const result = await autoJudge(room, setRoom);
 
         expect(result.roundResults.length).toBeGreaterThanOrEqual(1);
         expect(result.status).toBe('roundResults');
+    });
+
+    it('getAICommentary runs in parallel with GenLayer submit', async () => {
+        const setRoom = vi.fn(async () => true);
+        const room = makeRoom({ bets: [] });
+        submitToGenLayer.mockResolvedValueOnce({ txHash: '0xparallel' });
+        pollGenLayerResult.mockResolvedValueOnce(1);
+        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Parallel works!' });
+        redisGet.mockResolvedValueOnce([]);
+
+        await autoJudge(room, setRoom);
+
+        // Both should have been called
+        expect(submitToGenLayer).toHaveBeenCalled();
+        expect(getAICommentary).toHaveBeenCalled();
+        // pickWinnerWithAI should NOT have been called (GenLayer succeeded)
+        expect(pickWinnerWithAI).not.toHaveBeenCalled();
     });
 });
 
@@ -568,8 +633,9 @@ describe('checkAutoAdvance', () => {
 
     it('betting phase past deadline -> autoJudge', async () => {
         const setRoom = vi.fn(async () => true);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
-        submitToGenLayer.mockResolvedValueOnce(null);
+        submitToGenLayer.mockResolvedValueOnce({ txHash: '0xauto' });
+        pollGenLayerResult.mockResolvedValueOnce(1);
+        getAICommentary.mockResolvedValueOnce(null);
         redisGet.mockResolvedValueOnce([]);
         const room = makeRoom({
             status: 'betting',

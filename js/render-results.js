@@ -142,10 +142,13 @@ export function renderRoundResults() {
     const explorerUrl = txHash ? `https://explorer-bradbury.genlayer.com/transactions/${txHash}` : null;
 
     const isCoinFlip = judgingMethod === 'coin_flip';
+    const isAIFallback = judgingMethod === 'ai_fallback';
     const methodBadge = isOnChain
         ? `<span class="text-xs bg-green-600 px-2 py-1 rounded-full font-medium">\u26D3\uFE0F On-Chain Verified (Bradbury Testnet)</span>${txHash ? `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" class="block text-[10px] text-green-400/70 mt-1 hover:underline">tx: ${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}</a>` : ''}`
         : isAudienceVote
         ? `<span class="text-xs bg-cyan-600 px-2 py-1 rounded-full font-medium">\uD83D\uDDF3\uFE0F Audience Vote${result.totalVotes ? ` (${result.totalVotes} votes)` : ''}${judgingMethod === 'audience_vote_ai_tiebreak' ? ' + AI Tiebreak' : ''}</span>`
+        : isAIFallback
+        ? '<span class="text-xs bg-red-600 px-2 py-1 rounded-full font-medium">\u26A0\uFE0F AI Fallback \u2014 Chain Unavailable</span>'
         : isAI
         ? '<span class="text-xs bg-purple-600 px-2 py-1 rounded-full font-medium">\uD83E\uDD16 AI Judged</span>'
         : isCoinFlip

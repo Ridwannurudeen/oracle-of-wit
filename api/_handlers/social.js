@@ -2,7 +2,7 @@
 
 import { redisGet, redisSet } from '../_lib/redis.js';
 import { pickWinnerWithAI } from '../_lib/ai.js';
-import { appealWithGenLayer } from '../_lib/genlayer.js';
+import { appealWithGenLayer, pollGenLayerResult } from '../_lib/genlayer.js';
 import { getProfile, saveProfile } from '../_lib/profiles.js';
 
 /**
@@ -57,15 +57,29 @@ export async function appealVerdict(body, ctx) {
     if (profile && profile.lifetimeXP < 50) return { status: 400, data: { error: 'Need 50 XP to appeal' } };
 
     const submissions = room.submissions;
-    const [glAppeal, reJudgeResult] = await Promise.all([
-        appealWithGenLayer(room.id, room.jokePrompt, room.category, submissions, result.winnerId).catch(() => null),
-        pickWinnerWithAI(submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null }))
-    ]);
+    const validIds = submissions.map(s => s.id);
+
+    // GenLayer-primary: submit appeal to chain first, wait for OD result
+    const glAppeal = await appealWithGenLayer(room.id, room.jokePrompt, room.category, submissions, result.winnerId).catch(() => null);
 
     let appealOnChain = false, appealTxHash = null;
-    if (glAppeal?.txHash) { appealOnChain = true; appealTxHash = glAppeal.txHash; }
+    let newWinnerId = null;
 
-    const newWinnerId = reJudgeResult.winnerId;
+    if (glAppeal?.txHash) {
+        appealOnChain = true;
+        appealTxHash = glAppeal.txHash;
+        const glWinnerId = await pollGenLayerResult(appealTxHash, 30000);
+        if (glWinnerId && validIds.includes(glWinnerId)) {
+            newWinnerId = glWinnerId;
+        }
+    }
+
+    // Fall back to Claude only if GenLayer didn't return a valid winner
+    if (!newWinnerId) {
+        const reJudgeResult = await pickWinnerWithAI(submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null }));
+        newWinnerId = reJudgeResult.winnerId;
+    }
+
     const overturned = newWinnerId && newWinnerId !== result.winnerId;
 
     result.appealed = true;
