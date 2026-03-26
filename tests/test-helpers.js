@@ -50,21 +50,11 @@ export function resetTokens() {
 }
 
 // ---------------------------------------------------------------------------
-// Mock fetch globally — Upstash REST URL format + Anthropic canned response
+// Mock fetch globally — Upstash REST URL format
 // ---------------------------------------------------------------------------
 export function installFetchMock() {
   globalThis.fetch = vi.fn(async (url, opts = {}) => {
     const urlStr = typeof url === 'string' ? url : url.toString();
-
-    // ---- Anthropic API — return a canned winner ----
-    if (urlStr.includes('anthropic.com')) {
-      return {
-        ok: true,
-        json: async () => ({
-          content: [{ type: 'text', text: '{"winner_id": 1, "roast": "Nice one!"}' }],
-        }),
-      };
-    }
 
     // ---- Upstash REST interface ----
     if (urlStr.startsWith('https://fake.upstash.io')) {
@@ -162,7 +152,6 @@ installFetchMock();
 // Stub env vars so the handler doesn't bail out
 process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
-process.env.ANTHROPIC_API_KEY = 'sk-ant-fake';
 process.env.GENLAYER_CONTRACT_ADDRESS = '0x1cC5414444E1154B84591f6C6E27959A8EDF4014';
 process.env.GENLAYER_PRIVATE_KEY = '0xfake_private_key_for_testing_only';
 

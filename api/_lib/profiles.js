@@ -3,7 +3,7 @@
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
 import { LEVEL_THRESHOLDS, ACHIEVEMENTS, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, CATEGORIZED_PROMPTS } from './constants.js';
 import { logger } from './logger.js';
-import { tursoGetProfile, tursoSaveProfile, tursoUpdateLeaderboard } from './turso.js';
+import { readProfile, writeProfile } from './genlayer.js';
 
 /**
  * Get the level info for a given XP amount.
@@ -31,15 +31,15 @@ export function getNextLevelXP(xp) {
 }
 
 /**
- * Retrieve a player profile. Redis first, Turso fallback.
+ * Retrieve a player profile. Redis first, GenLayer fallback.
  * @param {string} playerId
  * @returns {Promise<import('./types.js').Profile|null>}
  */
 export async function getProfile(playerId) {
     const cached = await redisGet(`player:${playerId}`);
     if (cached) return cached;
-    // Turso fallback — rehydrate Redis cache on hit
-    const persisted = await tursoGetProfile(playerId);
+    // GenLayer fallback — rehydrate Redis cache on hit
+    const persisted = await readProfile(playerId);
     if (persisted) {
         const level = getLevelForXP(persisted.lifetimeXP);
         persisted.level = level.level;
@@ -50,7 +50,7 @@ export async function getProfile(playerId) {
 }
 
 /**
- * Save a player profile to Redis + Turso (auto-calculates level/title).
+ * Save a player profile to Redis + GenLayer (auto-calculates level/title).
  * @param {import('./types.js').Profile} profile
  * @returns {Promise<void>}
  */
@@ -59,8 +59,8 @@ export async function saveProfile(profile) {
     profile.level = level.level;
     profile.title = level.title;
     await redisSet(`player:${profile.id}`, profile, 86400 * 365);
-    // Fire-and-forget Turso write (non-blocking)
-    tursoSaveProfile(profile).catch(() => {});
+    // Fire-and-forget GenLayer write (non-blocking)
+    writeProfile(profile.id, JSON.stringify(profile)).catch(() => {});
 }
 
 /**
@@ -193,9 +193,7 @@ export async function updateLeaderboard(playerName, score, isBot) {
         slb.sort((a, b) => b.totalScore - a.totalScore);
         await redisSet(`leaderboard:${seasonKey}`, slb.slice(0, 100), 86400 * 90);
 
-        // Fire-and-forget Turso write for both global and seasonal
-        tursoUpdateLeaderboard(playerName, score, 'all-time').catch(() => {});
-        tursoUpdateLeaderboard(playerName, score, seasonKey).catch(() => {});
+        // GenLayer contract handles leaderboard in record_game_result and judge_round
     } finally {
         await redisDel('lock:lb');
     }

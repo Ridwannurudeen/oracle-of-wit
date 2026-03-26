@@ -224,7 +224,7 @@ describe('API Handler', () => {
       const { status, body } = await call('advancePhase', { roomId, hostName: 'Host' });
       expect(status).toBe(200);
       // Should have moved to betting (for <8 submissions)
-      expect(['betting', 'curating', 'judging', 'roundResults']).toContain(body.room.status);
+      expect(['betting', 'judging', 'roundResults']).toContain(body.room.status);
     });
   });
 
@@ -789,30 +789,15 @@ describe('API Handler', () => {
     });
   });
 
-  describe('AI Timeout → Fallback', () => {
-    it('falls back to AI fallback when Anthropic API fails but GenLayer succeeds', async () => {
-      // Temporarily make Anthropic calls fail
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn(async (url, opts = {}) => {
-        const urlStr = typeof url === 'string' ? url : url.toString();
-        if (urlStr.includes('anthropic.com')) {
-          throw new Error('Network timeout');
-        }
-        return originalFetch(url, opts);
-      });
-
+  describe('Judging Method', () => {
+    it('uses GenLayer or coin flip for judging (no AI fallback)', async () => {
       const roomId = await setupRoom('betting');
       const { status, body } = await call('advancePhase', { roomId, hostName: 'Host' });
       expect(status).toBe(200);
       expect(body.room.status).toBe('roundResults');
       const lastResult = body.room.roundResults[body.room.roundResults.length - 1];
       expect(lastResult.winnerId).toBeDefined();
-      // GenLayer is primary — if it succeeds, it determines the winner
-      // AI failure only matters as fallback
-      expect(['genlayer_optimistic_democracy', 'ai_fallback', 'coin_flip']).toContain(lastResult.judgingMethod);
-
-      // Restore fetch
-      globalThis.fetch = originalFetch;
+      expect(['genlayer_optimistic_democracy', 'coin_flip']).toContain(lastResult.judgingMethod);
     });
   });
 
@@ -898,40 +883,16 @@ describe('API Handler', () => {
     });
   });
 
-  describe('Bot Punchline Fallback', () => {
-    it('uses hardcoded punchlines when AI returns null (single-player game)', async () => {
-      // Temporarily make Anthropic calls fail for bot generation
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn(async (url, opts = {}) => {
-        const urlStr = typeof url === 'string' ? url : url.toString();
-        if (urlStr.includes('anthropic.com')) {
-          // Return canned winner for judging, but fail for bot generation
-          const bodyStr = opts.body || '';
-          if (bodyStr.includes('Generate') && bodyStr.includes('punchline')) {
-            throw new Error('timeout');
-          }
-          return {
-            ok: true,
-            json: async () => ({
-              content: [{ type: 'text', text: '{"winnerId": 1, "roast": "Nice!"}' }],
-            }),
-          };
-        }
-        return originalFetch(url, opts);
-      });
-
+  describe('Bot Punchline (Hardcoded)', () => {
+    it('bots use hardcoded punchlines in single-player game', async () => {
       const { body } = await call('createRoom', { hostName: 'Solo', category: 'general', singlePlayer: true });
       const roomId = body.roomId;
       await call('startGame', { roomId, hostName: 'Solo' });
 
-      // After starting, bots should have submitted with hardcoded punchlines
+      // Verify bots are in the game
       const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
       const room = JSON.parse(store[key]);
-      // In submitting phase, bot submissions happen at advance
-      // But we can verify bots are in the game
       expect(room.players.filter(p => p.isBot).length).toBe(3);
-
-      globalThis.fetch = originalFetch;
     });
   });
 

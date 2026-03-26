@@ -13,7 +13,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.0",
     "@preact/signals": "^2.8.2",
     "discord-interactions": "^4.1.0",
     "genlayer-js": "^0.21.1",

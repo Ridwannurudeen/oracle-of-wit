@@ -27,8 +27,12 @@ class OracleOfWitSim {
     this.leaderboard = {};    // player_name -> total_score (int)
     this.player_games = {};   // player_name -> [game_id, ...]
     this.seasons = {};        // season_id -> archive object
+    this.player_profiles = {}; // player_id -> profile object
+    this.hall_of_fame = {};   // index key -> joke object
+    this.prompt_pool = {};    // category -> [prompt, ...]
     this.total_games = 0;
     this.total_judgments = 0;
+    this.hall_of_fame_count = 0;
   }
 
   // -- View functions -------------------------------------------------------
@@ -79,7 +83,80 @@ class OracleOfWitSim {
     return this.seasons[season_id] ?? null;
   }
 
+  get_profile(player_id) {
+    return this.player_profiles[player_id] ?? null;
+  }
+
+  get_hall_of_fame(limit = 50) {
+    const entries = Object.values(this.hall_of_fame)
+      .sort((a, b) => (b.date || 0) - (a.date || 0));
+    return entries.slice(0, limit);
+  }
+
+  get_prompt_pool_size(category) {
+    return (this.prompt_pool[category] || []).length;
+  }
+
   // -- Write functions ------------------------------------------------------
+
+  update_profile(player_id, profile) {
+    this.player_profiles[player_id] = typeof profile === 'string' ? JSON.parse(profile) : profile;
+    return { updated: true, player_id };
+  }
+
+  record_game(game_id, results) {
+    const parsed = typeof results === 'string' ? JSON.parse(results) : results;
+    const final_scores = parsed.final_scores || [];
+
+    for (const p of final_scores) {
+      const current = this.leaderboard[p.playerName] ?? 0;
+      this.leaderboard[p.playerName] = current + p.score;
+      const pg = this.player_games[p.playerName] ?? [];
+      if (!pg.includes(game_id)) {
+        pg.push(game_id);
+        this.player_games[p.playerName] = pg;
+      }
+    }
+
+    const game = this.games[game_id];
+    if (game) game.status = 'finished';
+
+    if (parsed.hall_of_fame) {
+      const key = String(this.hall_of_fame_count);
+      this.hall_of_fame[key] = parsed.hall_of_fame;
+      this.hall_of_fame_count++;
+      if (this.hall_of_fame_count > 50) {
+        delete this.hall_of_fame[String(this.hall_of_fame_count - 51)];
+      }
+    }
+
+    return { recorded: true, players_updated: final_scores.length };
+  }
+
+  add_to_hall_of_fame(joke) {
+    const parsed = typeof joke === 'string' ? JSON.parse(joke) : joke;
+    const key = String(this.hall_of_fame_count);
+    this.hall_of_fame[key] = parsed;
+    this.hall_of_fame_count++;
+    if (this.hall_of_fame_count > 50) {
+      delete this.hall_of_fame[String(this.hall_of_fame_count - 51)];
+    }
+    return { added: true, count: Math.min(this.hall_of_fame_count, 50) };
+  }
+
+  generate_prompts(category, prompts) {
+    // In sim, accept prompts directly (in real contract, gl.exec_prompt generates them)
+    const existing = this.prompt_pool[category] || [];
+    existing.push(...prompts);
+    this.prompt_pool[category] = existing;
+    return { generated: prompts.length, total: existing.length };
+  }
+
+  pop_prompt(category) {
+    const pool = this.prompt_pool[category] || [];
+    if (pool.length === 0) return null;
+    return pool.shift();
+  }
 
   create_game(game_id, host_name, category) {
     if (this.games[game_id] != null) {
@@ -137,6 +214,7 @@ class OracleOfWitSim {
       winning_punchline: winner.punchline,
       consensus_method: 'optimistic_democracy',
       validators_agreed: true,
+      commentary: { winnerComment: 'Great joke!', roasts: {} },
     };
   }
 
@@ -702,6 +780,169 @@ describe('OracleOfWit Contract', () => {
       expect(Array.isArray(history.games)).toBe(true);
       expect(typeof history.total_score).toBe('number');
       expect(typeof history.games_played).toBe('number');
+    });
+  });
+
+  // =========================================================================
+  // player_profiles (~4 tests)
+  // =========================================================================
+
+  describe('player_profiles', () => {
+    it('returns null for unknown player profile', () => {
+      expect(contract.get_profile('unknown_player')).toBeNull();
+    });
+
+    it('stores and retrieves a profile', () => {
+      const profile = { id: 'player1', name: 'Alice', lifetimeXP: 500, level: 3 };
+      contract.update_profile('player1', profile);
+      const result = contract.get_profile('player1');
+      expect(result.name).toBe('Alice');
+      expect(result.lifetimeXP).toBe(500);
+    });
+
+    it('upserts existing profile', () => {
+      contract.update_profile('player1', { name: 'Alice', lifetimeXP: 100 });
+      contract.update_profile('player1', { name: 'Alice', lifetimeXP: 500 });
+      const result = contract.get_profile('player1');
+      expect(result.lifetimeXP).toBe(500);
+    });
+
+    it('handles multiple profiles independently', () => {
+      contract.update_profile('p1', { name: 'Alice' });
+      contract.update_profile('p2', { name: 'Bob' });
+      expect(contract.get_profile('p1').name).toBe('Alice');
+      expect(contract.get_profile('p2').name).toBe('Bob');
+    });
+  });
+
+  // =========================================================================
+  // hall_of_fame (~5 tests)
+  // =========================================================================
+
+  describe('hall_of_fame', () => {
+    it('returns empty array initially', () => {
+      expect(contract.get_hall_of_fame()).toEqual([]);
+    });
+
+    it('adds and retrieves a joke', () => {
+      contract.add_to_hall_of_fame({ prompt: 'Why?', punchline: 'Because.', author: 'Alice', date: 1000 });
+      const hof = contract.get_hall_of_fame();
+      expect(hof).toHaveLength(1);
+      expect(hof[0].author).toBe('Alice');
+    });
+
+    it('sorts by date descending', () => {
+      contract.add_to_hall_of_fame({ prompt: 'A', punchline: 'old', author: 'A', date: 100 });
+      contract.add_to_hall_of_fame({ prompt: 'B', punchline: 'new', author: 'B', date: 200 });
+      const hof = contract.get_hall_of_fame();
+      expect(hof[0].punchline).toBe('new');
+      expect(hof[1].punchline).toBe('old');
+    });
+
+    it('caps at 50 entries', () => {
+      for (let i = 0; i < 55; i++) {
+        contract.add_to_hall_of_fame({ prompt: `P${i}`, punchline: `L${i}`, author: 'X', date: i });
+      }
+      const hof = contract.get_hall_of_fame();
+      expect(hof.length).toBeLessThanOrEqual(50);
+    });
+
+    it('respects limit parameter', () => {
+      for (let i = 0; i < 10; i++) {
+        contract.add_to_hall_of_fame({ prompt: `P${i}`, punchline: `L${i}`, author: 'X', date: i });
+      }
+      expect(contract.get_hall_of_fame(3)).toHaveLength(3);
+    });
+  });
+
+  // =========================================================================
+  // prompt_pool (~4 tests)
+  // =========================================================================
+
+  describe('prompt_pool', () => {
+    it('returns 0 for empty pool', () => {
+      expect(contract.get_prompt_pool_size('tech')).toBe(0);
+    });
+
+    it('generates and stores prompts', () => {
+      contract.generate_prompts('tech', ['Why did the coder...', 'What happens when...']);
+      expect(contract.get_prompt_pool_size('tech')).toBe(2);
+    });
+
+    it('pops a prompt and reduces pool size', () => {
+      contract.generate_prompts('crypto', ['Prompt A', 'Prompt B']);
+      const popped = contract.pop_prompt('crypto');
+      expect(popped).toBe('Prompt A');
+      expect(contract.get_prompt_pool_size('crypto')).toBe(1);
+    });
+
+    it('returns null when popping empty pool', () => {
+      expect(contract.pop_prompt('empty_cat')).toBeNull();
+    });
+
+    it('accumulates prompts across generate calls', () => {
+      contract.generate_prompts('general', ['P1']);
+      contract.generate_prompts('general', ['P2', 'P3']);
+      expect(contract.get_prompt_pool_size('general')).toBe(3);
+    });
+  });
+
+  // =========================================================================
+  // record_game (enhanced) (~4 tests)
+  // =========================================================================
+
+  describe('record_game (enhanced)', () => {
+    it('updates leaderboard with final scores', () => {
+      contract.create_game('G1', 'Alice', 'tech');
+      contract.record_game('G1', { final_scores: [{ playerName: 'Alice', score: 300 }] });
+      const lb = contract.get_leaderboard();
+      expect(lb[0]).toEqual({ name: 'Alice', score: 300 });
+    });
+
+    it('adds hall of fame entry when provided', () => {
+      contract.create_game('G1', 'Alice', 'tech');
+      contract.record_game('G1', {
+        final_scores: [{ playerName: 'Alice', score: 100 }],
+        hall_of_fame: { prompt: 'Why?', punchline: 'Because.', author: 'Alice', category: 'tech', date: Date.now() },
+      });
+      expect(contract.get_hall_of_fame()).toHaveLength(1);
+    });
+
+    it('marks game as finished', () => {
+      contract.create_game('G1', 'Alice', 'tech');
+      contract.record_game('G1', { final_scores: [{ playerName: 'Alice', score: 100 }] });
+      expect(contract.get_game('G1').status).toBe('finished');
+    });
+
+    it('works without hall_of_fame entry', () => {
+      contract.create_game('G1', 'Alice', 'tech');
+      const result = contract.record_game('G1', { final_scores: [{ playerName: 'Bob', score: 50 }] });
+      expect(result.recorded).toBe(true);
+      expect(contract.get_hall_of_fame()).toHaveLength(0);
+    });
+  });
+
+  // =========================================================================
+  // judge_round commentary (~2 tests)
+  // =========================================================================
+
+  describe('judge_round commentary', () => {
+    const submissions = [
+      { id: 1, playerName: 'Alice', punchline: 'Joke A' },
+      { id: 2, playerName: 'Bob', punchline: 'Joke B' },
+    ];
+
+    it('returns commentary object in result', () => {
+      const result = contract.judge_round('G1', submissions, 1);
+      expect(result).toHaveProperty('commentary');
+      expect(result.commentary).toHaveProperty('winnerComment');
+      expect(result.commentary).toHaveProperty('roasts');
+    });
+
+    it('commentary is present alongside winner info', () => {
+      const result = contract.judge_round('G1', submissions, 2);
+      expect(result.winner_id).toBe(2);
+      expect(result.commentary.winnerComment).toBeDefined();
     });
   });
 

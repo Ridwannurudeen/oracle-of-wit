@@ -121,7 +121,7 @@ export async function submitToGenLayer(submissions, jokePrompt, category, gameId
  * Poll GenLayer for a transaction result (winner ID).
  * @param {string} txHash
  * @param {number} [timeoutMs]
- * @returns {Promise<number|null>} The winning submission ID, or null on timeout/failure.
+ * @returns {Promise<{winnerId: number, commentary: object|null}|null>} Winner + commentary, or null on timeout/failure.
  */
 export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
     if (!txHash) return null;
@@ -141,6 +141,7 @@ export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
             return null;
         }
 
+        // Extract winnerId — supports both object and scalar forms
         const winnerId = typeof receipt.data === 'object'
             ? receipt.data.winner_id
             : parseInt(String(receipt.data));
@@ -148,9 +149,13 @@ export async function pollGenLayerResult(txHash, timeoutMs = GL_POLL_TIMEOUT) {
             logger.warn('Poll returned invalid winnerId', { service: 'genlayer', winnerId, rawReceipt: JSON.stringify(receipt.data) });
             return null;
         }
-        logger.info('Poll result', { service: 'genlayer', winnerId });
+
+        // Extract commentary if present (from two-block judging)
+        const commentary = (typeof receipt.data === 'object' && receipt.data.commentary) || null;
+
+        logger.info('Poll result', { service: 'genlayer', winnerId, hasCommentary: !!commentary });
         _recordSuccess();
-        return winnerId;
+        return { winnerId, commentary };
     } catch (e) {
         logger.info('Poll timed out or failed', { service: 'genlayer', error: e.message });
         _recordFailure();
@@ -319,6 +324,191 @@ export async function readStats() {
         logger.warn('readStats failed', { service: 'genlayer', error: e.message });
         _recordFailure();
         return null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// New wrappers for native GenLayer migration
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a player profile from the GenLayer contract.
+ * @param {string} playerId
+ * @returns {Promise<Object|null>} Parsed profile object, or null.
+ */
+export async function readProfile(playerId) {
+    if (!isGenLayerAvailable()) return null;
+
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_profile',
+            args: [playerId],
+        });
+        _recordSuccess();
+        return result;
+    } catch (e) {
+        logger.warn('readProfile failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Write (upsert) a player profile to the GenLayer contract.
+ * @param {string} playerId
+ * @param {string} profileJson
+ * @returns {Promise<string|false>} txHash or false on failure.
+ */
+export async function writeProfile(playerId, profileJson) {
+    if (!isGenLayerAvailable()) return false;
+
+    try {
+        const client = await getGenLayerClient();
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'update_profile',
+            args: [playerId, profileJson],
+            value: 0n,
+        });
+        logger.info('update_profile tx', { service: 'genlayer', txHash });
+        _recordSuccess();
+        return txHash;
+    } catch (e) {
+        logger.error('update_profile failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return false;
+    }
+}
+
+/**
+ * Record full game results (profiles + leaderboard + hall of fame) in one tx.
+ * @param {string} gameId
+ * @param {string} resultsJson
+ * @returns {Promise<string|false>} txHash or false on failure.
+ */
+export async function recordGameFull(gameId, resultsJson) {
+    if (!isGenLayerAvailable()) return false;
+
+    try {
+        const client = await getGenLayerClient();
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'record_game',
+            args: [gameId, resultsJson],
+            value: 0n,
+        });
+        logger.info('record_game tx', { service: 'genlayer', txHash });
+        _recordSuccess();
+        return txHash;
+    } catch (e) {
+        logger.error('record_game failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return false;
+    }
+}
+
+/**
+ * Read the hall of fame from the GenLayer contract.
+ * @param {number} [limit=50]
+ * @returns {Promise<Array|null>}
+ */
+export async function readHallOfFame(limit = 50) {
+    if (!isGenLayerAvailable()) return null;
+
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_hall_of_fame',
+            args: [limit],
+        });
+        _recordSuccess();
+        return result;
+    } catch (e) {
+        logger.warn('readHallOfFame failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Add a winning joke to the hall of fame on-chain.
+ * @param {string} jokeJson
+ * @returns {Promise<string|false>} txHash or false on failure.
+ */
+export async function writeHallOfFame(jokeJson) {
+    if (!isGenLayerAvailable()) return false;
+
+    try {
+        const client = await getGenLayerClient();
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'add_to_hall_of_fame',
+            args: [jokeJson],
+            value: 0n,
+        });
+        logger.info('add_to_hall_of_fame tx', { service: 'genlayer', txHash });
+        _recordSuccess();
+        return txHash;
+    } catch (e) {
+        logger.error('add_to_hall_of_fame failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return false;
+    }
+}
+
+/**
+ * Batch-generate prompts on-chain via GenLayer's gl.exec_prompt().
+ * @param {string} category
+ * @param {number} count
+ * @returns {Promise<string|false>} txHash or false on failure.
+ */
+export async function generatePromptsOnChain(category, count) {
+    if (!isGenLayerAvailable()) return false;
+
+    try {
+        const client = await getGenLayerClient();
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'generate_prompts',
+            args: [category, count],
+            value: 0n,
+        });
+        logger.info('generate_prompts tx', { service: 'genlayer', txHash, category, count });
+        _recordSuccess();
+        return txHash;
+    } catch (e) {
+        logger.error('generate_prompts failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return false;
+    }
+}
+
+/**
+ * Pop a prompt from the on-chain prompt pool.
+ * @param {string} category
+ * @returns {Promise<string|false>} txHash or false on failure.
+ */
+export async function popPromptOnChain(category) {
+    if (!isGenLayerAvailable()) return false;
+
+    try {
+        const client = await getGenLayerClient();
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'pop_prompt',
+            args: [category],
+            value: 0n,
+        });
+        logger.info('pop_prompt tx', { service: 'genlayer', txHash, category });
+        _recordSuccess();
+        return txHash;
+    } catch (e) {
+        logger.error('pop_prompt failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return false;
     }
 }
 

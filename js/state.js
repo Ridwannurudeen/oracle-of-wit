@@ -44,7 +44,6 @@
  * @property {Object|null} appealResult
  * @property {Object[]} communityPrompts
  * @property {boolean} showCommunityPrompts
- * @property {number|null} votedFor
  */
 
 /** @type {GameState} */
@@ -101,8 +100,6 @@ export let state = {
     // Community prompts
     communityPrompts: [],
     showCommunityPrompts: false,
-    // Audience voting (large rooms)
-    votedFor: null,
     // Wallet authentication
     walletAddress: localStorage.getItem('walletAddress') || null,
     isWalletConnected: !!localStorage.getItem('walletAddress'),

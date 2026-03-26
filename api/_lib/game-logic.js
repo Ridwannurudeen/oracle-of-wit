@@ -1,20 +1,19 @@
 // Game logic: judging, round results, phase transitions, bots, prompts
 
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
-import { SUBMISSION_TIME, BETTING_TIME, VOTING_TIME, CURATION_THRESHOLD, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme } from './constants.js';
+import { SUBMISSION_TIME, BETTING_TIME, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme } from './constants.js';
 import { logger } from './logger.js';
+import { submitToGenLayer, pollGenLayerResult, writeHallOfFame } from './genlayer.js';
 
-// Hardcoded quips used when AI punchline generation fails or returns fewer than needed.
-// Intentionally generic so they work with any joke setup.
-const BOT_FALLBACK_QUIPS = [
-    "...and that's why we can't have nice things.",
-    "...but nobody clapped.",
-    "...my therapist needs a therapist now.",
-    "...and everyone just stared.",
-    "...I'm still processing it."
-];
-import { pickWinnerWithAI, getAICommentary, curateSubmissions, generateBotPunchlines, pickWinnerRandom } from './ai.js';
-import { submitToGenLayer, pollGenLayerResult } from './genlayer.js';
+/**
+ * Pick a random winner from submissions (coin flip fallback).
+ * @param {import('./types.js').Submission[]} submissions
+ * @returns {number|null} The winning submission ID, or null if no submissions.
+ */
+export function pickWinnerRandom(submissions) {
+    if (!submissions?.length) return null;
+    return submissions[Math.floor(Math.random() * submissions.length)].id;
+}
 
 // --- Phase transitions ---
 
@@ -31,16 +30,6 @@ export async function transitionFromSubmitting(room, setRoom) {
         room.status = 'roundResults';
         room.roundResults = room.roundResults || [];
         room.roundResults.push({ round: room.currentRound, winnerId: null, winnerName: 'No one', winningPunchline: 'No submissions', scores: {}, judgingMethod: 'skipped' });
-        return;
-    }
-
-    if (room.submissions.length >= CURATION_THRESHOLD) {
-        room.status = 'curating';
-        room.updatedAt = now;
-        room.phaseEndsAt = now + 6000;
-        room.curatedIds = null;
-        room.audienceVotes = {};
-        await setRoom(room.id, room);
         return;
     }
 
@@ -64,23 +53,6 @@ export async function checkAutoAdvance(room, setRoom) {
 
     if (room.status === 'submitting' && now >= room.phaseEndsAt) {
         await transitionFromSubmitting(room, setRoom);
-    } else if (room.status === 'curating' && now >= room.phaseEndsAt) {
-        if (!room.curatedIds) {
-            const ids = await curateSubmissions(room.submissions, room.jokePrompt, room.category);
-            if (ids) {
-                room.curatedIds = ids;
-            } else {
-                const shuffled = [...room.submissions].sort(() => Math.random() - 0.5);
-                room.curatedIds = shuffled.slice(0, 8).map(s => s.id);
-            }
-        }
-        room.status = 'voting';
-        room.audienceVotes = {};
-        room.phaseEndsAt = now + VOTING_TIME;
-        room.updatedAt = now;
-        await setRoom(room.id, room);
-    } else if (room.status === 'voting' && now >= room.phaseEndsAt) {
-        room = await tallyVotesAndJudge(room, setRoom);
     } else if (room.status === 'betting' && now >= room.phaseEndsAt) {
         if (room.isSinglePlayer) {
             addBotBets(room);
@@ -119,8 +91,8 @@ export async function releaseAdvanceLock(roomId) {
 // --- Judging ---
 
 /**
- * Automatically judge a round: GenLayer is the PRIMARY judge,
- * Claude provides commentary only. AI fallback if GenLayer fails.
+ * Automatically judge a round: GenLayer is the SOLE judge via Optimistic Democracy.
+ * Falls back to coin flip only if GenLayer is unavailable.
  * @param {import('./types.js').Room} room
  * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
  * @returns {Promise<import('./types.js').Room>}
@@ -131,31 +103,30 @@ export async function autoJudge(room, setRoom) {
     room.judgingMethod = 'processing';
     await setRoom(room.id, room);
 
-    // Step 1: Submit to GenLayer (primary judge) and get AI commentary in parallel.
-    // Claude does NOT select a winner — only GenLayer or AI fallback does.
-    const [genLayerResult, aiCommentary] = await Promise.all([
-        submitToGenLayer(room.submissions, room.jokePrompt, room.category, room.id).catch(() => null),
-        getAICommentary(room.submissions, room.jokePrompt, room.category).catch(() => null)
-    ]);
+    // Step 1: Submit to GenLayer (sole judge)
+    const genLayerResult = await submitToGenLayer(room.submissions, room.jokePrompt, room.category, room.id).catch(() => null);
 
     let winnerId = null;
     let judgingMethod = null;
     let onChain = false;
     let txHash = null;
     let glOverride = false;
+    let aiCommentary = null;
 
-    // Step 2: Poll GenLayer for OD consensus result
+    // Step 2: Poll GenLayer for OD consensus result (winner + commentary)
     if (genLayerResult?.txHash) {
         txHash = genLayerResult.txHash;
         onChain = true;
         const validIds = room.submissions.map(s => s.id);
-        const glWinnerId = await pollGenLayerResult(txHash);
+        const pollResult = await pollGenLayerResult(txHash);
+        const glWinnerId = pollResult?.winnerId ?? null;
+        const glCommentary = pollResult?.commentary ?? null;
 
         if (glWinnerId && validIds.includes(glWinnerId)) {
-            // GenLayer authoritative winner via Optimistic Democracy
             winnerId = glWinnerId;
             judgingMethod = 'genlayer_optimistic_democracy';
             glOverride = true;
+            aiCommentary = glCommentary;
             logger.info('GenLayer OD authoritative winner', { service: 'judge', winnerId, txHash });
         } else if (glWinnerId) {
             logger.warn('GenLayer winnerId not in valid range', { service: 'genlayer', glWinnerId, validIds, txHash });
@@ -164,22 +135,12 @@ export async function autoJudge(room, setRoom) {
         }
     }
 
-    // Step 3: If GenLayer failed, fall back to AI winner selection
+    // Step 3: If GenLayer failed, coin flip
     if (!winnerId) {
         room.genLayerFailed = true;
-        const aiResult = await pickWinnerWithAI(room.submissions, room.jokePrompt, room.category).catch(() => ({ winnerId: null }));
-        winnerId = aiResult.winnerId;
-        judgingMethod = winnerId ? 'ai_fallback' : null;
-        if (winnerId) {
-            logger.info('AI fallback winner', { service: 'judge', winnerId });
-        }
-    }
-
-    // Step 4: If both fail, coin flip
-    if (!winnerId) {
         winnerId = pickWinnerRandom(room.submissions);
         judgingMethod = 'coin_flip';
-        logger.error('Both GenLayer and AI failed, using coin flip', { service: 'judge', roomId: room.id, winnerId });
+        logger.warn('GenLayer unavailable, using coin flip', { service: 'judge', roomId: room.id, winnerId });
     }
 
     if (winnerId) {
@@ -193,62 +154,6 @@ export async function autoJudge(room, setRoom) {
     }
 
     return createRoundResult(room, winnerId, now, judgingMethod, onChain, aiCommentary, txHash, setRoom, glOverride);
-}
-
-/**
- * Tally audience votes and determine the winner (with AI tiebreak if needed).
- * @param {import('./types.js').Room} room
- * @param {function(string, import('./types.js').Room): Promise<boolean>} setRoom
- * @returns {Promise<import('./types.js').Room>}
- */
-export async function tallyVotesAndJudge(room, setRoom) {
-    const votes = room.audienceVotes || {};
-    const voteCounts = {};
-
-    for (const [playerName, submissionId] of Object.entries(votes)) {
-        voteCounts[submissionId] = (voteCounts[submissionId] || 0) + 1;
-    }
-
-    const maxVotes = Math.max(...Object.values(voteCounts), 0);
-    const topIds = Object.entries(voteCounts)
-        .filter(([_, count]) => count === maxVotes)
-        .map(([id]) => parseInt(id));
-
-    let winnerId;
-    let judgingMethod = 'audience_vote';
-    let aiCommentary = null;
-
-    if (topIds.length === 1) {
-        winnerId = topIds[0];
-    } else if (topIds.length > 1) {
-        const tiedSubmissions = room.submissions.filter(s => topIds.includes(s.id));
-        const aiResult = await pickWinnerWithAI(tiedSubmissions, room.jokePrompt, room.category);
-        winnerId = aiResult.winnerId || topIds[Math.floor(Math.random() * topIds.length)];
-        aiCommentary = aiResult.aiCommentary;
-        judgingMethod = 'audience_vote_ai_tiebreak';
-    } else {
-        const curated = room.submissions.filter(s => room.curatedIds?.includes(s.id));
-        const aiResult = await pickWinnerWithAI(curated.length ? curated : room.submissions, room.jokePrompt, room.category);
-        winnerId = aiResult.winnerId;
-        aiCommentary = aiResult.aiCommentary;
-        judgingMethod = aiResult.judgingMethod;
-    }
-
-    if (!winnerId || !room.submissions.find(s => s.id === winnerId)) {
-        winnerId = room.submissions[0]?.id;
-        judgingMethod = 'coin_flip';
-    }
-
-    const result = await createRoundResult(room, winnerId, Date.now(), judgingMethod, false, aiCommentary, null, setRoom);
-
-    const lastResult = room.roundResults[room.roundResults.length - 1];
-    if (lastResult) {
-        lastResult.voteCounts = voteCounts;
-        lastResult.totalVotes = Object.keys(votes).length;
-        await setRoom(room.id, room);
-    }
-
-    return room;
 }
 
 /**
@@ -347,18 +252,15 @@ export async function createRoundResult(room, winnerId, now, judgingMethod = 'un
     room.lastJudgingMethod = judgingMethod;
 
     if (winningSubmission && !room.players.find(p => p.name === winningSubmission.playerName)?.isBot) {
-        try {
-            const hof = await redisGet('hall_of_fame') || [];
-            hof.unshift({
-                prompt: room.jokePrompt,
-                punchline: winningSubmission.punchline,
-                author: winningSubmission.playerName,
-                commentary: aiCommentary?.winnerComment || null,
-                category: room.category,
-                date: Date.now()
-            });
-            await redisSet('hall_of_fame', hof.slice(0, 50), 86400 * 90);
-        } catch(e) { logger.error('Hall of fame update failed', { service: 'game', error: e.message }); }
+        const jokeEntry = JSON.stringify({
+            prompt: room.jokePrompt,
+            punchline: winningSubmission.punchline,
+            author: winningSubmission.playerName,
+            commentary: aiCommentary?.winnerComment || null,
+            category: room.category,
+            date: Date.now()
+        });
+        writeHallOfFame(jokeEntry).catch(e => logger.error('Hall of fame update failed', { service: 'game', error: e.message }));
     }
 
     if (setRoom) await setRoom(room.id, room);
@@ -368,31 +270,13 @@ export async function createRoundResult(room, winnerId, now, judgingMethod = 'un
 // --- Bots ---
 
 /**
- * Add AI-generated or fallback punchline submissions for bot players.
+ * Add hardcoded punchline submissions for bot players.
  * @param {import('./types.js').Room} room
  * @returns {Promise<void>}
  */
 export async function addBotSubmissions(room) {
     const botsToAdd = room.players.filter(p => p.isBot && !room.submissions.find(s => s.playerName === p.name));
     if (botsToAdd.length === 0) return;
-
-    let dynamicPunchlines = await generateBotPunchlines(room.jokePrompt, room.category, botsToAdd.length);
-
-    // Fill missing slots with fallback quips if AI returned fewer than needed
-    if (dynamicPunchlines && dynamicPunchlines.length > 0) {
-        while (dynamicPunchlines.length < botsToAdd.length) {
-            dynamicPunchlines.push(BOT_FALLBACK_QUIPS[dynamicPunchlines.length % BOT_FALLBACK_QUIPS.length]);
-        }
-        botsToAdd.forEach((bot, i) => {
-            room.submissions.push({
-                id: room.submissions.length + 1,
-                playerName: bot.name,
-                punchline: dynamicPunchlines[i],
-                submittedAt: Date.now()
-            });
-        });
-        return;
-    }
 
     const currentPrompt = room.jokePrompt;
     let availablePunchlines = PROMPT_PUNCHLINES[currentPrompt]

@@ -78,8 +78,6 @@
  * @property {WeeklyTheme|null} weeklyTheme
  * @property {number} version
  * @property {Object<string, number>} [streaks]
- * @property {number[]|null} [curatedIds]
- * @property {Object<string, number>} [audienceVotes]
  * @property {string} [lastJudgingMethod]
  * @property {Object|null} [promptSource]
  * @property {Object<string, number>} [betBudgets]
@@ -133,13 +131,6 @@
  * @property {number} totalScore
  * @property {number} gamesPlayed
  * @property {number} [wins]
- */
-
-/**
- * @typedef {Object} AIJudgment
- * @property {number|null} winnerId
- * @property {Object|null} aiCommentary
- * @property {string} [judgingMethod]
  */
 
 /**

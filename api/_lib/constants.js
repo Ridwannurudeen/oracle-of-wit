@@ -4,10 +4,6 @@
 export const SUBMISSION_TIME = parseInt(process.env.SUBMISSION_TIME) || 40000;
 /** @type {number} Betting phase duration in ms */
 export const BETTING_TIME = parseInt(process.env.BETTING_TIME) || 30000;
-/** @type {number} Voting phase duration in ms */
-export const VOTING_TIME = parseInt(process.env.VOTING_TIME) || 20000;
-/** @type {number} Minimum submissions before curation kicks in */
-export const CURATION_THRESHOLD = parseInt(process.env.CURATION_THRESHOLD) || 8;
 
 /** @type {import('./types.js').LevelThreshold[]} */
 export const LEVEL_THRESHOLDS = [

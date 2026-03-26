@@ -5,7 +5,7 @@ import { esc, formatEventTime, glLogo } from './render-helpers.js';
 import { isTyping, soundEnabled } from './api.js';
 import { mountOracleEye, oracleEye3D, playScreenTransition } from './effects.js';
 import { renderWelcome, renderLobby, renderWaiting } from './render-lobby.js';
-import { renderSubmitting, renderCurating, renderVoting, renderBetting, renderJudging } from './render-game.js';
+import { renderSubmitting, renderBetting, renderJudging } from './render-game.js';
 import { renderRevealing, renderRoundResults, renderFinalResults } from './render-results.js';
 import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderCommunityPrompts } from './render-screens.js';
 import { syncFromLegacyState } from './signals.js';
@@ -190,8 +190,6 @@ export function renderScreen() {
         case 'lobby': return renderLobby();
         case 'waiting': return renderWaiting();
         case 'submitting': return renderSubmitting();
-        case 'curating': return renderCurating();
-        case 'voting': return renderVoting();
         case 'betting': return renderBetting();
         case 'judging': return renderJudging();
         case 'roundResults': return renderRoundResults();

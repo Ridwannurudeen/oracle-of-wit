@@ -45,6 +45,13 @@ const {
   pollGenLayerResult,
   readLeaderboard,
   readStats,
+  readProfile,
+  writeProfile,
+  recordGameFull,
+  readHallOfFame,
+  writeHallOfFame,
+  generatePromptsOnChain,
+  popPromptOnChain,
 } = await import('../api/_lib/genlayer.js');
 
 // ---------------------------------------------------------------------------
@@ -247,12 +254,23 @@ describe('GenLayer Module', () => {
       expect(await pollGenLayerResult(undefined)).toBeNull();
     });
 
-    it('returns winner_id from receipt data (object form)', async () => {
+    it('returns {winnerId, commentary} from receipt data (object form)', async () => {
       _mockGLClient.waitForTransactionReceipt.mockResolvedValueOnce({
         data: { winner_id: 42 },
       });
       const result = await pollGenLayerResult('0xhash');
-      expect(result).toBe(42);
+      expect(result).toEqual({ winnerId: 42, commentary: null });
+    });
+
+    it('returns {winnerId, commentary} with commentary when present', async () => {
+      _mockGLClient.waitForTransactionReceipt.mockResolvedValueOnce({
+        data: { winner_id: 42, commentary: { winnerComment: 'Great!', roasts: { 1: 'Ouch' } } },
+      });
+      const result = await pollGenLayerResult('0xhash');
+      expect(result).toEqual({
+        winnerId: 42,
+        commentary: { winnerComment: 'Great!', roasts: { 1: 'Ouch' } },
+      });
     });
 
     it('returns parsed integer from receipt data (string form)', async () => {
@@ -260,7 +278,7 @@ describe('GenLayer Module', () => {
         data: '7',
       });
       const result = await pollGenLayerResult('0xhash');
-      expect(result).toBe(7);
+      expect(result).toEqual({ winnerId: 7, commentary: null });
     });
 
     it('returns null when receipt has no data', async () => {
@@ -439,6 +457,198 @@ describe('GenLayer Module', () => {
       _mockGLClient.readContract.mockRejectedValueOnce(new Error('stats fail'));
       const result = await readStats();
       expect(result).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // readProfile
+  // =========================================================================
+
+  describe('readProfile', () => {
+    it('calls readContract with get_profile and returns result', async () => {
+      const mockProfile = { id: 'player1', displayName: 'Alice', xp: 500 };
+      _mockGLClient.readContract.mockResolvedValueOnce(mockProfile);
+
+      const result = await readProfile('player1');
+
+      expect(result).toEqual(mockProfile);
+      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'get_profile',
+          args: ['player1'],
+        })
+      );
+    });
+
+    it('returns null on error', async () => {
+      _mockGLClient.readContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await readProfile('player1')).toBeNull();
+    });
+
+    it('returns null when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.readContract.mockClear();
+      expect(await readProfile('player1')).toBeNull();
+      expect(_mockGLClient.readContract).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // writeProfile
+  // =========================================================================
+
+  describe('writeProfile', () => {
+    it('calls writeContract with update_profile and returns txHash', async () => {
+      const result = await writeProfile('player1', '{"xp":100}');
+
+      expect(result).toBe('0xmocktxhash');
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'update_profile',
+          args: ['player1', '{"xp":100}'],
+        })
+      );
+    });
+
+    it('returns false on error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await writeProfile('p1', '{}')).toBe(false);
+    });
+
+    it('returns false when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.writeContract.mockClear();
+      expect(await writeProfile('p1', '{}')).toBe(false);
+      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // recordGameFull
+  // =========================================================================
+
+  describe('recordGameFull', () => {
+    it('calls writeContract with record_game and returns txHash', async () => {
+      const resultsJson = JSON.stringify({ scores: [{ name: 'A', score: 10 }] });
+      const result = await recordGameFull('GAME_1', resultsJson);
+
+      expect(result).toBe('0xmocktxhash');
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'record_game',
+          args: ['GAME_1', resultsJson],
+        })
+      );
+    });
+
+    it('returns false on error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await recordGameFull('GAME_1', '{}')).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // readHallOfFame
+  // =========================================================================
+
+  describe('readHallOfFame', () => {
+    it('calls readContract with get_hall_of_fame and returns result', async () => {
+      const mockData = [{ joke: 'ha', player: 'Alice' }];
+      _mockGLClient.readContract.mockResolvedValueOnce(mockData);
+
+      const result = await readHallOfFame(10);
+
+      expect(result).toEqual(mockData);
+      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'get_hall_of_fame',
+          args: [10],
+        })
+      );
+    });
+
+    it('uses default limit of 50', async () => {
+      _mockGLClient.readContract.mockResolvedValueOnce([]);
+      await readHallOfFame();
+
+      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
+        expect.objectContaining({ args: [50] })
+      );
+    });
+
+    it('returns null on error', async () => {
+      _mockGLClient.readContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await readHallOfFame()).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // writeHallOfFame
+  // =========================================================================
+
+  describe('writeHallOfFame', () => {
+    it('calls writeContract with add_to_hall_of_fame and returns txHash', async () => {
+      const jokeJson = JSON.stringify({ joke: 'funny', player: 'Bob' });
+      const result = await writeHallOfFame(jokeJson);
+
+      expect(result).toBe('0xmocktxhash');
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'add_to_hall_of_fame',
+          args: [jokeJson],
+        })
+      );
+    });
+
+    it('returns false on error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await writeHallOfFame('{}')).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // generatePromptsOnChain
+  // =========================================================================
+
+  describe('generatePromptsOnChain', () => {
+    it('calls writeContract with generate_prompts and returns txHash', async () => {
+      const result = await generatePromptsOnChain('tech', 5);
+
+      expect(result).toBe('0xmocktxhash');
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'generate_prompts',
+          args: ['tech', 5],
+        })
+      );
+    });
+
+    it('returns false on error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await generatePromptsOnChain('tech', 5)).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // popPromptOnChain
+  // =========================================================================
+
+  describe('popPromptOnChain', () => {
+    it('calls writeContract with pop_prompt and returns txHash', async () => {
+      const result = await popPromptOnChain('tech');
+
+      expect(result).toBe('0xmocktxhash');
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'pop_prompt',
+          args: ['tech'],
+        })
+      );
+    });
+
+    it('returns false on error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      expect(await popPromptOnChain('tech')).toBe(false);
     });
   });
 });

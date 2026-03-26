@@ -2,12 +2,11 @@
 
 import { redisGet, redisSet } from '../_lib/redis.js';
 import { BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, ACHIEVEMENTS } from '../_lib/constants.js';
-import { pickWinnerWithAI } from '../_lib/ai.js';
 import { getGenLayerClient, readLeaderboard } from '../_lib/genlayer.js';
+import { pickWinnerRandom } from '../_lib/game-logic.js';
 import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey } from '../_lib/profiles.js';
 import { generateToken, storePlayerSession } from '../_lib/auth.js';
 import { generateNonce, storeNonce, consumeNonce, verifySiweMessage, buildSiweMessage } from '../_lib/wallet-auth.js';
-import { tursoUpsertUser } from '../_lib/turso.js';
 
 /**
  * Get the global leaderboard (top 20).
@@ -100,8 +99,7 @@ export async function submitDailyChallenge(body, ctx) {
         submissions.push({ id: i + 2, playerName: botName, punchline: botPunchlines[i] || botPunchlines[0] });
     });
 
-    const aiResult = await pickWinnerWithAI(submissions, prompt, 'general');
-    const winnerId = aiResult.winnerId || 1;
+    const winnerId = pickWinnerRandom(submissions) || 1;
     const playerWon = winnerId === 1;
     const timeTaken = (Date.now() - startTime) / 1000;
 
@@ -130,7 +128,7 @@ export async function submitDailyChallenge(body, ctx) {
                 won: playerWon, score, prompt, punchline, winnerId,
                 winnerName: submissions.find(s => s.id === winnerId)?.playerName,
                 winningPunchline: submissions.find(s => s.id === winnerId)?.punchline,
-                aiCommentary: aiResult.aiCommentary, streak: profile.dailyChallengeStreak,
+                aiCommentary: null, streak: profile.dailyChallengeStreak,
                 leaderboard: lb.slice(0, 20), newAchievements, profile
             }
         }};
@@ -225,7 +223,7 @@ export async function requestNonce(body, ctx) {
 }
 
 /**
- * Verify a SIWE signature, upsert user in Turso, create/load profile,
+ * Verify a SIWE signature, create/load profile,
  * and issue a player session token.
  * @param {Object} body
  * @param {import('../_lib/types.js').HandlerContext} ctx
@@ -243,9 +241,6 @@ export async function verifyWallet(body, ctx) {
     if (!nonceValid) return { status: 401, data: { error: 'Invalid or expired nonce' } };
 
     const walletAddress = verified.address.toLowerCase();
-
-    // Upsert user in Turso (fire-and-forget if Turso unavailable)
-    tursoUpsertUser({ walletAddress, displayName: body.displayName }).catch(() => {});
 
     // Use wallet address as the playerId for profiles
     const playerId = `wallet:${walletAddress}`;

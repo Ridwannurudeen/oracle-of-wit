@@ -304,23 +304,6 @@ export function patchDOM(oldRoom, newRoom) {
         leftWing.innerHTML = _renderLeftWingContent();
     }
 
-    // Patch vote counts during voting phase
-    if (newRoom.status === 'voting') {
-        const voteEls = document.querySelectorAll('[data-vote-count]');
-        if (voteEls.length > 0) {
-            const votes = newRoom.audienceVotes || {};
-            const voteCounts = {};
-            for (const submissionId of Object.values(votes)) {
-                voteCounts[submissionId] = (voteCounts[submissionId] || 0) + 1;
-            }
-            voteEls.forEach(el => {
-                const id = el.dataset.voteCount;
-                if (id) el.textContent = voteCounts[id] || 0;
-            });
-            mainPatched = true;
-        }
-    }
-
     // Only return true if main content was patched — wing-only patches
     // should NOT prevent a full render of the main content area
     return mainPatched;
@@ -422,7 +405,6 @@ export async function fetchRoom() {
             const guardActive = isOptimisticActive();
             const savedHasSubmitted = state.hasSubmitted;
             const savedHasBet = state.hasBet;
-            const savedVotedFor = state.votedFor;
             const savedSentReactions = state.sentReactions;
 
             state.room = result.room;
@@ -430,7 +412,6 @@ export async function fetchRoom() {
             if (guardActive) {
                 if (savedHasSubmitted) state.hasSubmitted = true;
                 if (savedHasBet) state.hasBet = true;
-                if (savedVotedFor) state.votedFor = savedVotedFor;
                 if (savedSentReactions > 0) state.sentReactions = savedSentReactions;
             }
 
@@ -476,7 +457,6 @@ export async function fetchRoom() {
                         bets: { length: oldBetCount },
                         roundResults: state.room.roundResults,
                         players: state.room.players,
-                        audienceVotes: state.room.audienceVotes,
                     };
                     if (!patchDOM(oldSnapshot, state.room)) {
                         if (_render) _render();

@@ -1,11 +1,9 @@
 // Core game action handlers: startGame, submitPunchline, placeBet, castVote, advancePhase, nextRound, sendReaction
 
-import { SUBMISSION_TIME, VOTING_TIME } from '../_lib/constants.js';
-import { pickWinnerWithAI, curateSubmissions } from '../_lib/ai.js';
-import { transitionFromSubmitting, autoJudge, tallyVotesAndJudge, addBotBets, getNextPrompt } from '../_lib/game-logic.js';
+import { SUBMISSION_TIME } from '../_lib/constants.js';
+import { transitionFromSubmitting, autoJudge, addBotBets, getNextPrompt } from '../_lib/game-logic.js';
 import { recordOnChain, postGameToDiscord } from '../_lib/genlayer.js';
 import { getProfile, saveProfile, checkAchievements } from '../_lib/profiles.js';
-import { tursoRecordGameHistory } from '../_lib/turso.js';
 
 /**
  * Start a game in the waiting room.
@@ -156,18 +154,6 @@ export async function advancePhase(body, ctx) {
     const now = Date.now();
     if (room.status === 'submitting') {
         await transitionFromSubmitting(room, ctx.setRoom);
-    } else if (room.status === 'curating') {
-        if (!room.curatedIds) {
-            const ids = await curateSubmissions(room.submissions, room.jokePrompt, room.category);
-            room.curatedIds = ids || [...room.submissions].sort(() => Math.random() - 0.5).slice(0, 8).map(s => s.id);
-        }
-        room.status = 'voting';
-        room.audienceVotes = {};
-        room.phaseEndsAt = now + VOTING_TIME;
-        room.updatedAt = now;
-        await ctx.setRoom(roomId, room);
-    } else if (room.status === 'voting') {
-        room = await tallyVotesAndJudge(room, ctx.setRoom);
     } else if (room.status === 'betting') {
         if (room.isSinglePlayer) {
             addBotBets(room);
@@ -194,9 +180,6 @@ export async function nextRound(body, ctx) {
         room.status = 'finished';
         for (const p of room.players) await ctx.updateLeaderboard(p.name, p.score, p.isBot);
         await ctx.setRoom(roomId, room);
-
-        // Turso game history (fire-and-forget)
-        tursoRecordGameHistory(roomId, room).catch(() => {});
 
         // GenLayer record — awaited, with 1 retry
         try {

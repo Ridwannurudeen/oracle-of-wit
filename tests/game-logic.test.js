@@ -17,17 +17,10 @@ vi.mock('../api/_lib/redis.js', () => ({
     redisDel: vi.fn(async () => true),
 }));
 
-vi.mock('../api/_lib/ai.js', () => ({
-    pickWinnerWithAI: vi.fn(async () => ({ winnerId: null, aiCommentary: null })),
-    getAICommentary: vi.fn(async () => null),
-    curateSubmissions: vi.fn(async () => null),
-    generateBotPunchlines: vi.fn(async () => null),
-    pickWinnerRandom: vi.fn(() => null),
-}));
-
 vi.mock('../api/_lib/genlayer.js', () => ({
     submitToGenLayer: vi.fn(async () => null),
     pollGenLayerResult: vi.fn(async () => null),
+    writeHallOfFame: vi.fn(async () => '0xmocktxhash'),
 }));
 
 vi.mock('../api/_lib/logger.js', () => ({
@@ -41,17 +34,16 @@ vi.mock('../api/_lib/logger.js', () => ({
 import {
     transitionFromSubmitting,
     autoJudge,
-    tallyVotesAndJudge,
     createRoundResult,
     checkAutoAdvance,
     addBotSubmissions,
     addBotBets,
     getPromptsForCategory,
+    pickWinnerRandom,
 } from '../api/_lib/game-logic.js';
 
 import { redisGet, redisSet } from '../api/_lib/redis.js';
-import { pickWinnerWithAI, getAICommentary, generateBotPunchlines, pickWinnerRandom } from '../api/_lib/ai.js';
-import { submitToGenLayer, pollGenLayerResult } from '../api/_lib/genlayer.js';
+import { submitToGenLayer, pollGenLayerResult, writeHallOfFame } from '../api/_lib/genlayer.js';
 import { CATEGORIZED_PROMPTS } from '../api/_lib/constants.js';
 
 // ---------------------------------------------------------------------------
@@ -130,7 +122,7 @@ describe('transitionFromSubmitting', () => {
         expect(setRoom).toHaveBeenCalledWith(room.id, room);
     });
 
-    it('at or over CURATION_THRESHOLD -> curating phase', async () => {
+    it('many submissions still go to betting (no curation)', async () => {
         const setRoom = vi.fn(async () => true);
         const submissions = [];
         const players = [];
@@ -142,15 +134,12 @@ describe('transitionFromSubmitting', () => {
 
         await transitionFromSubmitting(room, setRoom);
 
-        expect(room.status).toBe('curating');
-        expect(room.curatedIds).toBeNull();
-        expect(room.phaseEndsAt).toBeGreaterThan(Date.now() - 1000);
+        expect(room.status).toBe('betting');
         expect(setRoom).toHaveBeenCalledWith(room.id, room);
     });
 
     it('single-player mode calls addBotSubmissions', async () => {
         const setRoom = vi.fn(async () => true);
-        generateBotPunchlines.mockResolvedValueOnce(['Bot joke 1']);
         const room = makeRoom({
             isSinglePlayer: true,
             players: [
@@ -179,15 +168,11 @@ describe('autoJudge', () => {
             return true;
         });
         const room = makeRoom({ bets: [] });
-        // GenLayer success path (default happy path)
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xabc123' });
-        pollGenLayerResult.mockResolvedValueOnce(1);
-        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Nice!' });
-        redisGet.mockResolvedValueOnce([]);
+        pollGenLayerResult.mockResolvedValueOnce({ winnerId: 1, commentary: null });
 
         const result = await autoJudge(room, setRoom);
 
-        // First setRoom call captures 'judging' status
         expect(statusCaptures[0]).toBe('judging');
         expect(result.status).toBe('roundResults');
         expect(result.roundResults).toHaveLength(1);
@@ -197,9 +182,7 @@ describe('autoJudge', () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xabc123' });
-        pollGenLayerResult.mockResolvedValueOnce(2); // GenLayer picks Bob
-        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Good one!', roasts: {} });
-        redisGet.mockResolvedValueOnce([]);
+        pollGenLayerResult.mockResolvedValueOnce({ winnerId: 2, commentary: { winnerComment: 'Good one!', roasts: {} } });
 
         await autoJudge(room, setRoom);
 
@@ -210,17 +193,14 @@ describe('autoJudge', () => {
         expect(rr.glOverride).toBe(true);
         expect(rr.txHash).toBe('0xabc123');
         expect(rr.onChain).toBe(true);
-        // AI commentary should still be attached
         expect(rr.aiCommentary).toEqual({ winnerComment: 'Good one!', roasts: {} });
     });
 
-    it('GenLayer succeeds, Claude commentary still attached', async () => {
+    it('GenLayer succeeds with commentary from two-block judging', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xdef' });
-        pollGenLayerResult.mockResolvedValueOnce(1);
-        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Hilarious!', roasts: { 2: 'Not bad' } });
-        redisGet.mockResolvedValueOnce([]);
+        pollGenLayerResult.mockResolvedValueOnce({ winnerId: 1, commentary: { winnerComment: 'Hilarious!', roasts: { 2: 'Not bad' } } });
 
         await autoJudge(room, setRoom);
 
@@ -229,180 +209,66 @@ describe('autoJudge', () => {
         expect(rr.aiCommentary?.winnerComment).toBe('Hilarious!');
     });
 
-    it('GenLayer fails, falls back to AI with genLayerFailed flag', async () => {
+    it('GenLayer fails -> coin flip with genLayerFailed flag', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
         submitToGenLayer.mockResolvedValueOnce(null); // GenLayer submit failed
-        getAICommentary.mockResolvedValueOnce(null);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
-        redisGet.mockResolvedValueOnce([]);
 
         await autoJudge(room, setRoom);
 
         const rr = room.roundResults[0];
-        expect(rr.winnerId).toBe(1);
-        expect(rr.winnerName).toBe('Alice');
-        expect(rr.judgingMethod).toBe('ai_fallback');
+        expect(rr.winnerId).toBeTruthy();
+        expect(rr.judgingMethod).toBe('coin_flip');
         expect(room.genLayerFailed).toBe(true);
     });
 
-    it('GenLayer returns invalid winnerId -> falls back to AI', async () => {
+    it('GenLayer returns invalid winnerId -> coin flip', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xdef456' });
-        pollGenLayerResult.mockResolvedValueOnce(999); // invalid id
-        getAICommentary.mockResolvedValueOnce(null);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null });
-        redisGet.mockResolvedValueOnce([]);
+        pollGenLayerResult.mockResolvedValueOnce({ winnerId: 999, commentary: null }); // invalid id
 
         await autoJudge(room, setRoom);
 
         const rr = room.roundResults[0];
-        expect(rr.winnerId).toBe(1); // fell back to AI result
-        expect(rr.judgingMethod).toBe('ai_fallback');
+        expect(rr.judgingMethod).toBe('coin_flip');
         expect(rr.glOverride).toBe(false);
         expect(room.genLayerFailed).toBe(true);
     });
 
-    it('GenLayer poll times out -> falls back to AI', async () => {
+    it('GenLayer poll times out -> coin flip', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xtimeout' });
         pollGenLayerResult.mockResolvedValueOnce(null); // poll timed out
-        getAICommentary.mockResolvedValueOnce(null);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 2, aiCommentary: null });
-        redisGet.mockResolvedValueOnce([]);
 
         await autoJudge(room, setRoom);
 
         const rr = room.roundResults[0];
-        expect(rr.winnerId).toBe(2);
-        expect(rr.judgingMethod).toBe('ai_fallback');
-        expect(room.genLayerFailed).toBe(true);
-    });
-
-    it('both fail -> uses coin flip (pickWinnerRandom)', async () => {
-        const setRoom = vi.fn(async () => true);
-        const room = makeRoom({ bets: [] });
-        submitToGenLayer.mockResolvedValueOnce(null);
-        getAICommentary.mockResolvedValueOnce(null);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: null, aiCommentary: null });
-        pickWinnerRandom.mockReturnValueOnce(2);
-
-        await autoJudge(room, setRoom);
-
-        expect(pickWinnerRandom).toHaveBeenCalledWith(room.submissions);
-        const rr = room.roundResults[0];
-        expect(rr.winnerId).toBe(2);
         expect(rr.judgingMethod).toBe('coin_flip');
+        expect(room.genLayerFailed).toBe(true);
     });
 
     it('always creates a roundResult and sets status to roundResults', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0x123' });
-        pollGenLayerResult.mockResolvedValueOnce(2);
-        getAICommentary.mockResolvedValueOnce(null);
-        redisGet.mockResolvedValueOnce([]);
+        pollGenLayerResult.mockResolvedValueOnce({ winnerId: 2, commentary: null });
 
         const result = await autoJudge(room, setRoom);
 
         expect(result.roundResults.length).toBeGreaterThanOrEqual(1);
         expect(result.status).toBe('roundResults');
     });
-
-    it('getAICommentary runs in parallel with GenLayer submit', async () => {
-        const setRoom = vi.fn(async () => true);
-        const room = makeRoom({ bets: [] });
-        submitToGenLayer.mockResolvedValueOnce({ txHash: '0xparallel' });
-        pollGenLayerResult.mockResolvedValueOnce(1);
-        getAICommentary.mockResolvedValueOnce({ winnerComment: 'Parallel works!' });
-        redisGet.mockResolvedValueOnce([]);
-
-        await autoJudge(room, setRoom);
-
-        // Both should have been called
-        expect(submitToGenLayer).toHaveBeenCalled();
-        expect(getAICommentary).toHaveBeenCalled();
-        // pickWinnerWithAI should NOT have been called (GenLayer succeeded)
-        expect(pickWinnerWithAI).not.toHaveBeenCalled();
-    });
 });
 
 // =========================================================================
-// 3. tallyVotesAndJudge
-// =========================================================================
-describe('tallyVotesAndJudge', () => {
-    it('single clear winner by votes -> audience_vote method', async () => {
-        const setRoom = vi.fn(async () => true);
-        const room = makeRoom({
-            bets: [],
-            audienceVotes: { Viewer1: 1, Viewer2: 1, Viewer3: 2 },
-        });
-
-        await tallyVotesAndJudge(room, setRoom);
-
-        const rr = room.roundResults[room.roundResults.length - 1];
-        expect(rr.winnerId).toBe(1);
-        expect(rr.judgingMethod).toBe('audience_vote');
-        expect(rr.voteCounts).toEqual({ 1: 2, 2: 1 });
-        expect(rr.totalVotes).toBe(3);
-    });
-
-    it('tie in votes -> AI tiebreak', async () => {
-        const setRoom = vi.fn(async () => true);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 2, aiCommentary: { winnerComment: 'Tiebreak!' } });
-        const room = makeRoom({
-            bets: [],
-            audienceVotes: { Viewer1: 1, Viewer2: 2 },
-        });
-
-        await tallyVotesAndJudge(room, setRoom);
-
-        const rr = room.roundResults[room.roundResults.length - 1];
-        expect(rr.winnerId).toBe(2);
-        expect(rr.judgingMethod).toBe('audience_vote_ai_tiebreak');
-    });
-
-    it('no votes -> falls back to AI judging', async () => {
-        const setRoom = vi.fn(async () => true);
-        pickWinnerWithAI.mockResolvedValueOnce({ winnerId: 1, aiCommentary: null, judgingMethod: 'claude_api' });
-        const room = makeRoom({
-            bets: [],
-            audienceVotes: {},
-        });
-
-        await tallyVotesAndJudge(room, setRoom);
-
-        const rr = room.roundResults[room.roundResults.length - 1];
-        expect(rr.winnerId).toBe(1);
-        // When no votes, it calls pickWinnerWithAI and uses its judgingMethod
-        expect(rr.judgingMethod).toBe('claude_api');
-    });
-
-    it('stores voteCounts and totalVotes in result', async () => {
-        const setRoom = vi.fn(async () => true);
-        const room = makeRoom({
-            bets: [],
-            audienceVotes: { V1: 1, V2: 1, V3: 2, V4: 1 },
-        });
-
-        await tallyVotesAndJudge(room, setRoom);
-
-        const rr = room.roundResults[room.roundResults.length - 1];
-        expect(rr.voteCounts).toEqual({ 1: 3, 2: 1 });
-        expect(rr.totalVotes).toBe(4);
-    });
-});
-
-// =========================================================================
-// 4. createRoundResult
+// 3. createRoundResult
 // =========================================================================
 describe('createRoundResult', () => {
     it('correct winner gets +100 score', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -416,7 +282,6 @@ describe('createRoundResult', () => {
         const room = makeRoom({
             bets: [{ playerName: 'Bob', submissionId: 1, amount: 50, placedAt: Date.now() }],
         });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -430,7 +295,6 @@ describe('createRoundResult', () => {
         const room = makeRoom({
             bets: [{ playerName: 'Bob', submissionId: 2, amount: 50, placedAt: Date.now() }],
         });
-        redisGet.mockResolvedValueOnce([]);
 
         // Winner is Alice (id=1), Bob bet on id=2 (wrong)
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
@@ -448,7 +312,6 @@ describe('createRoundResult', () => {
             ],
             bets: [{ playerName: 'Bob', submissionId: 2, amount: 50, placedAt: Date.now() }],
         });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -460,7 +323,6 @@ describe('createRoundResult', () => {
     it('streak tracking: consecutive wins increment', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [], streaks: { Alice: 1, Bob: 0 } });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -472,7 +334,6 @@ describe('createRoundResult', () => {
     it('streak tracking: loss resets streak', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [], streaks: { Alice: 3, Bob: 0 } });
-        redisGet.mockResolvedValueOnce([]);
 
         // Bob wins, so Alice's streak should reset
         await createRoundResult(room, 2, Date.now(), 'claude_api', false, null, null, setRoom);
@@ -491,7 +352,6 @@ describe('createRoundResult', () => {
             ],
             bets: [],
         });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 2, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -508,7 +368,6 @@ describe('createRoundResult', () => {
             ],
             bets: [],
         });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -518,7 +377,6 @@ describe('createRoundResult', () => {
     it('revealOrder puts winner last', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
-        redisGet.mockResolvedValueOnce([]);
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, null, null, setRoom);
 
@@ -529,19 +387,12 @@ describe('createRoundResult', () => {
 
     it('hall of fame updated for non-bot winners', async () => {
         const setRoom = vi.fn(async () => true);
-        redisGet.mockResolvedValueOnce([]);
-
         const room = makeRoom({ bets: [] });
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, { winnerComment: 'Great!' }, null, setRoom);
 
-        expect(redisGet).toHaveBeenCalledWith('hall_of_fame');
-        expect(redisSet).toHaveBeenCalledWith(
-            'hall_of_fame',
-            expect.arrayContaining([
-                expect.objectContaining({ author: 'Alice', punchline: 'To get to the other side' }),
-            ]),
-            expect.any(Number)
+        expect(writeHallOfFame).toHaveBeenCalledWith(
+            expect.stringContaining('"author":"Alice"')
         );
     });
 
@@ -561,13 +412,11 @@ describe('createRoundResult', () => {
 
         await createRoundResult(room, 2, Date.now(), 'claude_api', false, null, null, setRoom);
 
-        // redisGet for hall_of_fame should NOT be called for a bot winner
-        expect(redisGet).not.toHaveBeenCalledWith('hall_of_fame');
+        expect(writeHallOfFame).not.toHaveBeenCalled();
     });
 
     it('invalid winnerId falls back to first submission', async () => {
         const setRoom = vi.fn(async () => true);
-        redisGet.mockResolvedValueOnce([]);
         const room = makeRoom({ bets: [] });
 
         await createRoundResult(room, 999, Date.now(), 'claude_api', false, null, null, setRoom);
@@ -634,9 +483,7 @@ describe('checkAutoAdvance', () => {
     it('betting phase past deadline -> autoJudge', async () => {
         const setRoom = vi.fn(async () => true);
         submitToGenLayer.mockResolvedValueOnce({ txHash: '0xauto' });
-        pollGenLayerResult.mockResolvedValueOnce(1);
-        getAICommentary.mockResolvedValueOnce(null);
-        redisGet.mockResolvedValueOnce([]);
+        pollGenLayerResult.mockResolvedValueOnce({ winnerId: 1, commentary: null });
         const room = makeRoom({
             status: 'betting',
             phaseEndsAt: Date.now() - 1000,
@@ -647,23 +494,6 @@ describe('checkAutoAdvance', () => {
 
         expect(result.status).toBe('roundResults');
         expect(result.roundResults.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('voting phase past deadline -> tallyVotesAndJudge', async () => {
-        const setRoom = vi.fn(async () => true);
-        redisGet.mockResolvedValueOnce([]);
-        const room = makeRoom({
-            status: 'voting',
-            phaseEndsAt: Date.now() - 1000,
-            audienceVotes: { Viewer1: 1 },
-            bets: [],
-        });
-
-        const result = await checkAutoAdvance(room, setRoom);
-
-        expect(result.status).toBe('roundResults');
-        const rr = result.roundResults[result.roundResults.length - 1];
-        expect(rr.totalVotes).toBe(1);
     });
 
     it('returns null/undefined room as-is', async () => {
@@ -678,7 +508,6 @@ describe('checkAutoAdvance', () => {
 // =========================================================================
 describe('addBotSubmissions', () => {
     it('adds submissions for all bot players', async () => {
-        generateBotPunchlines.mockResolvedValueOnce(['Bot joke 1', 'Bot joke 2']);
         const room = makeRoom({
             players: [
                 { name: 'Alice', score: 0, isBot: false },
@@ -696,7 +525,6 @@ describe('addBotSubmissions', () => {
     });
 
     it('does not add duplicate submissions for bots that already submitted', async () => {
-        generateBotPunchlines.mockResolvedValueOnce(['New joke']);
         const room = makeRoom({
             players: [
                 { name: 'Alice', score: 0, isBot: false },
@@ -717,8 +545,7 @@ describe('addBotSubmissions', () => {
         expect(room.submissions.find(s => s.playerName === 'JokesMaster')).toBeTruthy();
     });
 
-    it('falls back to PROMPT_PUNCHLINES when AI returns null', async () => {
-        generateBotPunchlines.mockResolvedValueOnce(null);
+    it('uses hardcoded punchlines from PROMPT_PUNCHLINES or FALLBACK_PUNCHLINES', async () => {
         const room = makeRoom({
             jokePrompt: "Why do programmers prefer dark mode? Because...",
             players: [
@@ -752,7 +579,6 @@ describe('addBotSubmissions', () => {
         await addBotSubmissions(room);
 
         expect(room.submissions).toHaveLength(2);
-        expect(generateBotPunchlines).not.toHaveBeenCalled();
     });
 });
 

@@ -8,7 +8,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-A855F7?style=for-the-badge&logo=vercel&logoColor=white)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-2DD4BF?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-303_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-387_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-FBBF24?style=for-the-badge)](LICENSE)
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
@@ -109,36 +109,27 @@ flowchart TB
         API["api/game.js\nRoom management, scoring,\nphase transitions"]
     end
 
-    subgraph Storage ["Upstash Redis"]
-        Rooms[("room:*")]
-        LB[("leaderboard")]
-        Players[("player:*")]
-        HoF[("hall_of_fame")]
-    end
-
-    subgraph AI ["AI Judging (parallel)"]
-        Claude["Claude Haiku\nFast winner + roast"]
-        GL["GenLayer OD\nOn-chain consensus proof"]
+    subgraph Storage ["Upstash Redis (ephemeral)"]
+        Rooms[("room:*\nActive game rooms")]
+        Sessions[("session:*\nAuth tokens")]
     end
 
     subgraph GenLayer ["GenLayer Testnet Bradbury"]
         Contract["oracle_of_wit.py\nIntelligent Contract"]
         Validators["AI Validators\nGPT-4, Claude, LLaMA,\nGemini, Mixtral"]
+        OnChain[("Leaderboard\nProfiles\nHall of Fame\nGame History")]
     end
 
     UI -- "HTTP poll / POST" --> API
     API -- "REST" --> Rooms
-    API -- "REST" --> LB
-    API -- "REST" --> Players
-    API -- "REST" --> HoF
-    API -- "Claude API" --> Claude
-    API -- "genlayer-js SDK" --> GL
-    GL -- "writeContract" --> Contract
+    API -- "REST" --> Sessions
+    API -- "genlayer-js SDK" --> Contract
     Contract -- "gl.exec_prompt" --> Validators
     Validators -- "eq_principle_prompt_comparative" --> Contract
+    Contract --> OnChain
 ```
 
-**Dual-judge architecture:** GenLayer OD is the authoritative source when available (~2-3 validator rotations with `prompt_comparative`). Claude Haiku serves as a fast fallback if GenLayer times out or fails. Both run in parallel — GenLayer's result is preferred when it arrives within 30s.
+**Native GenLayer architecture:** GenLayer is the sole AI judge and persistence layer. All judging, scoring, profiles, leaderboards, and hall of fame are on-chain. Redis handles only ephemeral room coordination and auth tokens. If GenLayer is unavailable, judging falls back to random selection (coin flip) — no silent AI fallback.
 
 ---
 
@@ -162,14 +153,14 @@ Oracle of Wit uses the comparative equivalence principle — `gl.eq_principle_pr
 
 This dramatically reduces validator rotations (~2-3 rotations, ~10s finalization) compared to strict equality (~22 rotations, ~32 min), making GenLayer practical as the **authoritative judge** rather than just a background proof.
 
-### Dual-Judge Architecture
+### Two-Block Judging
 
-GenLayer is the authoritative source of truth when available. Claude Haiku serves as a fast fallback:
+The `judge_round()` contract method uses a two-block pattern:
 
-1. Both GenLayer OD and Claude are called **in parallel**
-2. If GenLayer returns a result within 30s → **it is used** (multi-validator consensus)
-3. If GenLayer times out or fails → Claude's result is used as fallback
-4. The `glOverride` flag in round metadata tracks which source was authoritative
+1. **Block 1** (`eq_principle_prompt_comparative`): All validators independently pick the winner ID — they must agree
+2. **Block 2** (`eq_principle_prompt_non_comparative`): Leader generates roasts/commentary, validators grade quality
+
+This returns both the winner and entertaining commentary in a single on-chain transaction.
 
 ### Appeal Mechanism
 
@@ -182,6 +173,9 @@ Players can appeal judgments via `appeal_judgment()`. OD naturally adds more val
 | `games` | `TreeMap[str, str]` | Game state (host, category, status, rounds) |
 | `leaderboard` | `TreeMap[str, int]` | Player name to total XP score |
 | `player_games` | `TreeMap[str, str]` | Player name to list of game IDs |
+| `player_profiles` | `TreeMap[str, str]` | Player profiles (XP, level, achievements) |
+| `hall_of_fame` | `TreeMap[str, str]` | Historic winning jokes |
+| `prompt_pool` | `TreeMap[str, str]` | AI-generated prompt pool by category |
 | `seasons` | `TreeMap[str, str]` | Archived season leaderboards |
 | `total_games` | `int` | Lifetime game counter |
 | `total_judgments` | `int` | Lifetime OD judgment counter |
@@ -252,9 +246,8 @@ const history = await client.readContract({
 | **Frontend** | Vanilla JS + Preact Islands, TailwindCSS, Three.js | ![JS](https://img.shields.io/badge/-JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black) ![Tailwind](https://img.shields.io/badge/-TailwindCSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white) ![Three.js](https://img.shields.io/badge/-Three.js-000?style=flat-square&logo=threedotjs&logoColor=white) |
 | **UI Components** | Preact + Preact Signals (islands architecture) | ![Preact](https://img.shields.io/badge/-Preact-673AB8?style=flat-square&logo=preact&logoColor=white) |
 | **Backend** | Vercel Serverless Functions (Node.js) | ![Vercel](https://img.shields.io/badge/-Vercel-000?style=flat-square&logo=vercel&logoColor=white) ![Node](https://img.shields.io/badge/-Node.js-339933?style=flat-square&logo=node.js&logoColor=white) |
-| **Database** | Upstash Redis | ![Redis](https://img.shields.io/badge/-Redis-DC382D?style=flat-square&logo=redis&logoColor=white) |
-| **Persistent DB** | Turso (LibSQL) | ![SQLite](https://img.shields.io/badge/-Turso-4FC3F7?style=flat-square&logo=sqlite&logoColor=white) |
-| **AI Judging** | Claude Haiku (fast) + GenLayer OD (on-chain) | ![Anthropic](https://img.shields.io/badge/-Claude-191919?style=flat-square&logo=anthropic&logoColor=white) |
+| **Cache** | Upstash Redis (ephemeral rooms, auth) | ![Redis](https://img.shields.io/badge/-Redis-DC382D?style=flat-square&logo=redis&logoColor=white) |
+| **AI Judging** | GenLayer OD (on-chain consensus) | ![GenLayer](https://img.shields.io/badge/-GenLayer-2DD4BF?style=flat-square) |
 | **Wallet Auth** | SIWE (EIP-4361) | ![Ethereum](https://img.shields.io/badge/-SIWE-3C3C3D?style=flat-square&logo=ethereum&logoColor=white) |
 | **Smart Contract** | GenLayer Intelligent Contract (Python) | ![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white) |
 | **SDK** | genlayer-js v0.21+ | ![npm](https://img.shields.io/badge/-genlayer--js-CB3837?style=flat-square&logo=npm&logoColor=white) |
@@ -278,7 +271,7 @@ oracle-of-wit/
 │   ├── render.js              # Main render dispatcher, HUD wings, screen routing
 │   ├── render-helpers.js      # Shared render fragments (profile card, timer placeholders)
 │   ├── render-lobby.js        # Welcome, lobby, waiting room screens
-│   ├── render-game.js         # Submitting, curating, voting, betting, judging screens
+│   ├── render-game.js         # Submitting, betting, judging screens
 │   ├── render-results.js      # Revealing, round results, final results screens
 │   ├── render-screens.js      # Daily challenge, profile, hall of fame, community prompts
 │   ├── app.js                 # Game actions, timer, boot, event handlers
@@ -295,18 +288,16 @@ oracle-of-wit/
 │   ├── _handlers/             # Action handler modules
 │   │   ├── index.js           # Handler routing
 │   │   ├── room.js            # Room CRUD
-│   │   ├── gameplay.js        # Submissions, betting, voting, judging
+│   │   ├── gameplay.js        # Submissions, betting, judging
 │   │   ├── profile.js         # Player profiles, daily challenges
 │   │   ├── social.js          # Reactions, community prompts
 │   │   └── meta.js            # Leaderboard, hall of fame, stats
 │   └── _lib/                  # Shared server modules
 │       ├── redis.js           # Upstash REST helpers (GET/SET/INCR/SETNX/DEL)
-│       ├── turso.js           # Turso (LibSQL) persistent database
 │       ├── auth.js            # Session tokens, CORS whitelist, rate limiting
 │       ├── wallet-auth.js     # SIWE (EIP-4361) wallet authentication
 │       ├── constants.js       # Timers, levels, achievements, themes, prompts
-│       ├── genlayer.js        # GenLayer SDK, submit/poll/record/appeal
-│       ├── ai.js              # Claude judging, curation, bot punchlines
+│       ├── genlayer.js        # GenLayer SDK, submit/poll/record/appeal/profiles
 │       ├── game-logic.js      # Phase transitions, judging, bots, distributed lock
 │       ├── profiles.js        # Player profiles, daily challenges, leaderboard
 │       ├── logger.js          # Structured logging utility
@@ -344,8 +335,7 @@ oracle-of-wit/
 - Node.js 18+
 - [Vercel CLI](https://vercel.com/cli) (`npm i -g vercel`)
 - [Upstash Redis](https://upstash.com/) account
-- [Anthropic API](https://console.anthropic.com/) key
-- (Optional) GenLayer testnet wallet with GEN tokens
+- [GenLayer](https://studio.genlayer.com/) testnet wallet with GEN tokens
 
 ### Local Development
 
@@ -359,7 +349,7 @@ npm install
 
 # Configure
 cp .env.example .env
-# Edit .env with your Upstash and Anthropic credentials
+# Edit .env with your Upstash and GenLayer credentials
 
 # Run locally
 vercel dev
@@ -393,7 +383,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **303 tests** across six test suites:
+Oracle of Wit has **387 tests** across eight test suites:
 
 ```bash
 # Run all tests
@@ -405,11 +395,13 @@ npm run test:watch
 
 | Suite | File | Tests | Coverage |
 |-------|------|-------|----------|
-| **Game Logic** | `tests/game-logic.test.js` | 44 | autoJudge, transitionFromSubmitting, tallyVotesAndJudge, createRoundResult, checkAutoAdvance, bot submissions/bets, prompts |
-| **API** | `tests/api.test.js` | 93 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth (session tokens), rate limiting, input validation, CORS |
-| **Frontend** | `tests/frontend.test.js` | 84 | XSS escaping, auto-escape templates, DOM patching, timer formatting, state management, game events, adaptive polling |
-| **Contract** | `tests/contract.test.js` | 53 | Game creation, OD judging, leaderboard, appeals, seasons, admin access control, idempotency, JSON safety, player history |
+| **Game Logic** | `tests/game-logic.test.js` | 37 | autoJudge, transitionFromSubmitting, createRoundResult, checkAutoAdvance, bot submissions/bets, prompts |
+| **API** | `tests/api.test.js` | 97 | Room CRUD, submissions, betting, voting, reactions, phase transitions, auth, rate limiting, input validation, CORS |
+| **Frontend** | `tests/frontend.test.js` | 88 | XSS escaping, auto-escape templates, DOM patching, timer formatting, state management, game events, adaptive polling |
+| **Contract** | `tests/contract.test.js` | 73 | Game creation, OD judging, leaderboard, appeals, seasons, profiles, hall of fame, prompt pool |
+| **GenLayer** | `tests/genlayer.test.js` | 27 | SDK wrappers, circuit breaker, poll results, profile/hall of fame read/write |
 | **Integration** | `tests/integration.test.js` | 13 | Full lifecycle flows, double-advance prevention, polling resilience, auto-advance recovery, phase timer expiry |
+| **Health** | `tests/health.test.js` | 6 | Health check endpoint, Redis/GenLayer status |
 | **Discord** | `tests/discord.test.js` | 16 | Ed25519 signatures, slash commands, error handling |
 
 ---
@@ -454,7 +446,6 @@ All endpoints: `POST /api/game?action=<action>` (unless noted as GET)
 | `startGame` | POST | `roomId`, `hostName` | Start game (host only) |
 | `submitPunchline` | POST | `roomId`, `playerName`, `punchline` | Submit punchline |
 | `placeBet` | POST | `roomId`, `playerName`, `submissionId`, `amount` | Place bet |
-| `castVote` | POST | `roomId`, `playerName`, `submissionId` | Vote on curated submission |
 | `advancePhase` | POST | `roomId`, `hostName` | Skip to next phase (host only) |
 | `nextRound` | POST | `roomId`, `hostName` | Start next round |
 | `listRooms` | GET | — | List public rooms |
@@ -515,16 +506,13 @@ Oracle of Wit includes a Discord bot that lets users interact with the game dire
 |----------|----------|-------------|
 | `UPSTASH_REDIS_REST_URL` | Yes | Upstash Redis REST endpoint |
 | `UPSTASH_REDIS_REST_TOKEN` | Yes | Upstash Redis auth token |
-| `ANTHROPIC_API_KEY` | Yes | Claude API key for AI judging |
-| `GENLAYER_RPC_URL` | No | GenLayer RPC endpoint (defaults to studio API) |
-| `GENLAYER_CONTRACT_ADDRESS` | No | Deployed contract address (enables on-chain features) |
-| `GENLAYER_PRIVATE_KEY` | No | Wallet key for contract interactions |
+| `GENLAYER_RPC_URL` | Yes | GenLayer RPC endpoint (defaults to studio API) |
+| `GENLAYER_CONTRACT_ADDRESS` | Yes | Deployed contract address |
+| `GENLAYER_PRIVATE_KEY` | Yes | Wallet key for contract interactions |
 | `DISCORD_WEBHOOK_URL` | No | Discord webhook URL for posting game results |
 | `DISCORD_APPLICATION_ID` | No | Discord app ID (for slash command registration) |
 | `DISCORD_PUBLIC_KEY` | No | Discord public key (for Ed25519 signature verification) |
 | `DISCORD_BOT_TOKEN` | No | Discord bot token (for command registration script) |
-| `TURSO_URL` | No | Turso database URL (persistent profiles, history) |
-| `TURSO_AUTH_TOKEN` | No | Turso auth token |
 | `CRON_SECRET` | No | Secret for cron job authentication (advance-games) |
 
 ---

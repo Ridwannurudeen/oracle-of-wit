@@ -19,7 +19,6 @@ export const walletConnecting = signal(false);
 export const timeLeft = signal(0);
 export const hasSubmitted = signal(false);
 export const hasBet = signal(false);
-export const votedFor = signal(null);
 export const sentReactions = signal(0);
 
 // Computed signals
@@ -67,6 +66,5 @@ export function syncFromLegacyState(state) {
     timeLeft.value = state.timeLeft;
     hasSubmitted.value = state.hasSubmitted;
     hasBet.value = state.hasBet;
-    votedFor.value = state.votedFor;
     sentReactions.value = state.sentReactions;
 }

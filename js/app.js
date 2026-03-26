@@ -83,13 +83,6 @@ export function handlePhaseChange(oldStatus, newStatus) {
         state.sentReactions = 0;
         syncTimer();
         startTimer();
-    } else if (newStatus === 'curating') {
-        playSound('click');
-    } else if (newStatus === 'voting') {
-        playSound('click');
-        state.votedFor = null;
-        syncTimer();
-        startTimer();
     } else if (newStatus === 'betting') {
         playSound('click');
         state.hasBet = false;
@@ -248,29 +241,6 @@ export async function submitPunchline() {
 }
 
 /**
- * Cast a vote for a curated submission during the voting phase.
- * @param {number} submissionId - ID of the submission to vote for.
- * @returns {Promise<void>}
- */
-export async function castVote(submissionId) {
-    if (state.votedFor) return;
-    playSound('bet');
-    // Optimistic update with guard
-    state.votedFor = submissionId;
-    if (state.room?.audienceVotes) state.room.audienceVotes[state.playerName] = submissionId;
-    setOptimisticGuard(2000);
-    render();
-    try {
-        await api('castVote', { roomId: state.roomId, playerName: state.playerName, submissionId });
-    } catch (e) {
-        state.votedFor = null; // Revert on error
-        clearOptimisticGuard();
-        if (state.room?.audienceVotes) delete state.room.audienceVotes[state.playerName];
-        if (e.message) { state.error = e.message; render(); }
-    }
-}
-
-/**
  * Place a bet on the currently selected submission with optimistic update.
  * @returns {Promise<void>}
  */
@@ -388,7 +358,6 @@ export function leaveRoom() {
     state.isHost = false;
     state.hasSubmitted = false;
     state.hasBet = false;
-    state.votedFor = null;
     state.punchlineText = '';
     state.appealInProgress = false;
     state.appealResult = null;

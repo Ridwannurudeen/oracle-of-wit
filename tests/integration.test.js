@@ -366,16 +366,6 @@ describe('Integration Tests', () => {
       // Clear the advance lock
       delete store[`lock:advance:${roomId}`];
 
-      // Make AI calls fail
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn(async (url, opts = {}) => {
-        const urlStr = typeof url === 'string' ? url : url.toString();
-        if (urlStr.includes('anthropic.com')) {
-          throw new Error('AI timeout');
-        }
-        return originalFetch(url, opts);
-      });
-
       // getRoom should NOT return 500 — it catches auto-advance errors
       const req = makeReq({ method: 'GET', query: { action: 'getRoom', roomId } });
       const res = makeRes();
@@ -384,8 +374,6 @@ describe('Integration Tests', () => {
       expect(res._status).toBe(200);
       expect(res._body.room).toBeDefined();
       expect(res._body.room.id).toBe(roomId);
-
-      globalThis.fetch = originalFetch;
     });
   });
 
@@ -420,7 +408,7 @@ describe('Integration Tests', () => {
       expect(res._status).toBe(200);
       // Should have auto-advanced past submitting
       expect(res._body.room.status).not.toBe('submitting');
-      expect(['betting', 'curating']).toContain(res._body.room.status);
+      expect(res._body.room.status).toBe('betting');
     });
 
     it('getRoom auto-advances from betting when phaseEndsAt is expired', async () => {

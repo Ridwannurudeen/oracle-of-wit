@@ -1381,7 +1381,7 @@ describe('Render Function Output', () => {
 
             const html = renderJudging();
             expect(html).toContain('CHAIN UNAVAILABLE');
-            expect(html).toContain('AI FALLBACK');
+            expect(html).toContain('COIN FLIP FALLBACK');
         });
 
         it('shows CONNECTED TO GENLAYER banner when genLayerFailed is false', () => {

@@ -28,13 +28,18 @@ class OracleOfWit(gl.Contract):
     leaderboard: TreeMap[str, int]  # player_name -> total_score
     player_games: TreeMap[str, str]  # player_name -> JSON array of game_ids
     seasons: TreeMap[str, str]  # season_id -> archived leaderboard JSON
+    player_profiles: TreeMap[str, str]  # player_id -> profile JSON (replaces Turso)
+    hall_of_fame: TreeMap[str, str]  # index key -> joke JSON
+    prompt_pool: TreeMap[str, str]  # category -> JSON array of prompts
     total_games: int
     total_judgments: int
+    hall_of_fame_count: int
 
     def __init__(self):
         """Initialize the Oracle of Wit contract"""
         self.total_games = 0
         self.total_judgments = 0
+        self.hall_of_fame_count = 0
 
     @gl.public.view
     def get_game(self, game_id: str) -> typing.Any:
@@ -65,6 +70,163 @@ class OracleOfWit(gl.Contract):
             "total_games": self.total_games,
             "total_judgments": self.total_judgments
         }
+
+    @gl.public.view
+    def get_profile(self, player_id: str) -> typing.Any:
+        """Get a player profile by ID"""
+        profile_json = self.player_profiles.get(player_id, None)
+        if profile_json is None:
+            return None
+        return json.loads(profile_json)
+
+    @gl.public.view
+    def get_hall_of_fame(self, limit: int = 50) -> typing.Any:
+        """Get top hall of fame entries, sorted by date descending"""
+        entries = []
+        for key in self.hall_of_fame:
+            try:
+                entry = json.loads(self.hall_of_fame[key])
+                entries.append(entry)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        entries.sort(key=lambda x: x.get("date", 0), reverse=True)
+        return entries[:limit]
+
+    @gl.public.view
+    def get_prompt_pool_size(self, category: str) -> int:
+        """Get the number of available prompts in the pool for a category"""
+        pool_json = self.prompt_pool.get(category, "[]")
+        try:
+            pool = json.loads(pool_json)
+            return len(pool)
+        except (json.JSONDecodeError, ValueError):
+            return 0
+
+    @gl.public.write
+    def update_profile(self, player_id: str, profile_json: str) -> typing.Any:
+        """Upsert a player profile"""
+        try:
+            json.loads(profile_json)  # validate JSON
+        except (json.JSONDecodeError, ValueError):
+            raise Exception("Invalid JSON for profile")
+        self.player_profiles[player_id] = profile_json
+        return {"updated": True, "player_id": player_id}
+
+    @gl.public.write
+    def record_game(self, game_id: str, results_json: str) -> typing.Any:
+        """
+        Enhanced record_game_result — updates profiles + leaderboard + hall of fame in one tx.
+        results_json: {finalScores: [{playerName, score}], hallOfFame?: {prompt, punchline, author, commentary, category}}
+        """
+        try:
+            results = json.loads(results_json)
+        except (json.JSONDecodeError, ValueError):
+            raise Exception("Invalid JSON for results")
+
+        final_scores = results.get("final_scores", [])
+
+        # Update leaderboard
+        for player in final_scores:
+            name = player["playerName"]
+            score = player["score"]
+            current = self.leaderboard.get(name, 0)
+            self.leaderboard[name] = current + score
+
+            pg = json.loads(self.player_games.get(name, "[]"))
+            if game_id not in pg:
+                pg.append(game_id)
+                self.player_games[name] = json.dumps(pg)
+
+        # Update game state
+        existing_json = self.games.get(game_id, None)
+        if existing_json:
+            try:
+                game = json.loads(existing_json)
+            except (json.JSONDecodeError, ValueError):
+                game = {"id": game_id}
+            game["status"] = "finished"
+            self.games[game_id] = json.dumps(game)
+
+        # Hall of fame entry (optional)
+        hof_entry = results.get("hall_of_fame", None)
+        if hof_entry:
+            key = str(self.hall_of_fame_count)
+            hof_entry["date"] = hof_entry.get("date", 0)
+            self.hall_of_fame[key] = json.dumps(hof_entry)
+            self.hall_of_fame_count += 1
+            # Cap at 50 — remove oldest if over limit
+            if self.hall_of_fame_count > 50:
+                oldest_key = str(self.hall_of_fame_count - 51)
+                try:
+                    del self.hall_of_fame[oldest_key]
+                except KeyError:
+                    pass
+
+        return {"recorded": True, "players_updated": len(final_scores)}
+
+    @gl.public.write
+    def add_to_hall_of_fame(self, joke_json: str) -> typing.Any:
+        """Add a winning joke to the hall of fame, capped at 50"""
+        try:
+            joke = json.loads(joke_json)
+        except (json.JSONDecodeError, ValueError):
+            raise Exception("Invalid JSON for joke")
+
+        key = str(self.hall_of_fame_count)
+        self.hall_of_fame[key] = joke_json
+        self.hall_of_fame_count += 1
+
+        # Cap at 50
+        if self.hall_of_fame_count > 50:
+            oldest_key = str(self.hall_of_fame_count - 51)
+            try:
+                del self.hall_of_fame[oldest_key]
+            except KeyError:
+                pass
+
+        return {"added": True, "count": min(self.hall_of_fame_count, 50)}
+
+    @gl.public.write
+    def generate_prompts(self, category: str, count: int) -> typing.Any:
+        """Batch-generate prompts via AI and store in prompt_pool"""
+        prompt = f"""Generate {count} unique and funny joke setups for the category "{category}".
+Each setup should end with "..." or a question mark, leaving room for a punchline.
+Return ONLY a JSON array of strings, e.g. ["Why did...", "What happens when..."]"""
+
+        result = gl.exec_prompt(prompt)
+        try:
+            prompts = json.loads(result.strip())
+            if not isinstance(prompts, list):
+                prompts = []
+        except (json.JSONDecodeError, ValueError):
+            prompts = []
+
+        existing_json = self.prompt_pool.get(category, "[]")
+        try:
+            existing = json.loads(existing_json)
+        except (json.JSONDecodeError, ValueError):
+            existing = []
+
+        existing.extend(prompts)
+        self.prompt_pool[category] = json.dumps(existing)
+
+        return {"generated": len(prompts), "total": len(existing)}
+
+    @gl.public.write
+    def pop_prompt(self, category: str) -> typing.Any:
+        """Remove and return one prompt from the pool"""
+        pool_json = self.prompt_pool.get(category, "[]")
+        try:
+            pool = json.loads(pool_json)
+        except (json.JSONDecodeError, ValueError):
+            pool = []
+
+        if len(pool) == 0:
+            return None
+
+        prompt = pool.pop(0)
+        self.prompt_pool[category] = json.dumps(pool)
+        return prompt
 
     @gl.public.view
     def get_player_history(self, player_name: str) -> typing.Any:
@@ -194,16 +356,48 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
         # Update leaderboard
         current_score = self.leaderboard.get(winner["playerName"], 0)
         self.leaderboard[winner["playerName"]] = current_score + 100
-        
+
         # Update stats
         self.total_judgments += 1
-        
+
+        # Block 2: Generate commentary/roasts (non-comparative — leader runs, validators grade quality)
+        commentary_prompt = f"""You are the Oracle of Wit, a savage comedy judge.
+The winner of this round is submission #{winner["id"]} by {winner["playerName"]}.
+
+JOKE SETUP: "{joke_setup}"
+CATEGORY: {category}
+
+SUBMITTED PUNCHLINES:
+{submissions_text}
+
+Write a witty 1-sentence comment about the winner, and a 1-sentence roast for each losing submission.
+
+Respond with ONLY valid JSON (no markdown):
+{{"winnerComment": "<1 witty sentence>", "roasts": {{{", ".join([f'"{s["id"]}": "<1 sentence>"' for s in submissions_list if s["id"] != winner["id"]])}}}}}"""
+
+        def generate_commentary() -> str:
+            result = gl.exec_prompt(commentary_prompt)
+            return result.strip()
+
+        try:
+            commentary_raw = gl.eq_principle_prompt_non_comparative(
+                generate_commentary,
+                "The commentary must be witty and relevant to the submissions"
+            )
+            try:
+                commentary = json.loads(commentary_raw)
+            except (json.JSONDecodeError, ValueError):
+                commentary = {"winnerComment": None, "roasts": {}}
+        except Exception:
+            commentary = {"winnerComment": None, "roasts": {}}
+
         return {
             "winner_id": winner["id"],
             "winner_name": winner["playerName"],
             "winning_punchline": winner["punchline"],
             "consensus_method": "optimistic_democracy",
-            "validators_agreed": True
+            "validators_agreed": True,
+            "commentary": commentary
         }
     
     @gl.public.write

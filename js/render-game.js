@@ -1,6 +1,6 @@
 /**
  * @module render-game
- * @description Game phase screen renderers: submitting, curating, voting, betting, judging.
+ * @description Game phase screen renderers: submitting, betting, judging.
  */
 
 import { state } from './state.js';
@@ -62,96 +62,6 @@ export function renderSubmitting() {
     `;
 }
 
-
-/**
- * Render the AI curation phase (large-room filtering to top 8).
- * @returns {string} HTML string.
- */
-export function renderCurating() {
-    const r = state.room;
-    if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
-    const total = r.submissions?.length || 0;
-
-    return `
-        <div class="space-y-6">
-            <div class="glow-card p-6 text-center" style="border-radius:20px">
-                <div class="w-20 h-20 oracle-eye rounded-full flex items-center justify-center mx-auto mb-4 animate-glow processing">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#A855F7" stroke-width="1.5" style="filter:brightness(1.5)"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3" fill="#A855F7" stroke="none"/></svg>
-                </div>
-                <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-2">PROCESSING</p>
-                <h2 class="text-2xl font-display font-bold mb-2 tracking-wider">ORACLE CURATING</h2>
-                <p class="text-wit text-xs font-mono mb-4 tracking-wider">${total} SUBMISSIONS — SELECTING TOP 8</p>
-                <div class="glass-bright rounded-xl p-4">
-                    <div class="flex items-center justify-center gap-3">
-                        <div class="spinner"></div>
-                        <span class="text-gray-400 text-xs font-mono tracking-wider">ANALYZING HUMOR, ORIGINALITY, TIMING</span>
-                    </div>
-                    <div class="mt-3 h-1.5 bg-obsidian rounded-full overflow-hidden border border-white/[0.04]">
-                        <div class="h-full bg-gradient-to-r from-wit to-oracle rounded-full animate-pulse" style="width:75%"></div>
-                    </div>
-                </div>
-                <p class="text-[10px] font-mono text-gray-600 mt-3 tracking-wider">LARGE ROOM — AUDIENCE VOTES ON FINALISTS</p>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Render the audience voting phase for curated submissions.
- * @returns {string} HTML string.
- */
-export function renderVoting() {
-    const r = state.room;
-    if (!r) return '<div class="space-y-4 py-8"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card" style="height:120px"></div><div class="skeleton skeleton-text" style="width:60%;margin:0 auto"></div></div>';
-
-    const curatedIds = r.curatedIds || [];
-    const curated = r.submissions?.filter(s => curatedIds.includes(s.id)) || [];
-    const totalVotes = Object.keys(r.audienceVotes || {}).length;
-    const humanPlayers = r.players?.filter(p => !p.isBot).length || 1;
-    const hasVoted = !!(r.audienceVotes?.[state.playerName]);
-
-    return `
-        <div class="space-y-4">
-            ${renderTimer()}
-            <div class="glow-card p-3 flex justify-between items-center">
-                <div class="flex items-center gap-2">
-                    <span class="font-mono text-oracle text-xs font-bold tracking-wider">ROUND ${r.currentRound} — VOTE</span>
-                    <span class="text-[9px] font-mono text-oracle/60 bg-oracle/10 px-1.5 py-0.5 rounded border border-oracle/20">TOP ${curated.length}</span>
-                </div>
-                <span class="text-[10px] font-mono text-gray-500 tracking-wider">${totalVotes}/${humanPlayers} VOTED</span>
-            </div>
-            <div class="glow-card p-2.5">
-                <p class="text-sm text-gray-400 truncate">"${esc(r.jokePrompt)}"</p>
-                ${r.promptSource?.type === 'community' ? `<p class="text-[10px] font-mono text-oracle mt-1 tracking-wider">COMMUNITY PROMPT by ${esc(r.promptSource.author)}</p>` : ''}
-            </div>
-            <p class="text-center text-sm font-display font-bold tracking-wider">VOTE FOR THE FUNNIEST</p>
-            <div class="space-y-3">
-                ${curated.map(s => `
-                    <div ${hasVoted ? '' : `data-action="castVote" data-submission-id="${s.id}"`} class="glow-card p-4 ${hasVoted ? 'opacity-70' : 'cursor-pointer hover:bg-white/[0.03]'} ${state.votedFor === s.id ? 'card-selected' : ''}">
-                        <div class="flex items-start gap-3">
-                            <div class="w-10 h-10 rounded-full flex items-center justify-center font-mono font-bold text-sm ${state.votedFor === s.id ? 'bg-oracle text-void' : 'bg-obsidian border border-white/[0.06]'}">${s.id}</div>
-                            <p class="flex-1 text-sm">${esc(s.punchline)}</p>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            ${hasVoted ? `
-                <div class="glow-card glow-card-green p-6 text-center">
-                    <div class="w-14 h-14 rounded-full bg-oracle/10 border border-oracle/30 flex items-center justify-center mx-auto mb-2">
-                        <span class="text-oracle font-mono text-xl">OK</span>
-                    </div>
-                    <p class="text-oracle font-display font-bold text-lg tracking-wider">VOTE CAST</p>
-                    <p class="text-gray-500 mt-2 text-xs font-mono tracking-wider">AWAITING OTHER PLAYERS</p>
-                </div>
-            ` : `
-                <p class="text-center text-[10px] font-mono text-gray-600 tracking-wider">TAP A PUNCHLINE TO VOTE — CANNOT VOTE FOR YOUR OWN</p>
-            `}
-            ${state.isHost ? `
-                <button data-action="advancePhase" class="btn btn-ghost w-full py-2 rounded-xl text-xs">SKIP TO RESULTS</button>
-            ` : ''}
-        </div>
-    `;
-}
 
 /**
  * Render the betting phase with submission selection, reactions, and bet slider.
@@ -362,7 +272,7 @@ export function renderJudging() {
             </div>
 
             ${consensusReached ? '<div class="mt-4 glass-bright rounded-xl p-3 animate-scaleIn"><div class="flex items-center justify-center gap-3"><div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-wit animate-pulse"></div><div class="w-6 h-0.5 bg-wit/50"></div><div class="w-3 h-3 rounded-sm bg-wit animate-pulse" style="animation-delay:0.2s"></div><div class="w-6 h-0.5 bg-green-500/50"></div><div class="w-3 h-3 rounded-sm bg-green-500 animate-pulse" style="animation-delay:0.4s"></div></div></div><p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider flex items-center justify-center gap-1">' + glLogo(11, 'rgb(34,197,94)') + ' BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p></div>'
-            : state.room?.genLayerFailed ? '<div class="mt-4 glow-card glow-card-red p-3 text-center"><p class="text-xs font-mono font-bold text-red-400 tracking-wider">\u26A0\uFE0F CHAIN UNAVAILABLE \u2014 USING AI FALLBACK</p><p class="text-[10px] font-mono text-gray-600 mt-1">GenLayer consensus unreachable. AI determining winner.</p></div>'
+            : state.room?.genLayerFailed ? '<div class="mt-4 glow-card glow-card-red p-3 text-center"><p class="text-xs font-mono font-bold text-red-400 tracking-wider">\u26A0\uFE0F CHAIN UNAVAILABLE \u2014 COIN FLIP FALLBACK</p><p class="text-[10px] font-mono text-gray-600 mt-1">GenLayer consensus unreachable. Random selection used.</p></div>'
             : '<div class="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-600 tracking-wider">' + glLogo(12, 'rgb(34,197,94)') + '<span>CONNECTED TO GENLAYER INTELLIGENT CONTRACTS</span></div>'}
         </div>
     `;
