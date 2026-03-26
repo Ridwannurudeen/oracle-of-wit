@@ -361,31 +361,9 @@ export function renderJudging() {
                 </div>
             </div>
 
-            ${consensusReached ? `
-            <div class="mt-4 glass-bright rounded-xl p-3 animate-scaleIn">
-                <div class="flex items-center justify-center gap-3">
-                    <div class="flex items-center gap-1">
-                        <div class="w-3 h-3 rounded-sm bg-wit animate-pulse"></div>
-                        <div class="w-6 h-0.5 bg-wit/50"></div>
-                        <div class="w-3 h-3 rounded-sm bg-wit animate-pulse" style="animation-delay:0.2s"></div>
-                        <div class="w-6 h-0.5 bg-green-500/50"></div>
-                        <div class="w-3 h-3 rounded-sm bg-green-500 animate-pulse" style="animation-delay:0.4s"></div>
-                    </div>
-                </div>
-                <p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider flex items-center justify-center gap-1">${glLogo(11, 'rgb(34,197,94)')} BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p>
-            </div>
-            ` : `
-            ${state.room?.genLayerFailed ? `
-            <div class="mt-4 glow-card glow-card-red p-3 text-center">
-                <p class="text-xs font-mono font-bold text-red-400 tracking-wider">\u26A0\uFE0F CHAIN UNAVAILABLE \u2014 USING AI FALLBACK</p>
-                <p class="text-[10px] font-mono text-gray-600 mt-1">GenLayer consensus unreachable. AI determining winner.</p>
-            </div>
-            ` : `
-            <div class="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-600 tracking-wider">
-                ${glLogo(12, 'rgb(34,197,94)')}
-                <span>CONNECTED TO GENLAYER INTELLIGENT CONTRACTS</span>
-            </div>
-            `}
+            ${consensusReached ? '<div class="mt-4 glass-bright rounded-xl p-3 animate-scaleIn"><div class="flex items-center justify-center gap-3"><div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-wit animate-pulse"></div><div class="w-6 h-0.5 bg-wit/50"></div><div class="w-3 h-3 rounded-sm bg-wit animate-pulse" style="animation-delay:0.2s"></div><div class="w-6 h-0.5 bg-green-500/50"></div><div class="w-3 h-3 rounded-sm bg-green-500 animate-pulse" style="animation-delay:0.4s"></div></div></div><p class="text-[10px] font-mono text-green-400 mt-1.5 text-center tracking-wider flex items-center justify-center gap-1">' + glLogo(11, 'rgb(34,197,94)') + ' BLOCK CONFIRMED &middot; TX FINALIZED ON GENLAYER</p></div>'
+            : state.room?.genLayerFailed ? '<div class="mt-4 glow-card glow-card-red p-3 text-center"><p class="text-xs font-mono font-bold text-red-400 tracking-wider">\u26A0\uFE0F CHAIN UNAVAILABLE \u2014 USING AI FALLBACK</p><p class="text-[10px] font-mono text-gray-600 mt-1">GenLayer consensus unreachable. AI determining winner.</p></div>'
+            : '<div class="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-600 tracking-wider">' + glLogo(12, 'rgb(34,197,94)') + '<span>CONNECTED TO GENLAYER INTELLIGENT CONTRACTS</span></div>'}
         </div>
     `;
 }
