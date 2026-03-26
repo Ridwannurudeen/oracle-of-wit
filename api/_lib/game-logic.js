@@ -3,7 +3,7 @@
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
 import { SUBMISSION_TIME, BETTING_TIME, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme } from './constants.js';
 import { logger } from './logger.js';
-import { submitToGenLayer, pollGenLayerResult, writeHallOfFame } from './genlayer.js';
+import { submitToGenLayer, pollGenLayerResult } from './genlayer.js';
 
 /**
  * Pick a random winner from submissions (coin flip fallback).
@@ -252,15 +252,24 @@ export async function createRoundResult(room, winnerId, now, judgingMethod = 'un
     room.lastJudgingMethod = judgingMethod;
 
     if (winningSubmission && !room.players.find(p => p.name === winningSubmission.playerName)?.isBot) {
-        const jokeEntry = JSON.stringify({
+        const jokeEntry = {
             prompt: room.jokePrompt,
             punchline: winningSubmission.punchline,
             author: winningSubmission.playerName,
             commentary: aiCommentary?.winnerComment || null,
             category: room.category,
             date: Date.now()
-        });
-        writeHallOfFame(jokeEntry).catch(e => logger.error('Hall of fame update failed', { service: 'game', error: e.message }));
+        };
+        // Persist hall of fame to Redis (fire-and-forget)
+        (async () => {
+            try {
+                const hof = await redisGet('hall_of_fame') || [];
+                hof.unshift(jokeEntry);
+                await redisSet('hall_of_fame', hof.slice(0, 50), 86400 * 365);
+            } catch (e) {
+                logger.error('Hall of fame Redis update failed', { service: 'game', error: e.message });
+            }
+        })();
     }
 
     if (setRoom) await setRoom(room.id, room);

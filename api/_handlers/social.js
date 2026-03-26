@@ -1,7 +1,7 @@
 // Social/community feature handlers
 
 import { redisGet, redisSet } from '../_lib/redis.js';
-import { appealWithGenLayer, pollGenLayerResult, readHallOfFame } from '../_lib/genlayer.js';
+import { appealWithGenLayer, pollGenLayerResult } from '../_lib/genlayer.js';
 import { getProfile, saveProfile } from '../_lib/profiles.js';
 
 /**
@@ -148,17 +148,12 @@ export async function createShare(body, ctx) {
 }
 
 /**
- * Get the hall of fame (best winning jokes).
+ * Get the hall of fame (best winning jokes) from Redis.
  * @param {Object} body
  * @param {import('../_lib/types.js').HandlerContext} ctx
  * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getHallOfFame(body, ctx) {
-    // Try GenLayer first, Redis as transition fallback
-    const chainHof = await readHallOfFame(50);
-    if (chainHof && Array.isArray(chainHof) && chainHof.length > 0) {
-        return { status: 200, data: { success: true, hallOfFame: chainHof, source: 'genlayer' } };
-    }
     const hof = await redisGet('hall_of_fame') || [];
     return { status: 200, data: { success: true, hallOfFame: hof, source: 'redis' } };
 }

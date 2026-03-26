@@ -5,9 +5,11 @@
  * so we replicate the core logic in JS to verify correctness without
  * needing a running GenLayer node.
  *
- * ~48 tests covering: judge_round, leaderboard, create_game,
- * record_game_result, appeal, season_reset, player_history,
- * data structure validation, and admin access control.
+ * Covers: get_stats, judge_round, appeal_judgment, record_game_count.
+ *
+ * Note: TreeMap[str, ...] is not yet supported on Bradbury testnet.
+ * Leaderboard, profiles, game history, hall of fame, prompt pool, and
+ * seasons are managed by Redis + the backend until TreeMap stabilizes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 
@@ -15,38 +17,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // Minimal in-memory replica of the contract state & logic
 //
 // Mirrors contracts/oracle_of_wit.py as closely as possible.
-// TreeMap[str, str] in the Python contract stores JSON strings; here we
-// keep parsed objects in memory but replicate every branch & edge case.
+// Storage is minimal (counters only) — game state lives in Redis.
 // ---------------------------------------------------------------------------
 
 class OracleOfWitSim {
   constructor() {
-    // Access control is at the SDK layer (private key signs writeContract calls).
-    // No on-chain admin model needed.
-    this.games = {};          // game_id -> game state object
-    this.leaderboard = {};    // player_name -> total_score (int)
-    this.player_games = {};   // player_name -> [game_id, ...]
-    this.seasons = {};        // season_id -> archive object
-    this.player_profiles = {}; // player_id -> profile object
-    this.hall_of_fame = {};   // index key -> joke object
-    this.prompt_pool = {};    // category -> [prompt, ...]
     this.total_games = 0;
     this.total_judgments = 0;
-    this.hall_of_fame_count = 0;
   }
 
   // -- View functions -------------------------------------------------------
-
-  get_game(game_id) {
-    return this.games[game_id] ?? null;
-  }
-
-  get_leaderboard(limit = 20) {
-    return Object.entries(this.leaderboard)
-      .map(([name, score]) => ({ name, score }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
-  }
 
   get_stats() {
     return {
@@ -55,133 +35,7 @@ class OracleOfWitSim {
     };
   }
 
-  get_player_history(player_name) {
-    const total_score = this.leaderboard[player_name] ?? 0;
-    const game_ids = this.player_games[player_name] ?? [];
-
-    const games = [];
-    for (const gid of game_ids) {
-      const g = this.games[gid];
-      if (g) {
-        games.push({
-          game_id: g.id ?? gid,
-          category: g.category ?? 'unknown',
-          status: g.status ?? 'unknown',
-        });
-      }
-    }
-
-    return {
-      player_name,
-      total_score,
-      games_played: games.length,
-      games,
-    };
-  }
-
-  get_season(season_id) {
-    return this.seasons[season_id] ?? null;
-  }
-
-  get_profile(player_id) {
-    return this.player_profiles[player_id] ?? null;
-  }
-
-  get_hall_of_fame(limit = 50) {
-    const entries = Object.values(this.hall_of_fame)
-      .sort((a, b) => (b.date || 0) - (a.date || 0));
-    return entries.slice(0, limit);
-  }
-
-  get_prompt_pool_size(category) {
-    return (this.prompt_pool[category] || []).length;
-  }
-
   // -- Write functions ------------------------------------------------------
-
-  update_profile(player_id, profile) {
-    this.player_profiles[player_id] = typeof profile === 'string' ? JSON.parse(profile) : profile;
-    return { updated: true, player_id };
-  }
-
-  record_game(game_id, results) {
-    const parsed = typeof results === 'string' ? JSON.parse(results) : results;
-    const final_scores = parsed.final_scores || [];
-
-    for (const p of final_scores) {
-      const current = this.leaderboard[p.playerName] ?? 0;
-      this.leaderboard[p.playerName] = current + p.score;
-      const pg = this.player_games[p.playerName] ?? [];
-      if (!pg.includes(game_id)) {
-        pg.push(game_id);
-        this.player_games[p.playerName] = pg;
-      }
-    }
-
-    const game = this.games[game_id];
-    if (game) game.status = 'finished';
-
-    if (parsed.hall_of_fame) {
-      const key = String(this.hall_of_fame_count);
-      this.hall_of_fame[key] = parsed.hall_of_fame;
-      this.hall_of_fame_count++;
-      if (this.hall_of_fame_count > 50) {
-        delete this.hall_of_fame[String(this.hall_of_fame_count - 51)];
-      }
-    }
-
-    return { recorded: true, players_updated: final_scores.length };
-  }
-
-  add_to_hall_of_fame(joke) {
-    const parsed = typeof joke === 'string' ? JSON.parse(joke) : joke;
-    const key = String(this.hall_of_fame_count);
-    this.hall_of_fame[key] = parsed;
-    this.hall_of_fame_count++;
-    if (this.hall_of_fame_count > 50) {
-      delete this.hall_of_fame[String(this.hall_of_fame_count - 51)];
-    }
-    return { added: true, count: Math.min(this.hall_of_fame_count, 50) };
-  }
-
-  generate_prompts(category, prompts) {
-    // In sim, accept prompts directly (in real contract, gl.exec_prompt generates them)
-    const existing = this.prompt_pool[category] || [];
-    existing.push(...prompts);
-    this.prompt_pool[category] = existing;
-    return { generated: prompts.length, total: existing.length };
-  }
-
-  pop_prompt(category) {
-    const pool = this.prompt_pool[category] || [];
-    if (pool.length === 0) return null;
-    return pool.shift();
-  }
-
-  create_game(game_id, host_name, category) {
-    if (this.games[game_id] != null) {
-      throw new Error('Game ID already exists');
-    }
-
-    const state = {
-      id: game_id,
-      host: host_name,
-      category,
-      status: 'created',
-      rounds_judged: 0,
-    };
-    this.games[game_id] = state;
-    this.total_games += 1;
-
-    // Track host in player_games index (matches Python contract)
-    const hostGames = this.player_games[host_name] ?? [];
-    if (!hostGames.includes(game_id)) {
-      hostGames.push(game_id);
-      this.player_games[host_name] = hostGames;
-    }
-
-    return state;
-  }
 
   /**
    * Judge a round. In the real contract the winner_id comes from
@@ -191,6 +45,7 @@ class OracleOfWitSim {
     if (submissions.length === 0) throw new Error('No submissions to judge');
 
     if (submissions.length === 1) {
+      this.total_judgments += 1;
       return {
         winner_id: submissions[0].id,
         winner_name: submissions[0].playerName,
@@ -203,9 +58,7 @@ class OracleOfWitSim {
     let winner = submissions.find((s) => s.id === winner_id_from_od);
     if (!winner) winner = submissions[0];
 
-    // Update leaderboard (+100 per round win)
-    const current = this.leaderboard[winner.playerName] ?? 0;
-    this.leaderboard[winner.playerName] = current + 100;
+    // Update stats (no leaderboard — TreeMap not supported)
     this.total_judgments += 1;
 
     return {
@@ -218,29 +71,6 @@ class OracleOfWitSim {
     };
   }
 
-  record_game_result(game_id, final_scores) {
-    // Idempotency: skip if already finished
-    const game = this.games[game_id];
-    if (game && game.status === 'finished') {
-      return { recorded: false, reason: 'already_finished' };
-    }
-
-    for (const p of final_scores) {
-      const current = this.leaderboard[p.playerName] ?? 0;
-      this.leaderboard[p.playerName] = current + p.score;
-
-      // Track in player_games index
-      const pg = this.player_games[p.playerName] ?? [];
-      if (!pg.includes(game_id)) {
-        pg.push(game_id);
-        this.player_games[p.playerName] = pg;
-      }
-    }
-
-    if (game) game.status = 'finished';
-    return { recorded: true, players_updated: final_scores.length };
-  }
-
   appeal_judgment(game_id, submissions, original_winner_id, new_winner_id_from_od) {
     if (submissions.length <= 1) {
       return {
@@ -251,20 +81,6 @@ class OracleOfWitSim {
     }
 
     const overturned = new_winner_id_from_od !== original_winner_id;
-    if (overturned) {
-      const oldWinner = submissions.find((s) => s.id === original_winner_id);
-      const newWinner = submissions.find((s) => s.id === new_winner_id_from_od);
-      if (oldWinner) {
-        this.leaderboard[oldWinner.playerName] = Math.max(
-          0,
-          (this.leaderboard[oldWinner.playerName] ?? 0) - 100,
-        );
-      }
-      if (newWinner) {
-        this.leaderboard[newWinner.playerName] =
-          (this.leaderboard[newWinner.playerName] ?? 0) + 100;
-      }
-    }
     this.total_judgments += 1;
 
     const newWinnerSub = submissions.find((s) => s.id === new_winner_id_from_od);
@@ -277,30 +93,9 @@ class OracleOfWitSim {
     };
   }
 
-  season_reset(season_id) {
-    if (this.seasons[season_id] != null) {
-      throw new Error('Season ID already archived');
-    }
-
-    // Snapshot current leaderboard sorted descending
-    const snapshot = Object.entries(this.leaderboard)
-      .map(([name, score]) => ({ name, score }))
-      .sort((a, b) => b.score - a.score);
-
-    const archive = {
-      season_id,
-      leaderboard: snapshot,
-      total_games: this.total_games,
-      total_judgments: this.total_judgments,
-    };
-    this.seasons[season_id] = archive;
-
-    // Reset every player's score to 0 (Python contract sets to 0, not delete)
-    for (const entry of snapshot) {
-      this.leaderboard[entry.name] = 0;
-    }
-
-    return archive;
+  record_game_count() {
+    this.total_games += 1;
+    return { total_games: this.total_games };
   }
 }
 
@@ -323,11 +118,35 @@ describe('OracleOfWit Contract', () => {
     const stats = contract.get_stats();
     expect(stats.total_games).toBe(0);
     expect(stats.total_judgments).toBe(0);
-    expect(contract.get_leaderboard()).toEqual([]);
   });
 
   // =========================================================================
-  // judge_round (~8 tests)
+  // get_stats
+  // =========================================================================
+
+  describe('get_stats', () => {
+    it('returns total_games and total_judgments', () => {
+      const stats = contract.get_stats();
+      expect(stats).toHaveProperty('total_games');
+      expect(stats).toHaveProperty('total_judgments');
+      expect(typeof stats.total_games).toBe('number');
+      expect(typeof stats.total_judgments).toBe('number');
+    });
+
+    it('reflects changes after judging and recording', () => {
+      contract.record_game_count();
+      contract.judge_round('G1', [
+        { id: 1, playerName: 'Alice', punchline: 'A' },
+        { id: 2, playerName: 'Bob', punchline: 'B' },
+      ], 1);
+      const stats = contract.get_stats();
+      expect(stats.total_games).toBe(1);
+      expect(stats.total_judgments).toBe(1);
+    });
+  });
+
+  // =========================================================================
+  // judge_round
   // =========================================================================
 
   describe('judge_round', () => {
@@ -348,10 +167,9 @@ describe('OracleOfWit Contract', () => {
       expect(result.consensus_method).toBe('single_submission');
     });
 
-    it('does not update leaderboard for single submission', () => {
+    it('increments total_judgments for single submission', () => {
       contract.judge_round('G1', [submissions[0]], 1);
-      // single_submission path returns early without touching the leaderboard
-      expect(contract.get_leaderboard()).toEqual([]);
+      expect(contract.get_stats().total_judgments).toBe(1);
     });
 
     it('selects the OD-chosen winner', () => {
@@ -367,12 +185,6 @@ describe('OracleOfWit Contract', () => {
       expect(result.validators_agreed).toBe(true);
     });
 
-    it('awards 100 points to the winner', () => {
-      contract.judge_round('G1', submissions, 2);
-      const lb = contract.get_leaderboard();
-      expect(lb[0]).toEqual({ name: 'Bob', score: 100 });
-    });
-
     it('falls back to first submission for invalid winner ID', () => {
       const result = contract.judge_round('G1', submissions, 999);
       expect(result.winner_id).toBe(1);
@@ -384,159 +196,34 @@ describe('OracleOfWit Contract', () => {
       contract.judge_round('G2', submissions, 2);
       expect(contract.get_stats().total_judgments).toBe(2);
     });
+  });
 
-    it('accumulates leaderboard points across rounds', () => {
-      contract.judge_round('G1', submissions, 1); // Alice +100
-      contract.judge_round('G2', submissions, 1); // Alice +100
-      const lb = contract.get_leaderboard();
-      const alice = lb.find((e) => e.name === 'Alice');
-      expect(alice.score).toBe(200);
+  // =========================================================================
+  // judge_round commentary
+  // =========================================================================
+
+  describe('judge_round commentary', () => {
+    const submissions = [
+      { id: 1, playerName: 'Alice', punchline: 'Joke A' },
+      { id: 2, playerName: 'Bob', punchline: 'Joke B' },
+    ];
+
+    it('returns commentary object in result', () => {
+      const result = contract.judge_round('G1', submissions, 1);
+      expect(result).toHaveProperty('commentary');
+      expect(result.commentary).toHaveProperty('winnerComment');
+      expect(result.commentary).toHaveProperty('roasts');
+    });
+
+    it('commentary is present alongside winner info', () => {
+      const result = contract.judge_round('G1', submissions, 2);
+      expect(result.winner_id).toBe(2);
+      expect(result.commentary.winnerComment).toBeDefined();
     });
   });
 
   // =========================================================================
-  // Leaderboard (~5 tests)
-  // =========================================================================
-
-  describe('get_leaderboard', () => {
-    it('returns empty array when no scores recorded', () => {
-      expect(contract.get_leaderboard()).toEqual([]);
-    });
-
-    it('new player starts at 0 (not on board until points earned)', () => {
-      const lb = contract.get_leaderboard();
-      const unknown = lb.find((e) => e.name === 'Ghost');
-      expect(unknown).toBeUndefined();
-    });
-
-    it('accumulates points correctly', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      contract.record_game_result('G2', [{ playerName: 'Alice', score: 250 }]);
-      const lb = contract.get_leaderboard();
-      expect(lb[0]).toEqual({ name: 'Alice', score: 350 });
-    });
-
-    it('sorts by score descending', () => {
-      contract.record_game_result('G1', [
-        { playerName: 'Low', score: 10 },
-        { playerName: 'High', score: 999 },
-        { playerName: 'Mid', score: 500 },
-      ]);
-      const lb = contract.get_leaderboard();
-      expect(lb[0].name).toBe('High');
-      expect(lb[1].name).toBe('Mid');
-      expect(lb[2].name).toBe('Low');
-    });
-
-    it('respects the limit parameter', () => {
-      for (let i = 0; i < 25; i++) {
-        contract.record_game_result(`G${i}`, [{ playerName: `Player${i}`, score: (i + 1) * 10 }]);
-      }
-      expect(contract.get_leaderboard(5).length).toBe(5);
-      expect(contract.get_leaderboard(20).length).toBe(20);
-      expect(contract.get_leaderboard().length).toBe(20); // default limit
-    });
-  });
-
-  // =========================================================================
-  // create_game (~4 tests)
-  // =========================================================================
-
-  describe('create_game', () => {
-    it('creates a game and increments total_games', () => {
-      const game = contract.create_game('GAME_A1', 'Alice', 'tech');
-      expect(game.id).toBe('GAME_A1');
-      expect(game.host).toBe('Alice');
-      expect(game.category).toBe('tech');
-      expect(contract.get_stats().total_games).toBe(1);
-    });
-
-    it('rejects duplicate game IDs', () => {
-      contract.create_game('GAME_A1', 'Alice', 'tech');
-      expect(() => contract.create_game('GAME_A1', 'Bob', 'crypto')).toThrow(
-        'Game ID already exists',
-      );
-    });
-
-    it('stores game retrievable via get_game', () => {
-      contract.create_game('GAME_X', 'Host', 'general');
-      const fetched = contract.get_game('GAME_X');
-      expect(fetched).not.toBeNull();
-      expect(fetched.host).toBe('Host');
-      expect(fetched.category).toBe('general');
-    });
-
-    it('initializes with status "created" and rounds_judged 0', () => {
-      const game = contract.create_game('G1', 'Alice', 'puns');
-      expect(game.status).toBe('created');
-      expect(game.rounds_judged).toBe(0);
-    });
-
-    it('tracks host in player_games index', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.create_game('G2', 'Alice', 'puns');
-      const history = contract.get_player_history('Alice');
-      expect(history.games_played).toBe(2);
-    });
-  });
-
-  // =========================================================================
-  // record_game_result (~5 tests)
-  // =========================================================================
-
-  describe('record_game_result', () => {
-    it('updates leaderboard with final scores', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      const result = contract.record_game_result('G1', [
-        { playerName: 'Alice', score: 300 },
-        { playerName: 'Bob', score: 150 },
-      ]);
-      expect(result.recorded).toBe(true);
-      expect(result.players_updated).toBe(2);
-      const lb = contract.get_leaderboard();
-      expect(lb[0]).toEqual({ name: 'Alice', score: 300 });
-      expect(lb[1]).toEqual({ name: 'Bob', score: 150 });
-    });
-
-    it('marks game as finished', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      expect(contract.get_game('G1').status).toBe('finished');
-    });
-
-    it('is idempotent - second call on finished game returns already_finished', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      const first = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      expect(first.recorded).toBe(true);
-
-      const second = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      expect(second.recorded).toBe(false);
-      expect(second.reason).toBe('already_finished');
-
-      // Score should not double-count
-      expect(contract.get_leaderboard()[0].score).toBe(100);
-    });
-
-    it('accumulates scores across multiple games', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      contract.record_game_result('G2', [{ playerName: 'Alice', score: 200 }]);
-      expect(contract.get_leaderboard()[0].score).toBe(300);
-    });
-
-    it('tracks players in player_games index', () => {
-      contract.create_game('G1', 'Host', 'tech');
-      contract.record_game_result('G1', [
-        { playerName: 'Alice', score: 50 },
-        { playerName: 'Bob', score: 75 },
-      ]);
-      const aliceHistory = contract.get_player_history('Alice');
-      expect(aliceHistory.games_played).toBe(1);
-      expect(aliceHistory.games[0].game_id).toBe('G1');
-    });
-  });
-
-  // =========================================================================
-  // appeal_judgment (~5 tests)
+  // appeal_judgment
   // =========================================================================
 
   describe('appeal_judgment', () => {
@@ -560,29 +247,9 @@ describe('OracleOfWit Contract', () => {
       expect(result.new_winner_name).toBe('Bob');
     });
 
-    it('deducts 100 points from old winner on overturn', () => {
-      // Give Alice 200 points first
-      contract.judge_round('G1', submissions, 1);
-      contract.judge_round('G2', submissions, 1);
-      expect(contract.get_leaderboard()[0].score).toBe(200);
-
-      // Appeal overturns to Bob
+    it('increments total_judgments on appeal', () => {
       contract.appeal_judgment('G1', submissions, 1, 2);
-      const alice = contract.get_leaderboard().find((e) => e.name === 'Alice');
-      expect(alice.score).toBe(100); // 200 - 100
-    });
-
-    it('awards 100 points to new winner on overturn', () => {
-      contract.appeal_judgment('G1', submissions, 1, 2);
-      const bob = contract.get_leaderboard().find((e) => e.name === 'Bob');
-      expect(bob.score).toBe(100);
-    });
-
-    it('leaderboard cannot go below 0 on overturn', () => {
-      // Alice has 0 points, overturn should clamp at 0
-      contract.appeal_judgment('G1', submissions, 1, 2);
-      const alice = contract.get_leaderboard().find((e) => e.name === 'Alice');
-      expect(alice.score).toBe(0);
+      expect(contract.get_stats().total_judgments).toBe(1);
     });
 
     it('handles single submission appeal gracefully', () => {
@@ -598,117 +265,37 @@ describe('OracleOfWit Contract', () => {
   });
 
   // =========================================================================
-  // season_reset (~4 tests)
+  // record_game_count
   // =========================================================================
 
-  describe('season_reset', () => {
-    it('archives the current leaderboard snapshot', () => {
-      contract.record_game_result('G1', [
-        { playerName: 'Alice', score: 500 },
-        { playerName: 'Bob', score: 300 },
-      ]);
-      const archive = contract.season_reset('S1');
-      expect(archive.season_id).toBe('S1');
-      expect(archive.leaderboard.length).toBe(2);
-      expect(archive.leaderboard[0].name).toBe('Alice');
-      expect(archive.leaderboard[0].score).toBe(500);
+  describe('record_game_count', () => {
+    it('increments total_games by 1', () => {
+      const result = contract.record_game_count();
+      expect(result.total_games).toBe(1);
+      expect(contract.get_stats().total_games).toBe(1);
     });
 
-    it('resets all player scores to 0', () => {
-      contract.record_game_result('G1', [
-        { playerName: 'Alice', score: 500 },
-        { playerName: 'Bob', score: 300 },
-      ]);
-      contract.season_reset('S1');
-
-      const lb = contract.get_leaderboard();
-      // Scores are 0 — players still exist but with zero
-      for (const entry of lb) {
-        expect(entry.score).toBe(0);
-      }
+    it('increments total_games cumulatively', () => {
+      contract.record_game_count();
+      contract.record_game_count();
+      contract.record_game_count();
+      expect(contract.get_stats().total_games).toBe(3);
     });
 
-    it('throws on duplicate season ID', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      contract.season_reset('S1');
-      expect(() => contract.season_reset('S1')).toThrow('Season ID already archived');
+    it('returns the new total_games count', () => {
+      contract.record_game_count();
+      const result = contract.record_game_count();
+      expect(result.total_games).toBe(2);
     });
 
-    it('snapshot is sorted by score descending', () => {
-      contract.record_game_result('G1', [
-        { playerName: 'Low', score: 10 },
-        { playerName: 'High', score: 999 },
-        { playerName: 'Mid', score: 500 },
-      ]);
-      const archive = contract.season_reset('S1');
-      expect(archive.leaderboard[0].name).toBe('High');
-      expect(archive.leaderboard[1].name).toBe('Mid');
-      expect(archive.leaderboard[2].name).toBe('Low');
-    });
-
-    it('archived season is retrievable via get_season', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      contract.season_reset('S1');
-      const season = contract.get_season('S1');
-      expect(season).not.toBeNull();
-      expect(season.season_id).toBe('S1');
-      expect(season.leaderboard.length).toBe(1);
-    });
-
-    it('includes total_games and total_judgments in archive', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.judge_round('G1', [
-        { id: 1, playerName: 'Alice', punchline: 'A' },
-        { id: 2, playerName: 'Bob', punchline: 'B' },
-      ], 1);
-      const archive = contract.season_reset('S1');
-      expect(archive.total_games).toBe(1);
-      expect(archive.total_judgments).toBe(1);
+    it('does not affect total_judgments', () => {
+      contract.record_game_count();
+      expect(contract.get_stats().total_judgments).toBe(0);
     });
   });
 
   // =========================================================================
-  // get_player_history (~4 tests)
-  // =========================================================================
-
-  describe('get_player_history', () => {
-    it('returns defaults for unknown player', () => {
-      const history = contract.get_player_history('Nobody');
-      expect(history.player_name).toBe('Nobody');
-      expect(history.total_score).toBe(0);
-      expect(history.games_played).toBe(0);
-      expect(history.games).toEqual([]);
-    });
-
-    it('returns correct total score', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 200 }]);
-      contract.record_game_result('G2', [{ playerName: 'Alice', score: 150 }]);
-      const history = contract.get_player_history('Alice');
-      expect(history.total_score).toBe(350);
-    });
-
-    it('returns correct game count', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.create_game('G2', 'Alice', 'puns');
-      contract.create_game('G3', 'Bob', 'dark');
-      const history = contract.get_player_history('Alice');
-      expect(history.games_played).toBe(2);
-    });
-
-    it('populates game details (id, category, status)', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      const history = contract.get_player_history('Alice');
-      expect(history.games.length).toBeGreaterThan(0);
-      const game = history.games.find((g) => g.game_id === 'G1');
-      expect(game).toBeDefined();
-      expect(game.category).toBe('tech');
-      expect(game.status).toBe('finished');
-    });
-  });
-
-  // =========================================================================
-  // Data Structure Validation (~5 tests)
+  // Data Structure Validation
   // =========================================================================
 
   describe('Data structure validation', () => {
@@ -734,18 +321,6 @@ describe('OracleOfWit Contract', () => {
       expect(result).toHaveProperty('validators_agreed');
     });
 
-    it('record_game_result output has correct format', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      const success = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      expect(success).toHaveProperty('recorded', true);
-      expect(success).toHaveProperty('players_updated');
-      expect(typeof success.players_updated).toBe('number');
-
-      const skip = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      expect(skip).toHaveProperty('recorded', false);
-      expect(skip).toHaveProperty('reason', 'already_finished');
-    });
-
     it('appeal output has correct format', () => {
       const result = contract.appeal_judgment('G1', submissions, 1, 2);
       expect(result).toHaveProperty('new_winner_id');
@@ -756,236 +331,18 @@ describe('OracleOfWit Contract', () => {
       expect(typeof result.overturned).toBe('boolean');
     });
 
-    it('season archive has correct format', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      const archive = contract.season_reset('S1');
-      expect(archive).toHaveProperty('season_id');
-      expect(archive).toHaveProperty('leaderboard');
-      expect(archive).toHaveProperty('total_games');
-      expect(archive).toHaveProperty('total_judgments');
-      expect(Array.isArray(archive.leaderboard)).toBe(true);
-      for (const entry of archive.leaderboard) {
-        expect(entry).toHaveProperty('name');
-        expect(entry).toHaveProperty('score');
-      }
+    it('record_game_count output has correct format', () => {
+      const result = contract.record_game_count();
+      expect(result).toHaveProperty('total_games');
+      expect(typeof result.total_games).toBe('number');
     });
 
-    it('player history has correct format', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      const history = contract.get_player_history('Alice');
-      expect(history).toHaveProperty('player_name');
-      expect(history).toHaveProperty('total_score');
-      expect(history).toHaveProperty('games_played');
-      expect(history).toHaveProperty('games');
-      expect(Array.isArray(history.games)).toBe(true);
-      expect(typeof history.total_score).toBe('number');
-      expect(typeof history.games_played).toBe('number');
-    });
-  });
-
-  // =========================================================================
-  // player_profiles (~4 tests)
-  // =========================================================================
-
-  describe('player_profiles', () => {
-    it('returns null for unknown player profile', () => {
-      expect(contract.get_profile('unknown_player')).toBeNull();
-    });
-
-    it('stores and retrieves a profile', () => {
-      const profile = { id: 'player1', name: 'Alice', lifetimeXP: 500, level: 3 };
-      contract.update_profile('player1', profile);
-      const result = contract.get_profile('player1');
-      expect(result.name).toBe('Alice');
-      expect(result.lifetimeXP).toBe(500);
-    });
-
-    it('upserts existing profile', () => {
-      contract.update_profile('player1', { name: 'Alice', lifetimeXP: 100 });
-      contract.update_profile('player1', { name: 'Alice', lifetimeXP: 500 });
-      const result = contract.get_profile('player1');
-      expect(result.lifetimeXP).toBe(500);
-    });
-
-    it('handles multiple profiles independently', () => {
-      contract.update_profile('p1', { name: 'Alice' });
-      contract.update_profile('p2', { name: 'Bob' });
-      expect(contract.get_profile('p1').name).toBe('Alice');
-      expect(contract.get_profile('p2').name).toBe('Bob');
-    });
-  });
-
-  // =========================================================================
-  // hall_of_fame (~5 tests)
-  // =========================================================================
-
-  describe('hall_of_fame', () => {
-    it('returns empty array initially', () => {
-      expect(contract.get_hall_of_fame()).toEqual([]);
-    });
-
-    it('adds and retrieves a joke', () => {
-      contract.add_to_hall_of_fame({ prompt: 'Why?', punchline: 'Because.', author: 'Alice', date: 1000 });
-      const hof = contract.get_hall_of_fame();
-      expect(hof).toHaveLength(1);
-      expect(hof[0].author).toBe('Alice');
-    });
-
-    it('sorts by date descending', () => {
-      contract.add_to_hall_of_fame({ prompt: 'A', punchline: 'old', author: 'A', date: 100 });
-      contract.add_to_hall_of_fame({ prompt: 'B', punchline: 'new', author: 'B', date: 200 });
-      const hof = contract.get_hall_of_fame();
-      expect(hof[0].punchline).toBe('new');
-      expect(hof[1].punchline).toBe('old');
-    });
-
-    it('caps at 50 entries', () => {
-      for (let i = 0; i < 55; i++) {
-        contract.add_to_hall_of_fame({ prompt: `P${i}`, punchline: `L${i}`, author: 'X', date: i });
-      }
-      const hof = contract.get_hall_of_fame();
-      expect(hof.length).toBeLessThanOrEqual(50);
-    });
-
-    it('respects limit parameter', () => {
-      for (let i = 0; i < 10; i++) {
-        contract.add_to_hall_of_fame({ prompt: `P${i}`, punchline: `L${i}`, author: 'X', date: i });
-      }
-      expect(contract.get_hall_of_fame(3)).toHaveLength(3);
-    });
-  });
-
-  // =========================================================================
-  // prompt_pool (~4 tests)
-  // =========================================================================
-
-  describe('prompt_pool', () => {
-    it('returns 0 for empty pool', () => {
-      expect(contract.get_prompt_pool_size('tech')).toBe(0);
-    });
-
-    it('generates and stores prompts', () => {
-      contract.generate_prompts('tech', ['Why did the coder...', 'What happens when...']);
-      expect(contract.get_prompt_pool_size('tech')).toBe(2);
-    });
-
-    it('pops a prompt and reduces pool size', () => {
-      contract.generate_prompts('crypto', ['Prompt A', 'Prompt B']);
-      const popped = contract.pop_prompt('crypto');
-      expect(popped).toBe('Prompt A');
-      expect(contract.get_prompt_pool_size('crypto')).toBe(1);
-    });
-
-    it('returns null when popping empty pool', () => {
-      expect(contract.pop_prompt('empty_cat')).toBeNull();
-    });
-
-    it('accumulates prompts across generate calls', () => {
-      contract.generate_prompts('general', ['P1']);
-      contract.generate_prompts('general', ['P2', 'P3']);
-      expect(contract.get_prompt_pool_size('general')).toBe(3);
-    });
-  });
-
-  // =========================================================================
-  // record_game (enhanced) (~4 tests)
-  // =========================================================================
-
-  describe('record_game (enhanced)', () => {
-    it('updates leaderboard with final scores', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.record_game('G1', { final_scores: [{ playerName: 'Alice', score: 300 }] });
-      const lb = contract.get_leaderboard();
-      expect(lb[0]).toEqual({ name: 'Alice', score: 300 });
-    });
-
-    it('adds hall of fame entry when provided', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.record_game('G1', {
-        final_scores: [{ playerName: 'Alice', score: 100 }],
-        hall_of_fame: { prompt: 'Why?', punchline: 'Because.', author: 'Alice', category: 'tech', date: Date.now() },
-      });
-      expect(contract.get_hall_of_fame()).toHaveLength(1);
-    });
-
-    it('marks game as finished', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      contract.record_game('G1', { final_scores: [{ playerName: 'Alice', score: 100 }] });
-      expect(contract.get_game('G1').status).toBe('finished');
-    });
-
-    it('works without hall_of_fame entry', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      const result = contract.record_game('G1', { final_scores: [{ playerName: 'Bob', score: 50 }] });
-      expect(result.recorded).toBe(true);
-      expect(contract.get_hall_of_fame()).toHaveLength(0);
-    });
-  });
-
-  // =========================================================================
-  // judge_round commentary (~2 tests)
-  // =========================================================================
-
-  describe('judge_round commentary', () => {
-    const submissions = [
-      { id: 1, playerName: 'Alice', punchline: 'Joke A' },
-      { id: 2, playerName: 'Bob', punchline: 'Joke B' },
-    ];
-
-    it('returns commentary object in result', () => {
-      const result = contract.judge_round('G1', submissions, 1);
-      expect(result).toHaveProperty('commentary');
-      expect(result.commentary).toHaveProperty('winnerComment');
-      expect(result.commentary).toHaveProperty('roasts');
-    });
-
-    it('commentary is present alongside winner info', () => {
-      const result = contract.judge_round('G1', submissions, 2);
-      expect(result.winner_id).toBe(2);
-      expect(result.commentary.winnerComment).toBeDefined();
-    });
-  });
-
-  // =========================================================================
-  // JSON safety / edge cases
-  // =========================================================================
-
-  describe('Edge cases', () => {
-    it('get_game returns null for non-existent game', () => {
-      expect(contract.get_game('NOPE')).toBeNull();
-    });
-
-    it('get_season returns null for non-existent season', () => {
-      expect(contract.get_season('NOPE')).toBeNull();
-    });
-
-    it('multiple season resets work independently', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 500 }]);
-      contract.season_reset('S1');
-
-      // Play more after reset
-      contract.record_game_result('G2', [{ playerName: 'Alice', score: 200 }]);
-      const archive2 = contract.season_reset('S2');
-      expect(archive2.leaderboard[0].score).toBe(200); // only post-reset score
-    });
-  });
-
-  // =========================================================================
-  // Access Control — SDK-layer enforcement (~2 tests)
-  // =========================================================================
-
-  describe('SDK-layer access control', () => {
-    it('record_game_result works without caller param (SDK signs tx)', () => {
-      contract.create_game('G1', 'Alice', 'tech');
-      const result = contract.record_game_result('G1', [{ playerName: 'Alice', score: 100 }]);
-      expect(result.recorded).toBe(true);
-    });
-
-    it('season_reset works without caller param (SDK signs tx)', () => {
-      contract.record_game_result('G1', [{ playerName: 'Alice', score: 500 }]);
-      const archive = contract.season_reset('S1');
-      expect(archive.season_id).toBe('S1');
-      expect(archive.leaderboard.length).toBe(1);
+    it('get_stats output has correct format', () => {
+      const stats = contract.get_stats();
+      expect(stats).toHaveProperty('total_games');
+      expect(stats).toHaveProperty('total_judgments');
+      expect(typeof stats.total_games).toBe('number');
+      expect(typeof stats.total_judgments).toBe('number');
     });
   });
 });

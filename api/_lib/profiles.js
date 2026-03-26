@@ -3,8 +3,6 @@
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
 import { LEVEL_THRESHOLDS, ACHIEVEMENTS, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, CATEGORIZED_PROMPTS } from './constants.js';
 import { logger } from './logger.js';
-import { readProfile, writeProfile } from './genlayer.js';
-
 /**
  * Get the level info for a given XP amount.
  * @param {number} xp
@@ -31,26 +29,16 @@ export function getNextLevelXP(xp) {
 }
 
 /**
- * Retrieve a player profile. Redis first, GenLayer fallback.
+ * Retrieve a player profile from Redis.
  * @param {string} playerId
  * @returns {Promise<import('./types.js').Profile|null>}
  */
 export async function getProfile(playerId) {
-    const cached = await redisGet(`player:${playerId}`);
-    if (cached) return cached;
-    // GenLayer fallback — rehydrate Redis cache on hit
-    const persisted = await readProfile(playerId);
-    if (persisted) {
-        const level = getLevelForXP(persisted.lifetimeXP);
-        persisted.level = level.level;
-        persisted.title = level.title;
-        await redisSet(`player:${playerId}`, persisted, 86400 * 365);
-    }
-    return persisted;
+    return await redisGet(`player:${playerId}`) || null;
 }
 
 /**
- * Save a player profile to Redis + GenLayer (auto-calculates level/title).
+ * Save a player profile to Redis (auto-calculates level/title).
  * @param {import('./types.js').Profile} profile
  * @returns {Promise<void>}
  */
@@ -59,8 +47,6 @@ export async function saveProfile(profile) {
     profile.level = level.level;
     profile.title = level.title;
     await redisSet(`player:${profile.id}`, profile, 86400 * 365);
-    // Fire-and-forget GenLayer write (non-blocking)
-    writeProfile(profile.id, JSON.stringify(profile)).catch(() => {});
 }
 
 /**

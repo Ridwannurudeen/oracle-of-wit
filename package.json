@@ -15,7 +15,7 @@
   "dependencies": {
     "@preact/signals": "^2.8.2",
     "discord-interactions": "^4.1.0",
-    "genlayer-js": "^0.21.1",
+    "genlayer-js": "^0.23.1",
     "preact": "^10.29.0",
     "siwe": "^3.0.0"
   },

@@ -1,9 +1,9 @@
 /**
  * Unit tests for the GenLayer module (api/_lib/genlayer.js).
  *
- * Covers circuit breaker logic, client caching, readLeaderboard,
- * readStats, and the main write operations (submitToGenLayer,
- * recordOnChain, createGameOnChain, appealWithGenLayer, pollGenLayerResult).
+ * Covers circuit breaker logic, client caching, readStats,
+ * and the main write operations (submitToGenLayer,
+ * appealWithGenLayer, pollGenLayerResult).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
@@ -39,19 +39,9 @@ const {
   _resetGLCircuit,
   getGenLayerClient,
   submitToGenLayer,
-  recordOnChain,
-  createGameOnChain,
   appealWithGenLayer,
   pollGenLayerResult,
-  readLeaderboard,
   readStats,
-  readProfile,
-  writeProfile,
-  recordGameFull,
-  readHallOfFame,
-  writeHallOfFame,
-  generatePromptsOnChain,
-  popPromptOnChain,
 } = await import('../api/_lib/genlayer.js');
 
 // ---------------------------------------------------------------------------
@@ -66,12 +56,6 @@ async function tripCircuitBreaker() {
   await submitToGenLayer([{ id: 1, playerName: 'A', punchline: 'x' }], 'p', 'c', 'g2');
   await submitToGenLayer([{ id: 1, playerName: 'A', punchline: 'x' }], 'p', 'c', 'g3');
   _mockGLClient.writeContract.mockResolvedValue('0xmocktxhash');
-}
-
-/** Force a single successful write to reset consecutive failure count. */
-async function forceSuccess() {
-  _mockGLClient.writeContract.mockResolvedValue('0xmocktxhash');
-  await createGameOnChain('reset-game', 'Host', 'general');
 }
 
 // ---------------------------------------------------------------------------
@@ -171,24 +155,19 @@ describe('GenLayer Module', () => {
       const submitResult = await submitToGenLayer(
         [{ id: 1, playerName: 'A', punchline: 'x' }], 'p', 'c', 'g'
       );
-      const recordResult = await recordOnChain('game1', [{ name: 'A', score: 10 }]);
-      const createResult = await createGameOnChain('game2', 'Host', 'tech');
       const appealResult = await appealWithGenLayer('game3', 'p', 'c', [], 1);
 
       expect(submitResult).toBeNull();
-      expect(recordResult).toBe(false);
-      expect(createResult).toBe(false);
       expect(appealResult).toBeNull();
 
       // writeContract should never have been called — requests were blocked
       expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
     });
 
-    it('open circuit causes readLeaderboard and readStats to return null', async () => {
+    it('open circuit causes readStats to return null', async () => {
       await tripCircuitBreaker();
       _mockGLClient.readContract.mockClear();
 
-      expect(await readLeaderboard()).toBeNull();
       expect(await readStats()).toBeNull();
       expect(_mockGLClient.readContract).not.toHaveBeenCalled();
     });
@@ -319,58 +298,6 @@ describe('GenLayer Module', () => {
   });
 
   // =========================================================================
-  // recordOnChain
-  // =========================================================================
-
-  describe('recordOnChain', () => {
-    it('submits record_game_result and returns txHash', async () => {
-      const scores = [
-        { name: 'Alice', score: 100 },
-        { name: 'Bob', score: 80 },
-      ];
-      const result = await recordOnChain('GAME_1', scores);
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'record_game_result',
-          args: ['GAME_1', expect.any(String)],
-        })
-      );
-    });
-
-    it('returns false on SDK error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('revert'));
-      const result = await recordOnChain('GAME_1', [{ name: 'A', score: 1 }]);
-      expect(result).toBe(false);
-    });
-  });
-
-  // =========================================================================
-  // createGameOnChain
-  // =========================================================================
-
-  describe('createGameOnChain', () => {
-    it('submits create_game and returns txHash', async () => {
-      const result = await createGameOnChain('GAME_2', 'HostBob', 'crypto');
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'create_game',
-          args: ['GAME_2', 'HostBob', 'crypto'],
-        })
-      );
-    });
-
-    it('returns false on SDK error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('revert'));
-      const result = await createGameOnChain('GAME_2', 'Host', 'tech');
-      expect(result).toBe(false);
-    });
-  });
-
-  // =========================================================================
   // appealWithGenLayer
   // =========================================================================
 
@@ -391,44 +318,6 @@ describe('GenLayer Module', () => {
     it('returns null on SDK error', async () => {
       _mockGLClient.writeContract.mockRejectedValueOnce(new Error('appeal fail'));
       const result = await appealWithGenLayer('GAME_3', 'p', 'c', [], 1);
-      expect(result).toBeNull();
-    });
-  });
-
-  // =========================================================================
-  // readLeaderboard
-  // =========================================================================
-
-  describe('readLeaderboard', () => {
-    it('calls readContract with get_leaderboard and returns result', async () => {
-      const mockData = [{ name: 'Alice', totalScore: 500 }];
-      _mockGLClient.readContract.mockResolvedValueOnce(mockData);
-
-      const result = await readLeaderboard(10);
-
-      expect(result).toEqual(mockData);
-      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'get_leaderboard',
-          args: [10],
-        })
-      );
-    });
-
-    it('uses default limit of 20', async () => {
-      _mockGLClient.readContract.mockResolvedValueOnce([]);
-      await readLeaderboard();
-
-      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          args: [20],
-        })
-      );
-    });
-
-    it('returns null on error (catch path)', async () => {
-      _mockGLClient.readContract.mockRejectedValueOnce(new Error('read fail'));
-      const result = await readLeaderboard();
       expect(result).toBeNull();
     });
   });
@@ -457,198 +346,6 @@ describe('GenLayer Module', () => {
       _mockGLClient.readContract.mockRejectedValueOnce(new Error('stats fail'));
       const result = await readStats();
       expect(result).toBeNull();
-    });
-  });
-
-  // =========================================================================
-  // readProfile
-  // =========================================================================
-
-  describe('readProfile', () => {
-    it('calls readContract with get_profile and returns result', async () => {
-      const mockProfile = { id: 'player1', displayName: 'Alice', xp: 500 };
-      _mockGLClient.readContract.mockResolvedValueOnce(mockProfile);
-
-      const result = await readProfile('player1');
-
-      expect(result).toEqual(mockProfile);
-      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'get_profile',
-          args: ['player1'],
-        })
-      );
-    });
-
-    it('returns null on error', async () => {
-      _mockGLClient.readContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await readProfile('player1')).toBeNull();
-    });
-
-    it('returns null when circuit breaker is open', async () => {
-      await tripCircuitBreaker();
-      _mockGLClient.readContract.mockClear();
-      expect(await readProfile('player1')).toBeNull();
-      expect(_mockGLClient.readContract).not.toHaveBeenCalled();
-    });
-  });
-
-  // =========================================================================
-  // writeProfile
-  // =========================================================================
-
-  describe('writeProfile', () => {
-    it('calls writeContract with update_profile and returns txHash', async () => {
-      const result = await writeProfile('player1', '{"xp":100}');
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'update_profile',
-          args: ['player1', '{"xp":100}'],
-        })
-      );
-    });
-
-    it('returns false on error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await writeProfile('p1', '{}')).toBe(false);
-    });
-
-    it('returns false when circuit breaker is open', async () => {
-      await tripCircuitBreaker();
-      _mockGLClient.writeContract.mockClear();
-      expect(await writeProfile('p1', '{}')).toBe(false);
-      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
-    });
-  });
-
-  // =========================================================================
-  // recordGameFull
-  // =========================================================================
-
-  describe('recordGameFull', () => {
-    it('calls writeContract with record_game and returns txHash', async () => {
-      const resultsJson = JSON.stringify({ scores: [{ name: 'A', score: 10 }] });
-      const result = await recordGameFull('GAME_1', resultsJson);
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'record_game',
-          args: ['GAME_1', resultsJson],
-        })
-      );
-    });
-
-    it('returns false on error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await recordGameFull('GAME_1', '{}')).toBe(false);
-    });
-  });
-
-  // =========================================================================
-  // readHallOfFame
-  // =========================================================================
-
-  describe('readHallOfFame', () => {
-    it('calls readContract with get_hall_of_fame and returns result', async () => {
-      const mockData = [{ joke: 'ha', player: 'Alice' }];
-      _mockGLClient.readContract.mockResolvedValueOnce(mockData);
-
-      const result = await readHallOfFame(10);
-
-      expect(result).toEqual(mockData);
-      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'get_hall_of_fame',
-          args: [10],
-        })
-      );
-    });
-
-    it('uses default limit of 50', async () => {
-      _mockGLClient.readContract.mockResolvedValueOnce([]);
-      await readHallOfFame();
-
-      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
-        expect.objectContaining({ args: [50] })
-      );
-    });
-
-    it('returns null on error', async () => {
-      _mockGLClient.readContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await readHallOfFame()).toBeNull();
-    });
-  });
-
-  // =========================================================================
-  // writeHallOfFame
-  // =========================================================================
-
-  describe('writeHallOfFame', () => {
-    it('calls writeContract with add_to_hall_of_fame and returns txHash', async () => {
-      const jokeJson = JSON.stringify({ joke: 'funny', player: 'Bob' });
-      const result = await writeHallOfFame(jokeJson);
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'add_to_hall_of_fame',
-          args: [jokeJson],
-        })
-      );
-    });
-
-    it('returns false on error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await writeHallOfFame('{}')).toBe(false);
-    });
-  });
-
-  // =========================================================================
-  // generatePromptsOnChain
-  // =========================================================================
-
-  describe('generatePromptsOnChain', () => {
-    it('calls writeContract with generate_prompts and returns txHash', async () => {
-      const result = await generatePromptsOnChain('tech', 5);
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'generate_prompts',
-          args: ['tech', 5],
-        })
-      );
-    });
-
-    it('returns false on error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await generatePromptsOnChain('tech', 5)).toBe(false);
-    });
-  });
-
-  // =========================================================================
-  // popPromptOnChain
-  // =========================================================================
-
-  describe('popPromptOnChain', () => {
-    it('calls writeContract with pop_prompt and returns txHash', async () => {
-      const result = await popPromptOnChain('tech');
-
-      expect(result).toBe('0xmocktxhash');
-      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
-        expect.objectContaining({
-          functionName: 'pop_prompt',
-          args: ['tech'],
-        })
-      );
-    });
-
-    it('returns false on error', async () => {
-      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
-      expect(await popPromptOnChain('tech')).toBe(false);
     });
   });
 });

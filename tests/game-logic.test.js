@@ -20,7 +20,6 @@ vi.mock('../api/_lib/redis.js', () => ({
 vi.mock('../api/_lib/genlayer.js', () => ({
     submitToGenLayer: vi.fn(async () => null),
     pollGenLayerResult: vi.fn(async () => null),
-    writeHallOfFame: vi.fn(async () => '0xmocktxhash'),
 }));
 
 vi.mock('../api/_lib/logger.js', () => ({
@@ -43,7 +42,7 @@ import {
 } from '../api/_lib/game-logic.js';
 
 import { redisGet, redisSet } from '../api/_lib/redis.js';
-import { submitToGenLayer, pollGenLayerResult, writeHallOfFame } from '../api/_lib/genlayer.js';
+import { submitToGenLayer, pollGenLayerResult } from '../api/_lib/genlayer.js';
 import { CATEGORIZED_PROMPTS } from '../api/_lib/constants.js';
 
 // ---------------------------------------------------------------------------
@@ -385,14 +384,22 @@ describe('createRoundResult', () => {
         expect(order).toContain(2);
     });
 
-    it('hall of fame updated for non-bot winners', async () => {
+    it('hall of fame updated for non-bot winners via Redis', async () => {
         const setRoom = vi.fn(async () => true);
         const room = makeRoom({ bets: [] });
 
         await createRoundResult(room, 1, Date.now(), 'claude_api', false, { winnerComment: 'Great!' }, null, setRoom);
 
-        expect(writeHallOfFame).toHaveBeenCalledWith(
-            expect.stringContaining('"author":"Alice"')
+        // Hall of fame is now written to Redis (fire-and-forget async)
+        // Wait a tick for the fire-and-forget to execute
+        await new Promise(r => setTimeout(r, 10));
+
+        expect(redisSet).toHaveBeenCalledWith(
+            'hall_of_fame',
+            expect.arrayContaining([
+                expect.objectContaining({ author: 'Alice' })
+            ]),
+            expect.any(Number)
         );
     });
 
@@ -410,9 +417,15 @@ describe('createRoundResult', () => {
             bets: [],
         });
 
+        redisSet.mockClear();
         await createRoundResult(room, 2, Date.now(), 'claude_api', false, null, null, setRoom);
 
-        expect(writeHallOfFame).not.toHaveBeenCalled();
+        // Wait a tick for any fire-and-forget to execute
+        await new Promise(r => setTimeout(r, 10));
+
+        // redisSet should NOT have been called with 'hall_of_fame'
+        const hofCalls = redisSet.mock.calls.filter(c => c[0] === 'hall_of_fame');
+        expect(hofCalls.length).toBe(0);
     });
 
     it('invalid winnerId falls back to first submission', async () => {

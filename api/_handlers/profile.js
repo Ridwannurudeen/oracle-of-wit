@@ -2,7 +2,7 @@
 
 import { redisGet, redisSet } from '../_lib/redis.js';
 import { BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, ACHIEVEMENTS } from '../_lib/constants.js';
-import { getGenLayerClient, readLeaderboard } from '../_lib/genlayer.js';
+import { getGenLayerClient } from '../_lib/genlayer.js';
 import { pickWinnerRandom } from '../_lib/game-logic.js';
 import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey } from '../_lib/profiles.js';
 import { generateToken, storePlayerSession } from '../_lib/auth.js';
@@ -15,11 +15,6 @@ import { generateNonce, storeNonce, consumeNonce, verifySiweMessage, buildSiweMe
  * @returns {Promise<import('../_lib/types.js').HandlerResult>}
  */
 export async function getLeaderboard(body, ctx) {
-    // Try GenLayer contract read first (authoritative), Redis fallback
-    const chainLb = await readLeaderboard(20);
-    if (chainLb && Array.isArray(chainLb) && chainLb.length > 0) {
-        return { status: 200, data: { success: true, leaderboard: chainLb.slice(0, 20), source: 'genlayer' } };
-    }
     const leaderboard = await ctx.getLeaderboard();
     return { status: 200, data: { success: true, leaderboard: leaderboard.slice(0, 20), source: 'redis' } };
 }

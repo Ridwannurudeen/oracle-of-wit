@@ -2,7 +2,7 @@
 
 import { SUBMISSION_TIME } from '../_lib/constants.js';
 import { transitionFromSubmitting, autoJudge, addBotBets, getNextPrompt } from '../_lib/game-logic.js';
-import { recordOnChain, postGameToDiscord } from '../_lib/genlayer.js';
+import { postGameToDiscord } from '../_lib/genlayer.js';
 import { getProfile, saveProfile, checkAchievements } from '../_lib/profiles.js';
 
 /**
@@ -179,21 +179,6 @@ export async function nextRound(body, ctx) {
     if (room.currentRound >= room.totalRounds) {
         room.status = 'finished';
         for (const p of room.players) await ctx.updateLeaderboard(p.name, p.score, p.isBot);
-        await ctx.setRoom(roomId, room);
-
-        // GenLayer record — awaited, with 1 retry
-        try {
-            const chainTx = await recordOnChain(roomId, room.players);
-            if (chainTx) {
-                room.chainRecordTxHash = chainTx;
-            } else {
-                await new Promise(r => setTimeout(r, 2000));
-                const retryTx = await recordOnChain(roomId, room.players);
-                if (retryTx) room.chainRecordTxHash = retryTx;
-            }
-        } catch (e) {
-            room.chainRecordFailed = true;
-        }
         await ctx.setRoom(roomId, room);
         postGameToDiscord(room).catch(e => console.error('[Discord] error:', e.message));
 

@@ -58,15 +58,15 @@ describe('API Handler', () => {
       expect(body.room.players.filter((p) => p.isBot).length).toBe(3);
     });
 
-    it('stores chainGameTxHash on room after chain call', async () => {
+    it('creates room without chain call (contract simplified)', async () => {
       const { body } = await call('createRoom', { hostName: 'Alice', category: 'tech' });
       expect(body.success).toBe(true);
       const roomId = body.roomId;
-      // Verify the room in the store has chainGameTxHash from the mock writeContract
+      // Room is created in Redis only (no on-chain create_game)
       const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
       expect(key).toBeDefined();
       const room = JSON.parse(store[key]);
-      expect(room.chainGameTxHash).toBe('0xmocktxhash');
+      expect(room.chainGameTxHash).toBeUndefined();
     });
   });
 
@@ -251,13 +251,11 @@ describe('API Handler', () => {
       expect(Array.isArray(res._body.leaderboard)).toBe(true);
     });
 
-    it('includes source field in response', async () => {
+    it('includes source field as redis', async () => {
       const req = makeReq({ method: 'GET', query: { action: 'getLeaderboard' } });
       const res = makeRes();
       await handler(req, res);
       expect(res._status).toBe(200);
-      expect(res._body.source).toBeDefined();
-      // Mock readContract returns null, so GenLayer fallback to Redis
       expect(res._body.source).toBe('redis');
     });
   });
@@ -364,9 +362,9 @@ describe('API Handler', () => {
       expect(body.room.status).toBe('finished');
     });
 
-    it('stores chainRecordTxHash after recording on chain', async () => {
+    it('finishes game without chain recording (contract simplified)', async () => {
       const roomId = await setupRoom('roundResults');
-      // Set currentRound = totalRounds so nextRound triggers game end and chain recording
+      // Set currentRound = totalRounds so nextRound triggers game end
       const key = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
       if (key) {
         const room = JSON.parse(store[key]);
@@ -376,10 +374,10 @@ describe('API Handler', () => {
       const { status, body } = await call('nextRound', { roomId, hostName: 'Host' });
       expect(status).toBe(200);
       expect(body.room.status).toBe('finished');
-      // Verify chainRecordTxHash was stored from the mock writeContract
+      // No on-chain recording (recordOnChain removed)
       const updatedKey = Object.keys(store).find(k => k.startsWith('room:') && k.includes(roomId));
       const updatedRoom = JSON.parse(store[updatedKey]);
-      expect(updatedRoom.chainRecordTxHash).toBe('0xmocktxhash');
+      expect(updatedRoom.chainRecordTxHash).toBeUndefined();
     });
   });
 
