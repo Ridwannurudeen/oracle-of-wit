@@ -103,7 +103,7 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
         # Non-deterministic AI call with Equivalence Principle
         # Multiple validators will independently run this and must agree
         def judge_comedy() -> int:
-            result = gl.exec_prompt(judging_prompt)
+            result = gl.nondet.exec_prompt(judging_prompt)
             # Extract just the number from the response
             try:
                 winner_id = int(result.strip())
@@ -119,9 +119,9 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
         # gl.eq_principle_prompt_comparative ensures all validators must return
         # the SAME winner ID for consensus to be reached.
         # If validators disagree, more are added until majority agrees.
-        winner_id = gl.eq_principle_prompt_comparative(
+        winner_id = gl.eq_principle.prompt_comparative(
             judge_comedy,
-            "Both results must select the same winner ID number"
+            principle="Both results must select the same winner ID number"
         )
 
         # Find the winning submission
@@ -153,11 +153,11 @@ Respond with ONLY valid JSON (no markdown):
 {{"winnerComment": "<1 witty sentence>", "roasts": {{{", ".join([f'"{s["id"]}": "<1 sentence>"' for s in submissions_list if s["id"] != winner["id"]])}}}}}"""
 
         def generate_commentary() -> str:
-            result = gl.exec_prompt(commentary_prompt)
+            result = gl.nondet.exec_prompt(commentary_prompt)
             return result.strip()
 
         try:
-            commentary_raw = gl.eq_principle_prompt_non_comparative(
+            commentary_raw = gl.eq_principle.prompt_non_comparative(
                 generate_commentary,
                 task="Generate witty commentary and roasts about comedy submissions",
                 criteria="The commentary must be witty and relevant to the submissions"
@@ -233,7 +233,7 @@ You must pick the OBJECTIVELY funniest submission.
 Respond with ONLY the ID number of the funniest submission (just the number, nothing else)."""
 
         def judge_appeal() -> int:
-            result = gl.exec_prompt(appeal_prompt)
+            result = gl.nondet.exec_prompt(appeal_prompt)
             try:
                 winner_id = int(result.strip())
                 valid_ids = [s["id"] for s in submissions_list]
@@ -243,9 +243,9 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
             except (ValueError, TypeError, KeyError):
                 return submissions_list[0]["id"]
 
-        new_winner_id = gl.eq_principle_prompt_comparative(
+        new_winner_id = gl.eq_principle.prompt_comparative(
             judge_appeal,
-            "Both results must select the same winner ID number"
+            principle="Both results must select the same winner ID number"
         )
         overturned = new_winner_id != original_winner_id
 
