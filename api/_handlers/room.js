@@ -41,7 +41,6 @@ export async function createRoom(body, ctx) {
     };
 
     // Register game on GenLayer before persisting (with 15s timeout for graceful degradation)
-    const glStart = Date.now();
     try {
         const result = await Promise.race([
             createGameOnChain(roomId, hostName, safeCategory, 5, players),
@@ -50,10 +49,7 @@ export async function createRoom(body, ctx) {
         if (result?.txHash) {
             room.chainTxHashes.create = result.txHash;
         }
-        console.log('[GenLayer] createGameOnChain:', result?.txHash ? 'OK' : 'null', 'in', Date.now() - glStart, 'ms');
-    } catch (e) {
-        console.error('[GenLayer] createGameOnChain error in', Date.now() - glStart, 'ms:', e.message);
-    }
+    } catch (e) { /* graceful degradation */ }
 
     await ctx.setRoom(roomId, room);
 

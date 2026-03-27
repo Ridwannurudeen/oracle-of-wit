@@ -4,8 +4,8 @@
 
 import { logger } from './logger.js';
 
-const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
-const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY;
+const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS?.trim();
+const GENLAYER_PRIVATE_KEY = process.env.GENLAYER_PRIVATE_KEY?.trim();
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 let _glClient = null;
