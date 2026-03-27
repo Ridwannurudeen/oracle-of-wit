@@ -333,7 +333,7 @@ export async function api(action, data = {}) {
         if (!res.ok || result.error) throw new Error(result.error || 'Error');
 
         // After successful mutating action, trigger immediate poll
-        const MUTATING_ACTIONS = new Set(['submitPunchline', 'placeBet', 'castVote', 'sendReaction', 'advancePhase', 'startGame']);
+        const MUTATING_ACTIONS = new Set(['submitPunchline', 'placeBet', 'sendReaction', 'advancePhase', 'startGame']);
         if (MUTATING_ACTIONS.has(action) && state.roomId) {
             setTimeout(() => fetchRoom(), 100); // slight delay to let server process
         }

@@ -14,7 +14,7 @@ import { render } from './render.js';
 import {
     toggleSound, startBootSequence, leaveRoom, joinRoom, createRoom,
     startGame, submitPunchline, advancePhase, selectSubmission,
-    sendReaction, placeBet, castVote, appealVerdict, nextRound,
+    sendReaction, placeBet, appealVerdict, nextRound,
     createChallengeLink, shareRoundResult, shareFinalResult,
     copyShareText, tweetResult, fetchDailyChallenge, submitDailyChallenge,
     fetchCommunityPrompts, submitCommunityPrompt, voteCommunityPrompt,
@@ -131,10 +131,6 @@ document.addEventListener('click', function(e) {
         case 'placeBet':
             placeBet();
             break;
-        case 'castVote':
-            castVote(parseInt(target.dataset.submissionId, 10));
-            break;
-
         // --- Results ---
         case 'skipReveal':
             skipReveal();
