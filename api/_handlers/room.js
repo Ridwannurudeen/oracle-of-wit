@@ -40,21 +40,18 @@ export async function createRoom(body, ctx) {
         chainTxHashes: { create: null, rounds: [], finalize: null }
     };
 
-    await ctx.setRoom(roomId, room);
-
-    // Fire-and-forget: register game on GenLayer
-    createGameOnChain(roomId, hostName, safeCategory, 5, players).then(async (result) => {
+    // Register game on GenLayer before persisting (with 10s timeout for graceful degradation)
+    try {
+        const result = await Promise.race([
+            createGameOnChain(roomId, hostName, safeCategory, 5, players),
+            new Promise(resolve => setTimeout(() => resolve(null), 10000))
+        ]);
         if (result?.txHash) {
-            try {
-                const r = await ctx.getRoom(roomId);
-                if (r) {
-                    r.chainTxHashes = r.chainTxHashes || { create: null, rounds: [], finalize: null };
-                    r.chainTxHashes.create = result.txHash;
-                    await ctx.setRoom(roomId, r);
-                }
-            } catch (e) { /* best-effort */ }
+            room.chainTxHashes.create = result.txHash;
         }
-    }).catch(() => {});
+    } catch (e) { /* graceful degradation — game works without on-chain registration */ }
+
+    await ctx.setRoom(roomId, room);
 
     // Generate session token
     const token = generateToken();

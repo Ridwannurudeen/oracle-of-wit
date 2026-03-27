@@ -390,7 +390,7 @@ describe('Integration Tests', () => {
       });
       expect(status).toBe(200);
       expect(body.room.chainTxHashes).toBeDefined();
-      expect(body.room.chainTxHashes.create).toBeNull();
+      expect(body.room.chainTxHashes.create).toBe('0xmocktxhash');
       expect(body.room.chainTxHashes.rounds).toEqual([]);
       expect(body.room.chainTxHashes.finalize).toBeNull();
     });
