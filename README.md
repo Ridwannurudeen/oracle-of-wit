@@ -8,7 +8,7 @@
 
 [![Play Now](https://img.shields.io/badge/Play_Now-oracle--of--wit.vercel.app-A855F7?style=for-the-badge&logo=vercel&logoColor=white)](https://oracle-of-wit.vercel.app)
 [![GenLayer](https://img.shields.io/badge/Powered_by-GenLayer-2DD4BF?style=for-the-badge)](https://genlayer.com)
-[![Tests](https://img.shields.io/badge/Tests-387_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/Tests-316_passing-22c55e?style=for-the-badge&logo=vitest&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-FBBF24?style=for-the-badge)](LICENSE)
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
@@ -117,15 +117,15 @@ flowchart TB
     subgraph GenLayer ["GenLayer Testnet Bradbury"]
         Contract["oracle_of_wit.py\nIntelligent Contract"]
         Validators["AI Validators\nGPT-4, Claude, LLaMA,\nGemini, Mixtral"]
-        OnChain[("Leaderboard\nProfiles\nHall of Fame\nGame History")]
+        OnChain[("total_games\ntotal_judgments\nOD consensus results")]
     end
 
     UI -- "HTTP poll / POST" --> API
     API -- "REST" --> Rooms
     API -- "REST" --> Sessions
     API -- "genlayer-js SDK" --> Contract
-    Contract -- "gl.exec_prompt" --> Validators
-    Validators -- "eq_principle_prompt_comparative" --> Contract
+    Contract -- "gl.nondet.exec_prompt" --> Validators
+    Validators -- "gl.eq_principle.prompt_comparative" --> Contract
     Contract --> OnChain
 ```
 
@@ -147,9 +147,9 @@ GenLayer's OD consensus is the core innovation this dApp demonstrates. When `jud
 4. If consensus is reached, the result is accepted and recorded on-chain
 5. If validators disagree, more validators are added until consensus forms
 
-### Equivalence Principle: `eq_principle_prompt_comparative`
+### Equivalence Principle: `gl.eq_principle.prompt_comparative`
 
-Oracle of Wit uses the comparative equivalence principle — `gl.eq_principle_prompt_comparative` with the principle `"Both results must select the same winner ID number"`. Instead of requiring byte-identical JSON, validators only need to agree on the winner ID.
+Oracle of Wit uses the comparative equivalence principle — `gl.eq_principle.prompt_comparative` with the principle `"Both results must select the same winner ID number"`. Instead of requiring byte-identical JSON, validators only need to agree on the winner ID.
 
 This dramatically reduces validator rotations (~2-3 rotations, ~10s finalization) compared to strict equality (~22 rotations, ~32 min), making GenLayer practical as the **authoritative judge** rather than just a background proof.
 
@@ -157,28 +157,23 @@ This dramatically reduces validator rotations (~2-3 rotations, ~10s finalization
 
 The `judge_round()` contract method uses a two-block pattern:
 
-1. **Block 1** (`eq_principle_prompt_comparative`): All validators independently pick the winner ID — they must agree
-2. **Block 2** (`eq_principle_prompt_non_comparative`): Leader generates roasts/commentary, validators grade quality
+1. **Block 1** (`gl.eq_principle.prompt_comparative`): All validators independently pick the winner ID — they must agree
+2. **Block 2** (`gl.eq_principle.prompt_non_comparative`): Leader generates roasts/commentary, validators grade quality
 
 This returns both the winner and entertaining commentary in a single on-chain transaction.
 
 ### Appeal Mechanism
 
-Players can appeal judgments via `appeal_judgment()`. OD naturally adds more validators for disputed transactions, making appeals inherently more rigorous. If the appeal overturns the original judgment, the contract automatically adjusts the on-chain leaderboard — removing XP from the old winner and awarding it to the new one.
+Players can appeal judgments via `appeal_judgment()`. OD naturally adds more validators for disputed transactions, making appeals inherently more rigorous. If the appeal overturns the original judgment, the backend automatically adjusts scores — removing XP from the old winner and awarding it to the new one.
 
 ### On-Chain State
 
 | Storage | Type | Purpose |
 |---------|------|---------|
-| `games` | `TreeMap[str, str]` | Game state (host, category, status, rounds) |
-| `leaderboard` | `TreeMap[str, int]` | Player name to total XP score |
-| `player_games` | `TreeMap[str, str]` | Player name to list of game IDs |
-| `player_profiles` | `TreeMap[str, str]` | Player profiles (XP, level, achievements) |
-| `hall_of_fame` | `TreeMap[str, str]` | Historic winning jokes |
-| `prompt_pool` | `TreeMap[str, str]` | AI-generated prompt pool by category |
-| `seasons` | `TreeMap[str, str]` | Archived season leaderboards |
-| `total_games` | `int` | Lifetime game counter |
-| `total_judgments` | `int` | Lifetime OD judgment counter |
+| `total_games` | `u32` | Lifetime game counter |
+| `total_judgments` | `u32` | Lifetime OD judgment counter |
+
+> **Note:** Leaderboard, profiles, and game history are managed by Redis until Bradbury's `TreeMap[str, ...]` support stabilizes. The contract focuses on what only GenLayer can do: trustless AI consensus judging.
 
 <details>
 <summary><b>GenLayer SDK Usage (JavaScript)</b></summary>
@@ -250,7 +245,7 @@ const history = await client.readContract({
 | **AI Judging** | GenLayer OD (on-chain consensus) | ![GenLayer](https://img.shields.io/badge/-GenLayer-2DD4BF?style=flat-square) |
 | **Wallet Auth** | SIWE (EIP-4361) | ![Ethereum](https://img.shields.io/badge/-SIWE-3C3C3D?style=flat-square&logo=ethereum&logoColor=white) |
 | **Smart Contract** | GenLayer Intelligent Contract (Python) | ![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white) |
-| **SDK** | genlayer-js v0.21+ | ![npm](https://img.shields.io/badge/-genlayer--js-CB3837?style=flat-square&logo=npm&logoColor=white) |
+| **SDK** | genlayer-js v0.23.1 | ![npm](https://img.shields.io/badge/-genlayer--js-CB3837?style=flat-square&logo=npm&logoColor=white) |
 | **Testing** | Vitest | ![Vitest](https://img.shields.io/badge/-Vitest-6E9F18?style=flat-square&logo=vitest&logoColor=white) |
 
 ---
@@ -383,7 +378,7 @@ node scripts/deploy.mjs
 
 ## Testing
 
-Oracle of Wit has **387 tests** across eight test suites:
+Oracle of Wit has **316 tests** across eight test suites:
 
 ```bash
 # Run all tests
@@ -413,21 +408,15 @@ npm run test:watch
 
 | Function | Parameters | Returns | Description |
 |----------|------------|---------|-------------|
-| `get_game(game_id)` | `str` | Game state dict or `None` | Fetch a game's on-chain state |
-| `get_leaderboard(limit=20)` | `int` | List of `{name, score}` | Top players sorted by score |
 | `get_stats()` | — | `{total_games, total_judgments}` | Contract lifetime statistics |
-| `get_player_history(player_name)` | `str` | `{player_name, total_score, games_played, games[]}` | Player's full game history |
-| `get_season(season_id)` | `str` | Archived season data or `None` | Historical season leaderboard |
 
 ### Write Functions (triggers OD consensus)
 
 | Function | Parameters | Returns | Description |
 |----------|------------|---------|-------------|
-| `judge_round(...)` | `game_id, joke_setup, category, submissions` | `{winner_id, winner_name, winning_punchline, consensus_method}` | Judge punchlines via OD — the core gameplay function |
-| `create_game(...)` | `game_id, host_name, category` | Game state dict | Register a new game on-chain |
-| `record_game_result(...)` | `game_id, final_scores` | `{recorded, players_updated}` | Record final scores to leaderboard |
+| `judge_round(...)` | `game_id, joke_setup, category, submissions` | `{winner_id, winner_name, winning_punchline, consensus_method, commentary}` | Judge punchlines via OD — the core gameplay function |
 | `appeal_judgment(...)` | `game_id, joke_setup, category, submissions, original_winner_id` | `{new_winner_id, overturned, consensus_method}` | Re-evaluate a judgment via OD appeal |
-| `season_reset(...)` | `season_id` | Archived season data | Archive current leaderboard and reset scores |
+| `record_game_count()` | — | `{total_games}` | Increment the lifetime game counter |
 
 </details>
 
