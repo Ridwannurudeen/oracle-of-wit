@@ -3,6 +3,7 @@
 import { redisKeys, redisSRange } from '../_lib/redis.js';
 import { generateToken, storeSessionToken, storePlayerSession } from '../_lib/auth.js';
 import { BOT_NAMES, getCurrentTheme } from '../_lib/constants.js';
+import { createGameOnChain } from '../_lib/genlayer.js';
 /**
  * Create a new game room.
  * @param {Object} body
@@ -35,10 +36,25 @@ export async function createRoom(body, ctx) {
         roundResults: [], usedPrompts: [],
         createdAt: Date.now(), updatedAt: Date.now(),
         phaseEndsAt: null, isSinglePlayer: singlePlayer,
-        weeklyTheme: getCurrentTheme(), version: 0
+        weeklyTheme: getCurrentTheme(), version: 0,
+        chainTxHashes: { create: null, rounds: [], finalize: null }
     };
 
     await ctx.setRoom(roomId, room);
+
+    // Fire-and-forget: register game on GenLayer
+    createGameOnChain(roomId, hostName, safeCategory, 5, players).then(async (result) => {
+        if (result?.txHash) {
+            try {
+                const r = await ctx.getRoom(roomId);
+                if (r) {
+                    r.chainTxHashes = r.chainTxHashes || { create: null, rounds: [], finalize: null };
+                    r.chainTxHashes.create = result.txHash;
+                    await ctx.setRoom(roomId, r);
+                }
+            } catch (e) { /* best-effort */ }
+        }
+    }).catch(() => {});
 
     // Generate session token
     const token = generateToken();

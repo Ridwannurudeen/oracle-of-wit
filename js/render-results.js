@@ -254,6 +254,24 @@ export function renderRoundResults() {
                 </div>
             </div>
 
+            ${(() => {
+                const judgeTxHash = txHash;
+                const explorerBase = 'https://explorer-bradbury.genlayer.com/transactions/';
+                if (!judgeTxHash) return '';
+                const txLink = (hash, label) => hash ? `<div class="flex items-center justify-between py-1.5"><span class="text-[10px] font-mono text-gray-500">${label}</span><a href="${explorerBase}${hash}" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono text-green-400/70 hover:underline">${hash.substring(0, 10)}...${hash.substring(hash.length - 6)}</a></div>` : '';
+                return `
+                    <div class="glow-card glow-card-green p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span class="text-[10px] font-mono text-green-400 tracking-wider font-bold">ON-CHAIN ACTIVITY</span>
+                        </div>
+                        <div class="divide-y divide-white/[0.04]">
+                            ${txLink(judgeTxHash, 'AI JUDGING (OD CONSENSUS)')}
+                        </div>
+                    </div>
+                `;
+            })()}
+
             ${!result.appealed && !state.appealInProgress ? `
                 <button data-action="appealVerdict" class="btn w-full py-3 rounded-xl font-bold text-white text-xs" style="background:linear-gradient(135deg,#b91c1c,#7f1d1d);box-shadow:0 4px 20px rgba(185,28,28,0.3)">
                     APPEAL VERDICT (50 XP) \u2014 CHALLENGE THE ORACLE
@@ -398,6 +416,27 @@ export function renderFinalResults() {
                     `).join('')}
                 </div>
             </div>
+            ${(() => {
+                const chainHashes = r.chainTxHashes;
+                const explorerBase = 'https://explorer-bradbury.genlayer.com/transactions/';
+                if (!chainHashes?.finalize) return '';
+                const totalOnChainRounds = (chainHashes.rounds || []).filter(rd => rd?.submissions || rd?.judge || rd?.result).length;
+                const totalTxs = (chainHashes.create ? 1 : 0) + (chainHashes.rounds || []).reduce((sum, rd) => sum + (rd?.submissions ? 1 : 0) + (rd?.judge ? 1 : 0) + (rd?.result ? 1 : 0), 0) + 1;
+                return `
+                    <div class="glow-card glow-card-green p-4 text-center">
+                        <div class="flex items-center justify-center gap-2 mb-2">
+                            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span class="text-[10px] font-mono text-green-400 tracking-wider font-bold">GAME FINALIZED \u2014 PERMANENT RECORD ON GENLAYER</span>
+                        </div>
+                        <a href="${explorerBase}${chainHashes.finalize}" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono text-green-400/60 hover:underline">${chainHashes.finalize.substring(0, 10)}...${chainHashes.finalize.substring(chainHashes.finalize.length - 6)}</a>
+                        <div class="flex justify-center gap-6 mt-2">
+                            <div><span class="text-sm font-mono font-bold text-green-400">${totalOnChainRounds}</span><span class="text-[9px] font-mono text-gray-600 block">ROUNDS ON-CHAIN</span></div>
+                            <div><span class="text-sm font-mono font-bold text-green-400">${totalTxs}</span><span class="text-[9px] font-mono text-gray-600 block">TOTAL TXS</span></div>
+                        </div>
+                    </div>
+                `;
+            })()}
+
             ${isWinner && !winner.isBot ? '<p class="text-center font-display font-bold tracking-wider text-lg text-consensus">VICTORY</p>' : `<p class="text-center text-gray-500 font-mono text-xs tracking-wider uppercase">Finished #${playerRank}</p>`}
 
             <div class="grid grid-cols-3 gap-2">

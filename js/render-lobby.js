@@ -367,6 +367,19 @@ export function renderWaiting() {
                 </div>
             </div>
 
+            ${r.chainTxHashes?.create ? `
+                <div class="mb-3 p-3 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span class="text-[10px] font-mono text-green-400 tracking-wider flex-1">REGISTERED ON GENLAYER</span>
+                    <a href="https://explorer-bradbury.genlayer.com/transactions/${r.chainTxHashes.create}" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono text-green-400/60 hover:underline">${r.chainTxHashes.create.substring(0, 10)}...</a>
+                </div>
+            ` : r.chainTxHashes && !r.chainTxHashes.create ? `
+                <div class="mb-3 p-3 bg-oracle/10 border border-oracle/20 rounded-xl flex items-center gap-2">
+                    <div class="spinner w-3 h-3"></div>
+                    <span class="text-[10px] font-mono text-oracle/60 tracking-wider">REGISTERING ON-CHAIN...</span>
+                </div>
+            ` : ''}
+
             ${state.isHost ? `
                 <button data-action="startGame" data-hover-sound="true" ${!r.isSinglePlayer && r.players.length<2 || state.loading ? 'disabled' : ''}
                     class="btn btn-play w-full py-4 rounded-xl font-bold text-sm">

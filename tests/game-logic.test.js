@@ -20,6 +20,8 @@ vi.mock('../api/_lib/redis.js', () => ({
 vi.mock('../api/_lib/genlayer.js', () => ({
     submitToGenLayer: vi.fn(async () => null),
     pollGenLayerResult: vi.fn(async () => null),
+    registerRoundOnChain: vi.fn(async () => null),
+    recordResultOnChain: vi.fn(async () => null),
 }));
 
 vi.mock('../api/_lib/logger.js', () => ({

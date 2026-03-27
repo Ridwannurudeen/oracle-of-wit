@@ -3,7 +3,7 @@
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
 import { SUBMISSION_TIME, BETTING_TIME, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme } from './constants.js';
 import { logger } from './logger.js';
-import { submitToGenLayer, pollGenLayerResult } from './genlayer.js';
+import { submitToGenLayer, pollGenLayerResult, registerRoundOnChain, recordResultOnChain } from './genlayer.js';
 
 /**
  * Pick a random winner from submissions (coin flip fallback).
@@ -39,6 +39,9 @@ export async function transitionFromSubmitting(room, setRoom) {
     room.phaseEndsAt = now + BETTING_TIME;
     room.updatedAt = now;
     await setRoom(room.id, room);
+
+    // Fire-and-forget: register round submissions on GenLayer (on-chain record only)
+    registerRoundOnChain(room.id, room.currentRound, room.jokePrompt, room.submissions).catch(() => {});
 }
 
 /**
@@ -273,6 +276,10 @@ export async function createRoundResult(room, winnerId, now, judgingMethod = 'un
     }
 
     if (setRoom) await setRoom(room.id, room);
+
+    // Fire-and-forget: record round result on GenLayer (on-chain record only)
+    recordResultOnChain(room.id, room.currentRound, winnerId, winningSubmission.playerName, roundResult.scores, judgingMethod).catch(() => {});
+
     return room;
 }
 

@@ -26,18 +26,146 @@ class OracleOfWit(gl.Contract):
     # Storage — only primitive types that work on Bradbury
     total_games: u32
     total_judgments: u32
+    total_appeals: u32
+    current_game_id: str
+    current_game_data: str
+    current_round_submissions: str
+    current_round_result: str
+    last_finalized_game: str
 
     def __init__(self):
         """Initialize the Oracle of Wit contract"""
         self.total_games = 0
         self.total_judgments = 0
+        self.total_appeals = 0
+        self.current_game_id = ""
+        self.current_game_data = ""
+        self.current_round_submissions = ""
+        self.current_round_result = ""
+        self.last_finalized_game = ""
 
     @gl.public.view
     def get_stats(self) -> typing.Any:
         """Get contract statistics"""
         return {
             "total_games": self.total_games,
-            "total_judgments": self.total_judgments
+            "total_judgments": self.total_judgments,
+            "total_appeals": self.total_appeals,
+            "current_game_id": self.current_game_id
+        }
+
+    @gl.public.view
+    def get_game(self, game_id: str) -> typing.Any:
+        """Get current game state if it matches the active game"""
+        if self.current_game_id != game_id:
+            return {"error": "Game not found or not active"}
+        return {
+            "game_id": self.current_game_id,
+            "game_data": self.current_game_data,
+            "round_submissions": self.current_round_submissions,
+            "round_result": self.current_round_result
+        }
+
+    @gl.public.write
+    def create_game(
+        self,
+        game_id: str,
+        host: str,
+        category: str,
+        num_rounds: int,
+        players_json: str
+    ) -> typing.Any:
+        """Register a new game on-chain"""
+        self.total_games += 1
+        self.current_game_id = game_id
+        self.current_game_data = json.dumps({
+            "host": host,
+            "category": category,
+            "num_rounds": num_rounds,
+            "status": "active",
+            "players": json.loads(players_json),
+            "created_at": game_id
+        })
+        self.current_round_submissions = ""
+        self.current_round_result = ""
+        return {
+            "game_id": game_id,
+            "total_games": self.total_games
+        }
+
+    @gl.public.write
+    def register_round(
+        self,
+        game_id: str,
+        round_num: int,
+        joke_setup: str,
+        submissions_json: str
+    ) -> typing.Any:
+        """Batch-record all submissions for a round"""
+        self.current_round_submissions = json.dumps({
+            "game_id": game_id,
+            "round_num": round_num,
+            "joke_setup": joke_setup,
+            "submissions": json.loads(submissions_json)
+        })
+        return {
+            "game_id": game_id,
+            "round_num": round_num,
+            "recorded": True
+        }
+
+    @gl.public.write
+    def record_result(
+        self,
+        game_id: str,
+        round_num: int,
+        winner_id: int,
+        winner_name: str,
+        scores_json: str,
+        judging_method: str
+    ) -> typing.Any:
+        """Record the outcome of a round"""
+        self.current_round_result = json.dumps({
+            "game_id": game_id,
+            "round_num": round_num,
+            "winner_id": winner_id,
+            "winner_name": winner_name,
+            "scores": json.loads(scores_json),
+            "judging_method": judging_method
+        })
+        return {
+            "game_id": game_id,
+            "round_num": round_num,
+            "winner_id": winner_id,
+            "recorded": True
+        }
+
+    @gl.public.write
+    def finalize_game(
+        self,
+        game_id: str,
+        winner_name: str,
+        final_standings_json: str
+    ) -> typing.Any:
+        """Finalize a game and record final standings"""
+        self.last_finalized_game = json.dumps({
+            "game_id": game_id,
+            "winner_name": winner_name,
+            "final_standings": json.loads(final_standings_json),
+            "status": "completed"
+        })
+        # Update current game status
+        if self.current_game_id == game_id:
+            try:
+                data = json.loads(self.current_game_data)
+                data["status"] = "completed"
+                self.current_game_data = json.dumps(data)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return {
+            "game_id": game_id,
+            "winner_name": winner_name,
+            "finalized": True
         }
 
     @gl.public.write
@@ -250,6 +378,7 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
         overturned = new_winner_id != original_winner_id
 
         self.total_judgments += 1
+        self.total_appeals += 1
 
         new_winner_sub = None
         for s in submissions_list:

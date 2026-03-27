@@ -207,6 +207,188 @@ export async function appealWithGenLayer(gameId, jokePrompt, category, submissio
 }
 
 /**
+ * Register a new game on-chain (fire-and-forget).
+ * @param {string} gameId
+ * @param {string} host
+ * @param {string} category
+ * @param {number} numRounds
+ * @param {Array<{name: string}>} players
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function createGameOnChain(gameId, host, category, numRounds, players) {
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping createGame', { service: 'genlayer' });
+        return null;
+    }
+
+    try {
+        const client = await getGenLayerClient();
+        const playersJson = JSON.stringify(players.map(p => p.name || p));
+
+        logger.info('Submitting create_game', { service: 'genlayer', gameId });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'create_game',
+            args: [gameId, host, category, numRounds, playersJson],
+            value: 0n,
+        });
+
+        logger.info('create_game submitted', { service: 'genlayer', txHash, gameId });
+        _recordSuccess();
+        return { txHash };
+    } catch (error) {
+        logger.error('create_game failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Register a round's submissions on-chain (fire-and-forget).
+ * @param {string} gameId
+ * @param {number} roundNum
+ * @param {string} jokeSetup
+ * @param {import('./types.js').Submission[]} submissions
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function registerRoundOnChain(gameId, roundNum, jokeSetup, submissions) {
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping registerRound', { service: 'genlayer' });
+        return null;
+    }
+
+    try {
+        const client = await getGenLayerClient();
+        const submissionsJson = JSON.stringify(submissions.map(s => ({
+            id: s.id,
+            playerName: s.playerName,
+            punchline: s.punchline
+        })));
+
+        logger.info('Submitting register_round', { service: 'genlayer', gameId, roundNum });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'register_round',
+            args: [gameId, roundNum, jokeSetup, submissionsJson],
+            value: 0n,
+        });
+
+        logger.info('register_round submitted', { service: 'genlayer', txHash, gameId, roundNum });
+        _recordSuccess();
+        return { txHash };
+    } catch (error) {
+        logger.error('register_round failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Record a round result on-chain (fire-and-forget).
+ * @param {string} gameId
+ * @param {number} roundNum
+ * @param {number} winnerId
+ * @param {string} winnerName
+ * @param {Object} scores
+ * @param {string} judgingMethod
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function recordResultOnChain(gameId, roundNum, winnerId, winnerName, scores, judgingMethod) {
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping recordResult', { service: 'genlayer' });
+        return null;
+    }
+
+    try {
+        const client = await getGenLayerClient();
+        const scoresJson = JSON.stringify(scores);
+
+        logger.info('Submitting record_result', { service: 'genlayer', gameId, roundNum, winnerId });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'record_result',
+            args: [gameId, roundNum, winnerId, winnerName, scoresJson, judgingMethod],
+            value: 0n,
+        });
+
+        logger.info('record_result submitted', { service: 'genlayer', txHash, gameId, roundNum });
+        _recordSuccess();
+        return { txHash };
+    } catch (error) {
+        logger.error('record_result failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Finalize a game on-chain (fire-and-forget).
+ * @param {string} gameId
+ * @param {string} winnerName
+ * @param {Array<{name: string, score: number}>} finalStandings
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function finalizeGameOnChain(gameId, winnerName, finalStandings) {
+    if (!isGenLayerAvailable()) {
+        logger.warn('Circuit breaker open, skipping finalizeGame', { service: 'genlayer' });
+        return null;
+    }
+
+    try {
+        const client = await getGenLayerClient();
+        const standingsJson = JSON.stringify(finalStandings.map(p => ({
+            name: p.name,
+            score: p.score,
+            isBot: !!p.isBot
+        })));
+
+        logger.info('Submitting finalize_game', { service: 'genlayer', gameId, winnerName });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'finalize_game',
+            args: [gameId, winnerName, standingsJson],
+            value: 0n,
+        });
+
+        logger.info('finalize_game submitted', { service: 'genlayer', txHash, gameId });
+        _recordSuccess();
+        return { txHash };
+    } catch (error) {
+        logger.error('finalize_game failed', { service: 'genlayer', error: error.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
+ * Read game state from GenLayer contract.
+ * @param {string} gameId
+ * @returns {Promise<Object|null>}
+ */
+export async function readGameOnChain(gameId) {
+    if (!isGenLayerAvailable()) return null;
+
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_game',
+            args: [gameId],
+        });
+        _recordSuccess();
+        return result;
+    } catch (e) {
+        logger.warn('readGameOnChain failed', { service: 'genlayer', error: e.message });
+        _recordFailure();
+        return null;
+    }
+}
+
+/**
  * Read game stats from GenLayer contract.
  * @returns {Promise<Object|null>} Stats object, or null on failure.
  */

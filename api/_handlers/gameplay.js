@@ -2,7 +2,8 @@
 
 import { SUBMISSION_TIME } from '../_lib/constants.js';
 import { transitionFromSubmitting, autoJudge, addBotBets, getNextPrompt } from '../_lib/game-logic.js';
-import { postGameToDiscord } from '../_lib/genlayer.js';
+import { postGameToDiscord, finalizeGameOnChain } from '../_lib/genlayer.js';
+import { redisGet, redisSet } from '../_lib/redis.js';
 import { getProfile, saveProfile, checkAchievements } from '../_lib/profiles.js';
 
 /**
@@ -181,6 +182,21 @@ export async function nextRound(body, ctx) {
         for (const p of room.players) await ctx.updateLeaderboard(p.name, p.score, p.isBot);
         await ctx.setRoom(roomId, room);
         postGameToDiscord(room).catch(e => console.error('[Discord] error:', e.message));
+
+        // Fire-and-forget: finalize game on GenLayer
+        const finalStandings = [...room.players].sort((a, b) => b.score - a.score);
+        finalizeGameOnChain(roomId, finalStandings[0]?.name || 'Unknown', finalStandings).then(async (result) => {
+            if (result?.txHash) {
+                try {
+                    const r = await redisGet(`room:${roomId}`);
+                    if (r) {
+                        r.chainTxHashes = r.chainTxHashes || { create: null, rounds: [], finalize: null };
+                        r.chainTxHashes.finalize = result.txHash;
+                        await redisSet(`room:${roomId}`, r);
+                    }
+                } catch (e) { /* best-effort */ }
+            }
+        }).catch(() => {});
 
         const leaderboard = await ctx.getLeaderboard();
         let profileUpdate = null;

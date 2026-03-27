@@ -378,7 +378,65 @@ describe('Integration Tests', () => {
   });
 
   // =========================================================================
-  // F. Phase Timer Expiry
+  // F. On-Chain Game Lifecycle (chainTxHashes)
+  // =========================================================================
+
+  describe('On-Chain Game Lifecycle', () => {
+    it('room is created with chainTxHashes field', async () => {
+      const { status, body } = await call('createRoom', {
+        hostName: 'ChainHost',
+        category: 'tech',
+        singlePlayer: true,
+      });
+      expect(status).toBe(200);
+      expect(body.room.chainTxHashes).toBeDefined();
+      expect(body.room.chainTxHashes.create).toBeNull();
+      expect(body.room.chainTxHashes.rounds).toEqual([]);
+      expect(body.room.chainTxHashes.finalize).toBeNull();
+    });
+
+    it('chainTxHashes persists through game lifecycle', async () => {
+      // Create room
+      const { body: createBody } = await call('createRoom', {
+        hostName: 'ChainHost',
+        category: 'tech',
+        singlePlayer: true,
+      });
+      const roomId = createBody.roomId;
+
+      // Start game
+      await call('startGame', { roomId, hostName: 'ChainHost' });
+
+      // Submit
+      await call('submitPunchline', { roomId, playerName: 'ChainHost', punchline: 'Chain joke!' });
+
+      // Advance to betting
+      const { body: advBody } = await call('advancePhase', { roomId, hostName: 'ChainHost' });
+      expect(advBody.room.chainTxHashes).toBeDefined();
+
+      // Advance to judging
+      const { body: judgeBody } = await call('advancePhase', { roomId, hostName: 'ChainHost' });
+      expect(judgeBody.room.chainTxHashes).toBeDefined();
+
+      // chainTxHashes should persist — rounds array exists
+      expect(Array.isArray(judgeBody.room.chainTxHashes.rounds)).toBe(true);
+    });
+
+    it('multiplayer room has chainTxHashes', async () => {
+      const { body: createBody } = await call('createRoom', { hostName: 'Host1' });
+      expect(createBody.room.chainTxHashes).toBeDefined();
+
+      await call('joinRoom', { roomId: createBody.roomId, playerName: 'Player2' });
+
+      const req = makeReq({ method: 'GET', query: { action: 'getRoom', roomId: createBody.roomId } });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res._body.room.chainTxHashes).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // G. Phase Timer Expiry (was F)
   // =========================================================================
 
   describe('Phase Timer Expiry', () => {

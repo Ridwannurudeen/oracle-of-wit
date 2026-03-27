@@ -42,6 +42,11 @@ const {
   appealWithGenLayer,
   pollGenLayerResult,
   readStats,
+  createGameOnChain,
+  registerRoundOnChain,
+  recordResultOnChain,
+  finalizeGameOnChain,
+  readGameOnChain,
 } = await import('../api/_lib/genlayer.js');
 
 // ---------------------------------------------------------------------------
@@ -346,6 +351,172 @@ describe('GenLayer Module', () => {
       _mockGLClient.readContract.mockRejectedValueOnce(new Error('stats fail'));
       const result = await readStats();
       expect(result).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // createGameOnChain
+  // =========================================================================
+
+  describe('createGameOnChain', () => {
+    it('submits create_game and returns txHash', async () => {
+      const players = [{ name: 'Alice' }, { name: 'Bob' }];
+      const result = await createGameOnChain('GAME_1', 'Alice', 'tech', 5, players);
+
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'create_game',
+          args: ['GAME_1', 'Alice', 'tech', 5, expect.any(String)],
+        })
+      );
+    });
+
+    it('returns null on SDK error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      const result = await createGameOnChain('G1', 'Host', 'tech', 5, []);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.writeContract.mockClear();
+      const result = await createGameOnChain('G1', 'Host', 'tech', 5, []);
+      expect(result).toBeNull();
+      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // registerRoundOnChain
+  // =========================================================================
+
+  describe('registerRoundOnChain', () => {
+    it('submits register_round and returns txHash', async () => {
+      const subs = [{ id: 1, playerName: 'Alice', punchline: 'Joke' }];
+      const result = await registerRoundOnChain('GAME_1', 1, 'Why did...', subs);
+
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'register_round',
+          args: ['GAME_1', 1, 'Why did...', expect.any(String)],
+        })
+      );
+    });
+
+    it('returns null on SDK error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      const result = await registerRoundOnChain('G1', 1, 'setup', []);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.writeContract.mockClear();
+      const result = await registerRoundOnChain('G1', 1, 'setup', []);
+      expect(result).toBeNull();
+      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // recordResultOnChain
+  // =========================================================================
+
+  describe('recordResultOnChain', () => {
+    it('submits record_result and returns txHash', async () => {
+      const result = await recordResultOnChain('GAME_1', 1, 2, 'Bob', { Bob: 100 }, 'genlayer_od');
+
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'record_result',
+          args: ['GAME_1', 1, 2, 'Bob', expect.any(String), 'genlayer_od'],
+        })
+      );
+    });
+
+    it('returns null on SDK error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      const result = await recordResultOnChain('G1', 1, 1, 'Alice', {}, 'coin_flip');
+      expect(result).toBeNull();
+    });
+
+    it('returns null when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.writeContract.mockClear();
+      const result = await recordResultOnChain('G1', 1, 1, 'Alice', {}, 'od');
+      expect(result).toBeNull();
+      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // finalizeGameOnChain
+  // =========================================================================
+
+  describe('finalizeGameOnChain', () => {
+    it('submits finalize_game and returns txHash', async () => {
+      const standings = [{ name: 'Alice', score: 300, isBot: false }];
+      const result = await finalizeGameOnChain('GAME_1', 'Alice', standings);
+
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'finalize_game',
+          args: ['GAME_1', 'Alice', expect.any(String)],
+        })
+      );
+    });
+
+    it('returns null on SDK error', async () => {
+      _mockGLClient.writeContract.mockRejectedValueOnce(new Error('fail'));
+      const result = await finalizeGameOnChain('G1', 'Alice', []);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.writeContract.mockClear();
+      const result = await finalizeGameOnChain('G1', 'Alice', []);
+      expect(result).toBeNull();
+      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // readGameOnChain
+  // =========================================================================
+
+  describe('readGameOnChain', () => {
+    it('calls readContract with get_game and returns result', async () => {
+      const mockGame = { game_id: 'G1', game_data: '{}' };
+      _mockGLClient.readContract.mockResolvedValueOnce(mockGame);
+
+      const result = await readGameOnChain('G1');
+
+      expect(result).toEqual(mockGame);
+      expect(_mockGLClient.readContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'get_game',
+          args: ['G1'],
+        })
+      );
+    });
+
+    it('returns null on error', async () => {
+      _mockGLClient.readContract.mockRejectedValueOnce(new Error('fail'));
+      const result = await readGameOnChain('G1');
+      expect(result).toBeNull();
+    });
+
+    it('returns null when circuit breaker is open', async () => {
+      await tripCircuitBreaker();
+      _mockGLClient.readContract.mockClear();
+      const result = await readGameOnChain('G1');
+      expect(result).toBeNull();
+      expect(_mockGLClient.readContract).not.toHaveBeenCalled();
     });
   });
 });
