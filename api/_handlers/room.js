@@ -40,16 +40,20 @@ export async function createRoom(body, ctx) {
         chainTxHashes: { create: null, rounds: [], finalize: null }
     };
 
-    // Register game on GenLayer before persisting (with 10s timeout for graceful degradation)
+    // Register game on GenLayer before persisting (with 15s timeout for graceful degradation)
+    const glStart = Date.now();
     try {
         const result = await Promise.race([
             createGameOnChain(roomId, hostName, safeCategory, 5, players),
-            new Promise(resolve => setTimeout(() => resolve(null), 10000))
+            new Promise(resolve => setTimeout(() => resolve(null), 15000))
         ]);
         if (result?.txHash) {
             room.chainTxHashes.create = result.txHash;
         }
-    } catch (e) { /* graceful degradation — game works without on-chain registration */ }
+        console.log('[GenLayer] createGameOnChain:', result?.txHash ? 'OK' : 'null', 'in', Date.now() - glStart, 'ms');
+    } catch (e) {
+        console.error('[GenLayer] createGameOnChain error in', Date.now() - glStart, 'ms:', e.message);
+    }
 
     await ctx.setRoom(roomId, room);
 
