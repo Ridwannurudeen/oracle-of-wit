@@ -11,8 +11,11 @@ const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 let _glClient = null;
 const GL_POLL_TIMEOUT = parseInt(process.env.GL_POLL_TIMEOUT) || 30000;
 
-// --- Circuit breaker ---
+// --- Circuit breaker (AI consensus calls only) ---
 // Trips after 3 consecutive failures, auto-resets after 60s.
+// Only gates submitToGenLayer, pollGenLayerResult, and appealWithGenLayer.
+// Deterministic calls (create/register/record/finalize/read) bypass the breaker
+// because AI judging failures shouldn't block game lifecycle recording.
 let _consecutiveFailures = 0;
 let _circuitTrippedAt = 0;
 const CB_THRESHOLD = 3;
@@ -216,11 +219,6 @@ export async function appealWithGenLayer(gameId, jokePrompt, category, submissio
  * @returns {Promise<{txHash: string}|null>}
  */
 export async function createGameOnChain(gameId, host, category, numRounds, players) {
-    if (!isGenLayerAvailable()) {
-        logger.warn('Circuit breaker open, skipping createGame', { service: 'genlayer' });
-        return null;
-    }
-
     try {
         const client = await getGenLayerClient();
         const playersJson = JSON.stringify(players.map(p => p.name || p));
@@ -235,11 +233,9 @@ export async function createGameOnChain(gameId, host, category, numRounds, playe
         });
 
         logger.info('create_game submitted', { service: 'genlayer', txHash, gameId });
-        _recordSuccess();
         return { txHash };
     } catch (error) {
         logger.error('create_game failed', { service: 'genlayer', error: error.message });
-        _recordFailure();
         return null;
     }
 }
@@ -253,11 +249,6 @@ export async function createGameOnChain(gameId, host, category, numRounds, playe
  * @returns {Promise<{txHash: string}|null>}
  */
 export async function registerRoundOnChain(gameId, roundNum, jokeSetup, submissions) {
-    if (!isGenLayerAvailable()) {
-        logger.warn('Circuit breaker open, skipping registerRound', { service: 'genlayer' });
-        return null;
-    }
-
     try {
         const client = await getGenLayerClient();
         const submissionsJson = JSON.stringify(submissions.map(s => ({
@@ -276,11 +267,9 @@ export async function registerRoundOnChain(gameId, roundNum, jokeSetup, submissi
         });
 
         logger.info('register_round submitted', { service: 'genlayer', txHash, gameId, roundNum });
-        _recordSuccess();
         return { txHash };
     } catch (error) {
         logger.error('register_round failed', { service: 'genlayer', error: error.message });
-        _recordFailure();
         return null;
     }
 }
@@ -296,11 +285,6 @@ export async function registerRoundOnChain(gameId, roundNum, jokeSetup, submissi
  * @returns {Promise<{txHash: string}|null>}
  */
 export async function recordResultOnChain(gameId, roundNum, winnerId, winnerName, scores, judgingMethod) {
-    if (!isGenLayerAvailable()) {
-        logger.warn('Circuit breaker open, skipping recordResult', { service: 'genlayer' });
-        return null;
-    }
-
     try {
         const client = await getGenLayerClient();
         const scoresJson = JSON.stringify(scores);
@@ -315,11 +299,9 @@ export async function recordResultOnChain(gameId, roundNum, winnerId, winnerName
         });
 
         logger.info('record_result submitted', { service: 'genlayer', txHash, gameId, roundNum });
-        _recordSuccess();
         return { txHash };
     } catch (error) {
         logger.error('record_result failed', { service: 'genlayer', error: error.message });
-        _recordFailure();
         return null;
     }
 }
@@ -332,11 +314,6 @@ export async function recordResultOnChain(gameId, roundNum, winnerId, winnerName
  * @returns {Promise<{txHash: string}|null>}
  */
 export async function finalizeGameOnChain(gameId, winnerName, finalStandings) {
-    if (!isGenLayerAvailable()) {
-        logger.warn('Circuit breaker open, skipping finalizeGame', { service: 'genlayer' });
-        return null;
-    }
-
     try {
         const client = await getGenLayerClient();
         const standingsJson = JSON.stringify(finalStandings.map(p => ({
@@ -355,11 +332,9 @@ export async function finalizeGameOnChain(gameId, winnerName, finalStandings) {
         });
 
         logger.info('finalize_game submitted', { service: 'genlayer', txHash, gameId });
-        _recordSuccess();
         return { txHash };
     } catch (error) {
         logger.error('finalize_game failed', { service: 'genlayer', error: error.message });
-        _recordFailure();
         return null;
     }
 }
@@ -370,8 +345,6 @@ export async function finalizeGameOnChain(gameId, winnerName, finalStandings) {
  * @returns {Promise<Object|null>}
  */
 export async function readGameOnChain(gameId) {
-    if (!isGenLayerAvailable()) return null;
-
     try {
         const client = await getGenLayerClient();
         const result = await client.readContract({
@@ -379,11 +352,9 @@ export async function readGameOnChain(gameId) {
             functionName: 'get_game',
             args: [gameId],
         });
-        _recordSuccess();
         return result;
     } catch (e) {
         logger.warn('readGameOnChain failed', { service: 'genlayer', error: e.message });
-        _recordFailure();
         return null;
     }
 }
@@ -393,8 +364,6 @@ export async function readGameOnChain(gameId) {
  * @returns {Promise<Object|null>} Stats object, or null on failure.
  */
 export async function readStats() {
-    if (!isGenLayerAvailable()) return null;
-
     try {
         const client = await getGenLayerClient();
         const result = await client.readContract({
@@ -402,11 +371,9 @@ export async function readStats() {
             functionName: 'get_stats',
             args: [],
         });
-        _recordSuccess();
         return result;
     } catch (e) {
         logger.warn('readStats failed', { service: 'genlayer', error: e.message });
-        _recordFailure();
         return null;
     }
 }

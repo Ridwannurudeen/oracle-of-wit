@@ -169,12 +169,13 @@ describe('GenLayer Module', () => {
       expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
     });
 
-    it('open circuit causes readStats to return null', async () => {
+    it('readStats bypasses circuit breaker (deterministic call)', async () => {
       await tripCircuitBreaker();
       _mockGLClient.readContract.mockClear();
 
-      expect(await readStats()).toBeNull();
-      expect(_mockGLClient.readContract).not.toHaveBeenCalled();
+      const result = await readStats();
+      expect(result).toBeDefined();
+      expect(_mockGLClient.readContract).toHaveBeenCalled();
     });
   });
 
@@ -378,12 +379,12 @@ describe('GenLayer Module', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when circuit breaker is open', async () => {
+    it('bypasses circuit breaker (deterministic call)', async () => {
       await tripCircuitBreaker();
       _mockGLClient.writeContract.mockClear();
       const result = await createGameOnChain('G1', 'Host', 'tech', 5, []);
-      expect(result).toBeNull();
-      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalled();
     });
   });
 
@@ -411,12 +412,12 @@ describe('GenLayer Module', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when circuit breaker is open', async () => {
+    it('bypasses circuit breaker (deterministic call)', async () => {
       await tripCircuitBreaker();
       _mockGLClient.writeContract.mockClear();
       const result = await registerRoundOnChain('G1', 1, 'setup', []);
-      expect(result).toBeNull();
-      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalled();
     });
   });
 
@@ -443,12 +444,12 @@ describe('GenLayer Module', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when circuit breaker is open', async () => {
+    it('bypasses circuit breaker (deterministic call)', async () => {
       await tripCircuitBreaker();
       _mockGLClient.writeContract.mockClear();
       const result = await recordResultOnChain('G1', 1, 1, 'Alice', {}, 'od');
-      expect(result).toBeNull();
-      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalled();
     });
   });
 
@@ -476,12 +477,12 @@ describe('GenLayer Module', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when circuit breaker is open', async () => {
+    it('bypasses circuit breaker (deterministic call)', async () => {
       await tripCircuitBreaker();
       _mockGLClient.writeContract.mockClear();
       const result = await finalizeGameOnChain('G1', 'Alice', []);
-      expect(result).toBeNull();
-      expect(_mockGLClient.writeContract).not.toHaveBeenCalled();
+      expect(result).toEqual({ txHash: '0xmocktxhash' });
+      expect(_mockGLClient.writeContract).toHaveBeenCalled();
     });
   });
 
@@ -511,12 +512,12 @@ describe('GenLayer Module', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when circuit breaker is open', async () => {
+    it('bypasses circuit breaker (deterministic call)', async () => {
       await tripCircuitBreaker();
-      _mockGLClient.readContract.mockClear();
+      _mockGLClient.readContract.mockReset().mockResolvedValue({ game_id: 'G1', game_data: '{}' });
       const result = await readGameOnChain('G1');
-      expect(result).toBeNull();
-      expect(_mockGLClient.readContract).not.toHaveBeenCalled();
+      expect(result).toEqual({ game_id: 'G1', game_data: '{}' });
+      expect(_mockGLClient.readContract).toHaveBeenCalled();
     });
   });
 });
