@@ -34,13 +34,13 @@ export function renderSubmitting() {
             </div>
             ${!state.hasSubmitted ? `
                 <div class="glow-card p-4">
-                    <textarea id="punchline" maxlength="200" placeholder="Write your funniest punchline..."
+                    <textarea id="punchline" maxlength="200" placeholder="Write your funniest punchline..." autofocus
                         data-action-input="punchlineInput"
                         data-action-focus="punchlineFocus"
                         data-action-keydown="punchlineKeydown"
                         data-action-keyup="punchlineKeyup"
                         class="w-full h-28 px-4 py-3 rounded-xl text-lg resize-none">${state.punchlineText}</textarea>
-                    <p class="text-[9px] font-mono text-gray-600/50 mt-1 tracking-wider">CTRL+ENTER TO SUBMIT</p>
+                    <p class="text-[10px] text-gray-600 mt-1" aria-label="Submit punchline">Ctrl+Enter to submit</p>
                     <div class="flex justify-between items-center mt-3">
                         <span id="char-count" class="text-[10px] font-mono text-gray-600 tracking-wider">${state.punchlineText.length}/200</span>
                         <button data-action="submitPunchline" data-hover-sound="true" class="btn btn-primary px-6 py-2.5 rounded-xl font-bold text-white text-xs">SUBMIT</button>
@@ -107,7 +107,7 @@ export function renderBetting() {
                         </div>
                         <div class="flex flex-wrap gap-1 mt-1 justify-end">
                             ${['\uD83D\uDE02','\uD83D\uDD25','\uD83D\uDC80','\uD83D\uDE10','\uD83D\uDC4F','\uD83E\uDD2E'].map(e => `
-                                <button data-action="sendReaction" data-submission-id="${s.id}" data-emoji="${e}" class="text-base sm:text-lg hover:scale-125 transition-transform ${state.sentReactions >= 3 ? 'opacity-30 pointer-events-none' : ''}" title="React">${e}</button>
+                                <button data-action="sendReaction" data-submission-id="${s.id}" data-emoji="${e}" aria-label="React with ${e}" class="text-base sm:text-lg hover:scale-125 transition-transform ${state.sentReactions >= 3 ? 'opacity-30 pointer-events-none' : ''}" title="React">${e}</button>
                             `).join('')}
                         </div>
                     </div>

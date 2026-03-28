@@ -1,7 +1,7 @@
 // Game logic: judging, round results, phase transitions, bots, prompts
 
 import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
-import { SUBMISSION_TIME, BETTING_TIME, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme } from './constants.js';
+import { SUBMISSION_TIME, BETTING_TIME, BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, WEEKLY_THEMES, CATEGORIZED_PROMPTS, getCurrentTheme, PUNCHLINE_QUALITY } from './constants.js';
 import { logger } from './logger.js';
 import { submitToGenLayer, pollGenLayerResult, registerRoundOnChain, recordResultOnChain } from './genlayer.js';
 
@@ -36,7 +36,7 @@ export async function transitionFromSubmitting(room, setRoom) {
     room.status = 'betting';
     room.bets = [];
     room.reactions = [];
-    room.phaseEndsAt = now + BETTING_TIME;
+    room.phaseEndsAt = now + (room.bettingTime || BETTING_TIME);
     room.updatedAt = now;
     await setRoom(room.id, room);
 
@@ -311,11 +311,22 @@ export async function addBotSubmissions(room) {
         availablePunchlines = [...(FALLBACK_PUNCHLINES[room.category] || FALLBACK_PUNCHLINES.general)];
     }
 
+    const difficulty = room.botDifficulty || 'easy';
+
     botsToAdd.forEach(bot => {
-        const unusedPunchlines = availablePunchlines.filter(p =>
+        let unusedPunchlines = availablePunchlines.filter(p =>
             !room.submissions.find(s => s.punchline === p)
         );
-        const punchlinePool = unusedPunchlines.length > 0 ? unusedPunchlines : availablePunchlines;
+        let punchlinePool = unusedPunchlines.length > 0 ? unusedPunchlines : availablePunchlines;
+
+        // Filter by difficulty tier
+        if (difficulty !== 'easy' && punchlinePool.length > 1) {
+            const scored = punchlinePool.map(pl => ({ pl, q: PUNCHLINE_QUALITY[pl]?.quality ?? 0.5 }))
+                .sort((a, b) => b.q - a.q);
+            const cutoff = difficulty === 'hard' ? Math.ceil(scored.length * 0.2) : Math.ceil(scored.length * 0.5);
+            punchlinePool = scored.slice(0, Math.max(1, cutoff)).map(s => s.pl);
+        }
+
         const punchline = punchlinePool[Math.floor(Math.random() * punchlinePool.length)];
         const idx = availablePunchlines.indexOf(punchline);
         if (idx > -1) availablePunchlines.splice(idx, 1);
@@ -336,11 +347,30 @@ export async function addBotSubmissions(room) {
  */
 export function addBotBets(room) {
     const botsToAdd = room.players.filter(p => p.isBot && !room.bets.find(b => b.playerName === p.name));
+    const difficulty = room.botDifficulty || 'easy';
 
     botsToAdd.forEach(bot => {
         const validSubmissions = room.submissions.filter(s => s.playerName !== bot.name);
         if (validSubmissions.length > 0) {
-            const pick = validSubmissions[Math.floor(Math.random() * validSubmissions.length)];
+            let pick;
+            if (difficulty === 'hard') {
+                // Hard bots pick the best quality punchline
+                const scored = validSubmissions.map(s => ({ s, q: PUNCHLINE_QUALITY[s.punchline]?.quality ?? 0.5 }))
+                    .sort((a, b) => b.q - a.q);
+                pick = scored[0].s;
+            } else if (difficulty === 'medium') {
+                // Medium bots favor better punchlines (weighted random)
+                const scored = validSubmissions.map(s => ({ s, q: PUNCHLINE_QUALITY[s.punchline]?.quality ?? 0.5 }));
+                const totalQ = scored.reduce((sum, x) => sum + x.q, 0);
+                let r = Math.random() * totalQ;
+                pick = scored[scored.length - 1].s;
+                for (const item of scored) {
+                    r -= item.q;
+                    if (r <= 0) { pick = item.s; break; }
+                }
+            } else {
+                pick = validSubmissions[Math.floor(Math.random() * validSubmissions.length)];
+            }
             room.bets.push({
                 playerName: bot.name,
                 submissionId: pick.id,

@@ -1,6 +1,6 @@
 // Player profiles, daily challenges, leaderboard helpers
 
-import { redisGet, redisSet, redisSetNX, redisDel } from './redis.js';
+import { redisGet, redisSet, redisSetNX, redisDel, redisSAdd } from './redis.js';
 import { LEVEL_THRESHOLDS, ACHIEVEMENTS, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, CATEGORIZED_PROMPTS } from './constants.js';
 import { logger } from './logger.js';
 /**
@@ -183,4 +183,31 @@ export async function updateLeaderboard(playerName, score, isBot) {
     } finally {
         await redisDel('lock:lb');
     }
+}
+
+/**
+ * Track a referral: award the referrer +25 XP (one-time per referred player).
+ * @param {string} referrerId
+ * @param {string} newPlayerId
+ * @returns {Promise<{tracked: boolean, bonusAwarded: boolean}>}
+ */
+export async function trackReferral(referrerId, newPlayerId) {
+    // Record the referral in a sorted set
+    await redisSAdd('referrals:' + referrerId, Date.now(), newPlayerId);
+
+    // One-time bonus guard
+    const isFirstTime = await redisSetNX(`referral_bonus:${referrerId}:${newPlayerId}`, 1, 86400 * 365);
+    if (!isFirstTime) {
+        return { tracked: true, bonusAwarded: false };
+    }
+
+    // Award +25 XP to the referrer
+    const profile = await getProfile(referrerId);
+    if (profile) {
+        profile.lifetimeXP += 25;
+        checkAchievements(profile);
+        await saveProfile(profile);
+    }
+
+    return { tracked: true, bonusAwarded: true };
 }

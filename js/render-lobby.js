@@ -138,6 +138,114 @@ export function renderWelcome() {
  */
 export function renderLobby() {
     const gamesPlayedToday = parseInt(localStorage.getItem('gamesToday_' + getTodayKeyClient()) || '0');
+
+    // Initialize room settings state if not present
+    if (!state.roomSettings) {
+        state.roomSettings = {
+            totalRounds: null,
+            submissionTime: null,
+            bettingTime: null,
+            isPrivate: false,
+            botDifficulty: 'easy',
+            showAdvanced: false
+        };
+    }
+    const rs = state.roomSettings;
+
+    /** Helper: render a pill-button group */
+    const pillGroup = (key, options, unit = '') => options.map(opt => {
+        const isActive = rs[key] === opt.value;
+        return `<button data-action="setRoomSetting" data-setting-key="${key}" data-setting-value="${opt.value}"
+            class="px-3 py-1.5 rounded-full text-[10px] font-mono font-bold tracking-wider transition-all cursor-pointer
+            ${isActive
+                ? 'bg-wit/20 text-wit border border-wit/40'
+                : 'bg-obsidian text-gray-500 border border-white/[0.06] hover:border-wit/25 hover:text-gray-300'}">${opt.label}${unit}</button>`;
+    }).join('');
+
+    /** Helper: render bot difficulty selector */
+    const botDifficultySelector = () => {
+        const difficulties = [
+            { value: 'easy', label: 'EASY', color: 'green' },
+            { value: 'medium', label: 'MEDIUM', color: 'consensus' },
+            { value: 'hard', label: 'HARD', color: 'red' }
+        ];
+        return `
+            <div class="mb-4">
+                <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">BOT DIFFICULTY</p>
+                <div class="flex gap-2">
+                    ${difficulties.map(d => {
+                        const isActive = rs.botDifficulty === d.value;
+                        const colorMap = { green: 'green-400', consensus: 'consensus', red: 'red-400' };
+                        const bgMap = { green: 'green-500/15', consensus: 'consensus/15', red: 'red-500/15' };
+                        const borderMap = { green: 'green-500/30', consensus: 'consensus/30', red: 'red-500/30' };
+                        return `<button data-action="setRoomSetting" data-setting-key="botDifficulty" data-setting-value="${d.value}"
+                            class="flex-1 py-1.5 rounded-lg text-[10px] font-mono font-bold tracking-wider transition-all cursor-pointer
+                            ${isActive
+                                ? `bg-${bgMap[d.color]} text-${colorMap[d.color]} border border-${borderMap[d.color]}`
+                                : 'bg-obsidian text-gray-500 border border-white/[0.06] hover:border-white/15 hover:text-gray-400'}">${d.label}</button>`;
+                    }).join('')}
+                </div>
+            </div>`;
+    };
+
+    /** Helper: render advanced settings panel for multiplayer */
+    const advancedSettingsPanel = () => `
+        <div class="mt-4">
+            <button data-action="toggleAdvancedSettings" class="flex items-center gap-2 text-[10px] font-mono text-gray-500 tracking-widest hover:text-gray-300 transition-colors cursor-pointer w-full">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                    style="transform:rotate(${rs.showAdvanced ? '90deg' : '0deg'});transition:transform 0.2s">
+                    <polyline points="9 18 15 12 9 6"/>
+                </svg>
+                ROOM SETTINGS
+            </button>
+            ${rs.showAdvanced ? `
+                <div class="mt-3 p-4 bg-obsidian/50 border border-white/[0.04] rounded-xl space-y-4">
+                    <!-- Round Count -->
+                    <div>
+                        <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">ROUNDS</p>
+                        <div class="flex gap-2">
+                            ${pillGroup('totalRounds', [
+                                { value: 3, label: '3' },
+                                { value: 5, label: '5' },
+                                { value: 7, label: '7' },
+                                { value: 10, label: '10' }
+                            ])}
+                        </div>
+                    </div>
+                    <!-- Submission Time -->
+                    <div>
+                        <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">SUBMISSION TIME</p>
+                        <div class="flex gap-2">
+                            ${pillGroup('submissionTime', [
+                                { value: 30000, label: '30s' },
+                                { value: 45000, label: '45s' },
+                                { value: 60000, label: '60s' }
+                            ])}
+                        </div>
+                    </div>
+                    <!-- Betting Time -->
+                    <div>
+                        <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">BETTING TIME</p>
+                        <div class="flex gap-2">
+                            ${pillGroup('bettingTime', [
+                                { value: 20000, label: '20s' },
+                                { value: 30000, label: '30s' },
+                                { value: 45000, label: '45s' }
+                            ])}
+                        </div>
+                    </div>
+                    <!-- Private Room Toggle -->
+                    <div class="flex items-center justify-between">
+                        <p class="text-[10px] font-mono text-gray-600 tracking-widest">PRIVATE ROOM</p>
+                        <button data-action="setRoomSetting" data-setting-key="isPrivate" data-setting-value="${rs.isPrivate ? 'false' : 'true'}"
+                            class="relative w-10 h-5 rounded-full transition-all cursor-pointer ${rs.isPrivate ? 'bg-wit/30 border border-wit/40' : 'bg-obsidian border border-white/[0.08]'}">
+                            <span class="absolute top-0.5 ${rs.isPrivate ? 'left-5' : 'left-0.5'} w-4 h-4 rounded-full transition-all ${rs.isPrivate ? 'bg-wit' : 'bg-gray-600'}"></span>
+                        </button>
+                    </div>
+                </div>
+            ` : ''}
+        </div>`;
+
     return `
         <div class="mx-auto px-4 lg:px-8 py-8 pb-20" style="max-width:1200px">
             <!-- Lobby Header -->
@@ -176,7 +284,11 @@ export function renderLobby() {
                         <h3 class="text-xl font-display font-bold tracking-wider">SOLO MODE</h3>
                         <span class="text-[9px] font-mono text-consensus/60 bg-consensus/10 px-2 py-0.5 rounded border border-consensus/20">VS AI</span>
                     </div>
-                    <p class="text-gray-500 text-xs font-mono mb-5">Practice against oracle-calibrated bots</p>
+                    <p class="text-gray-500 text-xs font-mono mb-4">Practice against oracle-calibrated bots</p>
+
+                    <!-- Bot Difficulty Selector -->
+                    ${botDifficultySelector()}
+
                     <div class="grid grid-cols-3 gap-3">
                         <button data-action="createRoom" data-category="tech" data-single-player="true" class="btn cat-btn p-4 bg-gradient-to-br from-blue-900/80 to-cyan-900/80 rounded-xl text-white border border-cyan-500/30 hover:border-cyan-400/50 transition-all">
                             <span class="text-2xl block mb-1.5">&#129302;</span><span class="text-[10px] font-mono tracking-wider font-bold">TECH</span>
@@ -188,6 +300,13 @@ export function renderLobby() {
                             <span class="text-2xl block mb-1.5">&#128514;</span><span class="text-[10px] font-mono tracking-wider font-bold">GENERAL</span>
                         </button>
                     </div>
+
+                    <!-- Speed Mode -->
+                    <button data-action="createRoom" data-category="general" data-single-player="true" data-speed-mode="true"
+                        class="btn w-full mt-4 py-2.5 rounded-xl text-[10px] font-mono font-bold tracking-wider transition-all
+                        bg-gradient-to-r from-consensus/10 to-orange-500/10 border border-consensus/25 text-consensus hover:border-consensus/50 hover:text-white">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="inline-block mr-1.5 align-[-2px]"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>SPEED MODE
+                    </button>
                 </div>
 
                 <!-- Multiplayer -->
@@ -209,7 +328,10 @@ export function renderLobby() {
                         </button>
                     </div>
 
-                    <div class="flex gap-2">
+                    <!-- Advanced Room Settings (collapsible) -->
+                    ${advancedSettingsPanel()}
+
+                    <div class="flex gap-2 mt-4">
                         <input type="text" id="room-code" placeholder="Enter room code..."
                             data-action-keypress="roomCodeKeypress"
                             class="flex-1 px-4 py-2.5 rounded-xl uppercase">
@@ -278,9 +400,9 @@ export function renderLobby() {
             ` : ''}
 
             <!-- Leaderboard / Hall of Fame -->
-            <div class="flex gap-1 mb-0">
-                <button data-action="showLeaderboardTab" class="btn flex-1 py-2.5 ${!state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">LEADERBOARD</button>
-                <button data-action="showHallOfFameTab" class="btn flex-1 py-2.5 ${state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">HALL OF FAME</button>
+            <div class="flex gap-1 mb-0" role="tablist">
+                <button data-action="showLeaderboardTab" role="tab" aria-selected="${!state.showHallOfFame}" class="btn flex-1 py-2.5 ${!state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">LEADERBOARD</button>
+                <button data-action="showHallOfFameTab" role="tab" aria-selected="${state.showHallOfFame}" class="btn flex-1 py-2.5 ${state.showHallOfFame ? 'tab-active' : 'tab-inactive'} rounded-t-xl text-[10px] font-mono tracking-wider">HALL OF FAME</button>
             </div>
 
             ${state.showHallOfFame ? `
@@ -343,7 +465,7 @@ export function renderWaiting() {
                     <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">ROOM CODE</p>
                     <div class="flex items-center justify-center gap-2">
                         <p class="font-mono text-2xl text-wit select-all tracking-wider">${esc(r.id)}</p>
-                        <button data-action="copyRoomCode" data-room-id="${esc(r.id)}" class="btn btn-ghost p-2 rounded-lg text-gray-400" title="Copy code">
+                        <button data-action="copyRoomCode" data-room-id="${esc(r.id)}" class="btn btn-ghost p-2 rounded-lg text-gray-400" title="Copy code" aria-label="Copy room code">
                             <span class="text-sm">COPY</span>
                         </button>
                     </div>

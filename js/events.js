@@ -19,7 +19,8 @@ import {
     copyShareText, tweetResult, fetchDailyChallenge, submitDailyChallenge,
     fetchCommunityPrompts, submitCommunityPrompt, voteCommunityPrompt,
     fetchHallOfFame, copyRoomCode, updateBetDisplay, fetchProfile,
-    connectWallet, disconnectWallet
+    connectWallet, disconnectWallet, rematchGame, sendChatMessage,
+    setRoomSetting, toggleAdvancedSettings, dismissTutorial, advanceTutorial
 } from './app.js';
 
 // === CLICK EVENT DELEGATION ===
@@ -96,6 +97,10 @@ document.addEventListener('click', function(e) {
 
         // --- Room management ---
         case 'createRoom':
+            if (target.dataset.speedMode === 'true') {
+                if (!state.roomSettings) state.roomSettings = {};
+                state.roomSettings.speedMode = true;
+            }
             createRoom(target.dataset.category, target.dataset.singlePlayer === 'true');
             break;
         case 'joinRoom':
@@ -190,6 +195,32 @@ document.addEventListener('click', function(e) {
             break;
         case 'disconnectWallet':
             disconnectWallet();
+            break;
+
+        // --- Rematch ---
+        case 'rematch':
+            rematchGame();
+            break;
+
+        // --- Room settings ---
+        case 'setRoomSetting':
+            setRoomSetting(target.dataset.settingKey, target.dataset.settingValue);
+            break;
+        case 'toggleAdvancedSettings':
+            toggleAdvancedSettings();
+            break;
+
+        // --- Tutorial ---
+        case 'dismissTutorial':
+            dismissTutorial();
+            break;
+        case 'advanceTutorial':
+            advanceTutorial();
+            break;
+
+        // --- Spectator chat ---
+        case 'sendChatMessage':
+            sendChatMessage();
             break;
     }
 });

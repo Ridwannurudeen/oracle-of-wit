@@ -33,6 +33,26 @@ class OracleOfWit(gl.Contract):
     current_round_result: str
     last_finalized_game: str
 
+    # 2A — On-Chain Player Stats (top 3)
+    top_player_1: str  # JSON: {name, total_xp, games_won, games_played}
+    top_player_2: str
+    top_player_3: str
+
+    # 2B — Weekly Leaderboard Snapshot
+    weekly_snapshot: str       # JSON: top 10 players + week identifier
+    weekly_snapshot_week: str  # "2026-W13" format
+
+    # 2C — Verifiable Game History (rolling last 5)
+    game_history_1: str
+    game_history_2: str
+    game_history_3: str
+    game_history_4: str
+    game_history_5: str
+
+    # 2D — Achievement Verification Flags
+    achievement_flags: u32
+    achievement_player: str
+
     def __init__(self):
         """Initialize the Oracle of Wit contract"""
         self.total_games = 0
@@ -43,15 +63,36 @@ class OracleOfWit(gl.Contract):
         self.current_round_submissions = ""
         self.current_round_result = ""
         self.last_finalized_game = ""
+        # 2A — On-Chain Player Stats
+        self.top_player_1 = ""
+        self.top_player_2 = ""
+        self.top_player_3 = ""
+        # 2B — Weekly Leaderboard Snapshot
+        self.weekly_snapshot = ""
+        self.weekly_snapshot_week = ""
+        # 2C — Verifiable Game History
+        self.game_history_1 = ""
+        self.game_history_2 = ""
+        self.game_history_3 = ""
+        self.game_history_4 = ""
+        self.game_history_5 = ""
+        # 2D — Achievement Verification Flags
+        self.achievement_flags = 0
+        self.achievement_player = ""
 
     @gl.public.view
     def get_stats(self) -> typing.Any:
         """Get contract statistics"""
+        top_players_count = sum(1 for s in [self.top_player_1, self.top_player_2, self.top_player_3] if s)
         return {
             "total_games": self.total_games,
             "total_judgments": self.total_judgments,
             "total_appeals": self.total_appeals,
-            "current_game_id": self.current_game_id
+            "current_game_id": self.current_game_id,
+            "top_players_count": top_players_count,
+            "weekly_snapshot_week": self.weekly_snapshot_week,
+            "achievement_player": self.achievement_player,
+            "achievement_flags": self.achievement_flags
         }
 
     @gl.public.view
@@ -148,12 +189,19 @@ class OracleOfWit(gl.Contract):
         final_standings_json: str
     ) -> typing.Any:
         """Finalize a game and record final standings"""
-        self.last_finalized_game = json.dumps({
+        finalized_data = json.dumps({
             "game_id": game_id,
             "winner_name": winner_name,
             "final_standings": json.loads(final_standings_json),
             "status": "completed"
         })
+        self.last_finalized_game = finalized_data
+        # Shift game history: 5→discard, 4→5, 3→4, 2→3, 1→2, new→1
+        self.game_history_5 = self.game_history_4
+        self.game_history_4 = self.game_history_3
+        self.game_history_3 = self.game_history_2
+        self.game_history_2 = self.game_history_1
+        self.game_history_1 = finalized_data
         # Update current game status
         if self.current_game_id == game_id:
             try:
@@ -393,6 +441,124 @@ Respond with ONLY the ID number of the funniest submission (just the number, not
             "overturned": overturned,
             "consensus_method": "optimistic_democracy_appeal"
         }
+
+    # ── 2A — On-Chain Player Stats ──────────────────────────────────────
+
+    @gl.public.write
+    def update_player_stats(self, player_name: str, xp_earned: int, won: bool) -> typing.Any:
+        """Update player stats and re-rank top 3"""
+        # Load current top 3 into a list
+        slots = [self.top_player_1, self.top_player_2, self.top_player_3]
+        players = []
+        for s in slots:
+            if s:
+                try:
+                    players.append(json.loads(s))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # Find existing player or create new entry
+        found = False
+        for p in players:
+            if p["name"] == player_name:
+                p["total_xp"] += xp_earned
+                p["games_played"] += 1
+                if won:
+                    p["games_won"] += 1
+                found = True
+                break
+
+        if not found:
+            players.append({
+                "name": player_name,
+                "total_xp": xp_earned,
+                "games_won": 1 if won else 0,
+                "games_played": 1
+            })
+
+        # Sort by total_xp descending, keep top 3
+        players.sort(key=lambda p: p["total_xp"], reverse=True)
+        top3 = players[:3]
+
+        # Save back to storage
+        self.top_player_1 = json.dumps(top3[0]) if len(top3) > 0 else ""
+        self.top_player_2 = json.dumps(top3[1]) if len(top3) > 1 else ""
+        self.top_player_3 = json.dumps(top3[2]) if len(top3) > 2 else ""
+
+        return {"updated": player_name, "top_count": len(top3)}
+
+    @gl.public.view
+    def get_top_players(self) -> typing.Any:
+        """Get the top 3 players"""
+        result = []
+        for s in [self.top_player_1, self.top_player_2, self.top_player_3]:
+            if s:
+                try:
+                    result.append(json.loads(s))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        return result
+
+    # ── 2B — Weekly Leaderboard Snapshot ──────────────────────────────────
+
+    @gl.public.write
+    def finalize_weekly_snapshot(self, week_id: str, top_10_json: str) -> typing.Any:
+        """Store a weekly leaderboard snapshot"""
+        self.weekly_snapshot = json.dumps({
+            "week_id": week_id,
+            "top_10": json.loads(top_10_json)
+        })
+        self.weekly_snapshot_week = week_id
+        return {"week_id": week_id, "stored": True}
+
+    @gl.public.view
+    def get_weekly_snapshot(self) -> typing.Any:
+        """Get the latest weekly leaderboard snapshot"""
+        if not self.weekly_snapshot:
+            return {}
+        try:
+            return json.loads(self.weekly_snapshot)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    # ── 2C — Verifiable Game History ──────────────────────────────────────
+
+    @gl.public.view
+    def get_game_history(self) -> typing.Any:
+        """Get rolling history of last 5 finalized games"""
+        result = []
+        for s in [self.game_history_1, self.game_history_2, self.game_history_3,
+                   self.game_history_4, self.game_history_5]:
+            if s:
+                try:
+                    result.append(json.loads(s))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        return result
+
+    # ── 2D — Achievement Verification Flags ───────────────────────────────
+
+    @gl.public.write
+    def unlock_achievement(self, player_name: str, achievement_bit: int) -> typing.Any:
+        """Unlock an achievement bit for a player. Resets flags if player changes."""
+        if self.achievement_player != player_name:
+            self.achievement_flags = 0
+            self.achievement_player = player_name
+        self.achievement_flags |= (1 << achievement_bit)
+        return {
+            "player": player_name,
+            "achievement_bit": achievement_bit,
+            "flags": self.achievement_flags
+        }
+
+    @gl.public.view
+    def get_achievements(self, player_name: str) -> typing.Any:
+        """Get achievement flags for a player"""
+        if self.achievement_player == player_name:
+            return self.achievement_flags
+        return 0
+
+    # ── Utility ───────────────────────────────────────────────────────────
 
     @gl.public.write
     def record_game_count(self) -> typing.Any:

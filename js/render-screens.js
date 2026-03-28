@@ -290,3 +290,84 @@ export function renderCommunityPrompts() {
         </div>
     `;
 }
+
+/**
+ * Render the tutorial overlay. Shown when state.showTutorial is true.
+ * Steps through 4 cards explaining core gameplay mechanics.
+ * @returns {string} HTML string for the overlay, or empty string if tutorial is hidden.
+ */
+export function renderTutorial() {
+    if (!state.showTutorial) return '';
+
+    const step = state.tutorialStep || 0;
+    const steps = [
+        {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-wit" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>`,
+            title: 'WRITE A PUNCHLINE',
+            desc: 'Each round shows a joke setup. Write your funniest punchline before the timer runs out. Be clever, be quick, be ruthless.'
+        },
+        {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-consensus" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>`,
+            title: 'BET ON THE FUNNIEST',
+            desc: 'After everyone submits, vote on which punchline you think the AI will pick as the winner. Correct bets earn bonus XP.'
+        },
+        {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`,
+            title: 'AI JUDGES ON-CHAIN',
+            desc: 'GenLayer validators evaluate every punchline using deterministic AI consensus. No bias, no favoritism -- just on-chain truth.'
+        },
+        {
+            icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.023 6.023 0 01-2.77.704 6.023 6.023 0 01-2.77-.704"/></svg>`,
+            title: 'WIN XP AND CLIMB',
+            desc: 'Earn XP for winning rounds, correct bets, and daily challenges. Level up, unlock achievements, and climb the leaderboard.'
+        }
+    ];
+
+    const current = steps[step];
+    const stepNumber = step + 1;
+    const totalSteps = steps.length;
+    const isLastStep = step === steps.length - 1;
+
+    return `<div class="fixed inset-0 z-[999] flex items-center justify-center" style="background:rgba(10,10,18,0.9)">
+    <div class="glow-card p-8 text-center" style="max-width:400px;width:90%">
+        <p class="text-[10px] font-mono tracking-widest text-gray-500 uppercase mb-4">${stepNumber}/${totalSteps}</p>
+        <div class="mb-4">${current.icon}</div>
+        <h3 class="text-xl font-display font-bold tracking-wider mb-2">${current.title}</h3>
+        <p class="font-mono text-sm text-gray-400 leading-relaxed mb-6">${current.desc}</p>
+        ${isLastStep
+            ? `<button data-action="dismissTutorial" class="btn btn-play w-full py-3 rounded-xl font-bold text-sm tracking-wider uppercase text-white">GOT IT</button>`
+            : `<button data-action="advanceTutorial" class="btn btn-play w-full py-3 rounded-xl font-bold text-sm tracking-wider uppercase text-white">NEXT</button>`
+        }
+        <p class="mt-4"><button data-action="dismissTutorial" class="text-[10px] font-mono tracking-wider text-gray-600 hover:text-gray-400 uppercase">SKIP</button></p>
+    </div>
+</div>`;
+}
+
+/**
+ * Render the on-chain game history section showing the last 5 finalized games.
+ * Each card links to the GenLayer Bradbury explorer for verification.
+ * @param {Array} chainHistory - Array of finalized game objects.
+ * @returns {string} HTML string.
+ */
+export function renderOnChainHistory(chainHistory = []) {
+    if (chainHistory.length === 0) {
+        return `<div class="glow-card p-5 text-center">
+            <p class="text-gray-500 font-mono text-xs tracking-wider">NO ON-CHAIN HISTORY YET</p>
+            <p class="text-gray-600 text-[10px] font-mono mt-1">Play games to create verifiable records</p>
+        </div>`;
+    }
+    return `<div class="space-y-3">
+        <p class="text-[10px] font-mono text-green-400 tracking-widest">ON-CHAIN GAME HISTORY</p>
+        ${chainHistory.map((game, i) => `
+            <div class="glow-card glow-card-green p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-mono text-gray-400">Game #${i + 1}</span>
+                    <span class="text-[10px] font-mono text-green-400 tracking-wider">VERIFIED</span>
+                </div>
+                <p class="text-sm font-display font-bold">${esc(game.winner || 'Unknown')}</p>
+                <p class="text-[10px] font-mono text-gray-500 mt-1">${game.category || 'general'} - ${game.rounds || '?'} rounds</p>
+                ${game.txHash ? `<a href="https://explorer-bradbury.genlayer.com/transactions/${game.txHash}" target="_blank" rel="noopener noreferrer" class="text-[10px] font-mono text-green-400/60 hover:underline mt-1 block">${game.txHash.substring(0, 10)}...</a>` : ''}
+            </div>
+        `).join('')}
+    </div>`;
+}

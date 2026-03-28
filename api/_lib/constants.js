@@ -1,9 +1,19 @@
 // Game constants: timers, levels, achievements, themes, bot names, prompt punchlines
 
-/** @type {number} Submission phase duration in ms */
+/** @type {number} Default submission phase duration in ms */
 export const SUBMISSION_TIME = parseInt(process.env.SUBMISSION_TIME) || 40000;
-/** @type {number} Betting phase duration in ms */
+/** @type {number} Default betting phase duration in ms */
 export const BETTING_TIME = parseInt(process.env.BETTING_TIME) || 30000;
+
+/** @type {number[]} Allowed round counts */
+export const ALLOWED_ROUNDS = [3, 5, 7, 10];
+/** @type {number[]} Allowed submission times in ms */
+export const ALLOWED_SUBMISSION_TIMES = [30000, 45000, 60000];
+/** @type {number[]} Allowed betting times in ms */
+export const ALLOWED_BETTING_TIMES = [20000, 30000, 45000];
+
+/** @type {{totalRounds: number, submissionTime: number, bettingTime: number}} Speed mode presets */
+export const SPEED_MODE = { totalRounds: 3, submissionTime: 20000, bettingTime: 15000 };
 
 /** @type {import('./types.js').LevelThreshold[]} */
 export const LEVEL_THRESHOLDS = [
@@ -849,4 +859,13 @@ export function getCurrentWeekNumber() {
 export function getCurrentTheme() {
     const weekNum = getCurrentWeekNumber();
     return WEEKLY_THEMES[weekNum % WEEKLY_THEMES.length];
+}
+
+/** @type {Object<string, {quality: number}>} Punchline quality scores for bot difficulty tiers */
+export const PUNCHLINE_QUALITY = {};
+// Pre-score punchlines: first in each array = best (index 0 = quality 1.0, last = 0.25)
+for (const [prompt, punchlines] of Object.entries(PROMPT_PUNCHLINES)) {
+    punchlines.forEach((pl, i) => {
+        PUNCHLINE_QUALITY[pl] = { quality: 1.0 - (i / punchlines.length) * 0.75 };
+    });
 }

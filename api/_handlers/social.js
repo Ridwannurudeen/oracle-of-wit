@@ -121,14 +121,47 @@ export async function ogPreview(body, ctx) {
     const desc = shareData?.punchline || 'The AI humor prediction game powered by GenLayer';
     const url = 'https://oracle-of-wit.vercel.app';
     const esc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
+
+    // Generate dynamic OG image as inline SVG data URI
+    const categoryColors = { tech: '#2DD4BF', crypto: '#FBBF24', general: '#A855F7' };
+    const catColor = categoryColors[shareData?.category] || '#A855F7';
+    const winnerText = esc(shareData?.winnerName || 'Champion');
+    const punchlineText = esc((shareData?.punchline || '').slice(0, 80));
+    const scoreText = shareData?.score ? `${shareData.score} XP` : '';
+    const catLabel = shareData?.category ? shareData.category.toUpperCase() : '';
+
+    const svgImage = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0A0A12"/><stop offset="100%" stop-color="#1a0a2e"/></linearGradient>
+      <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#FBBF24"/><stop offset="50%" stop-color="#A855F7"/><stop offset="100%" stop-color="#2DD4BF"/></linearGradient></defs>
+      <rect width="1200" height="630" fill="url(#bg)"/>
+      <circle cx="200" cy="150" r="300" fill="rgba(168,85,247,0.06)"/>
+      <circle cx="1000" cy="500" r="250" fill="rgba(45,212,191,0.04)"/>
+      <rect x="40" y="40" width="1120" height="550" rx="24" fill="none" stroke="url(#glow)" stroke-width="2" opacity="0.4"/>
+      <text x="600" y="100" text-anchor="middle" fill="url(#glow)" font-family="sans-serif" font-weight="700" font-size="42" letter-spacing="4">ORACLE OF WIT</text>
+      <text x="600" y="140" text-anchor="middle" fill="#666" font-family="monospace" font-size="14" letter-spacing="3">GENLAYER PROTOCOL</text>
+      <circle cx="600" cy="260" r="60" fill="none" stroke="${catColor}" stroke-width="3" opacity="0.6"/>
+      <text x="600" y="268" text-anchor="middle" fill="${catColor}" font-family="sans-serif" font-size="36">&#x1F3C6;</text>
+      <text x="600" y="370" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="700" font-size="48">${winnerText}</text>
+      ${punchlineText ? `<text x="600" y="420" text-anchor="middle" fill="#999" font-family="monospace" font-size="18">"${punchlineText}"</text>` : ''}
+      ${scoreText ? `<text x="600" y="480" text-anchor="middle" fill="#FBBF24" font-family="monospace" font-weight="700" font-size="28">${scoreText}</text>` : ''}
+      ${catLabel ? `<rect x="530" y="500" width="140" height="30" rx="15" fill="${catColor}" opacity="0.2"/><text x="600" y="520" text-anchor="middle" fill="${catColor}" font-family="monospace" font-size="13" letter-spacing="2">${catLabel}</text>` : ''}
+      <text x="600" y="590" text-anchor="middle" fill="#555" font-family="monospace" font-size="13">oracle-of-wit.vercel.app</text>
+    </svg>`;
+
+    const svgBase64 = Buffer.from(svgImage).toString('base64');
+    const ogImageUrl = `data:image/svg+xml;base64,${svgBase64}`;
+
     const html = `<!DOCTYPE html><html><head>
         <meta property="og:title" content="${esc(title)}" />
         <meta property="og:description" content="${esc(desc)}" />
-        <meta property="og:image" content="${url}/og-image.png" />
+        <meta property="og:image" content="${ogImageUrl}" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
         <meta property="og:url" content="${url}/share/${esc(shareId)}" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="${esc(title)}" />
         <meta name="twitter:description" content="${esc(desc)}" />
+        <meta name="twitter:image" content="${ogImageUrl}" />
         <meta http-equiv="refresh" content="0; url=${url}" />
     </head><body>Redirecting...</body></html>`;
     return { status: 200, html };

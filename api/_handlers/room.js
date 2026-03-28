@@ -2,7 +2,7 @@
 
 import { redisKeys, redisSRange } from '../_lib/redis.js';
 import { generateToken, storeSessionToken, storePlayerSession } from '../_lib/auth.js';
-import { BOT_NAMES, getCurrentTheme } from '../_lib/constants.js';
+import { BOT_NAMES, getCurrentTheme, ALLOWED_ROUNDS, ALLOWED_SUBMISSION_TIMES, ALLOWED_BETTING_TIMES, SPEED_MODE, SUBMISSION_TIME, BETTING_TIME } from '../_lib/constants.js';
 import { createGameOnChain } from '../_lib/genlayer.js';
 /**
  * Create a new game room.
@@ -18,6 +18,21 @@ export async function createRoom(body, ctx) {
     const safeCategory = ctx.VALID_CATEGORIES.includes(category) ? category : 'tech';
     const clampedMaxPlayers = Math.max(2, Math.min(100, Number(maxPlayers) || 100));
 
+    // Custom room settings with validation
+    const isSpeedMode = body.speedMode === true;
+    let totalRounds, submissionTime, bettingTime;
+    if (isSpeedMode) {
+        totalRounds = SPEED_MODE.totalRounds;
+        submissionTime = SPEED_MODE.submissionTime;
+        bettingTime = SPEED_MODE.bettingTime;
+    } else {
+        totalRounds = ALLOWED_ROUNDS.includes(Number(body.totalRounds)) ? Number(body.totalRounds) : 5;
+        submissionTime = ALLOWED_SUBMISSION_TIMES.includes(Number(body.submissionTime)) ? Number(body.submissionTime) : SUBMISSION_TIME;
+        bettingTime = ALLOWED_BETTING_TIMES.includes(Number(body.bettingTime)) ? Number(body.bettingTime) : BETTING_TIME;
+    }
+    const isPrivate = body.isPrivate === true;
+    const botDifficulty = ['easy', 'medium', 'hard'].includes(body.botDifficulty) ? body.botDifficulty : 'easy';
+
     const roomId = ctx.generateRoomCode();
     const players = [{ name: hostName, score: 0, isHost: true, isBot: false, joinedAt: Date.now() }];
 
@@ -31,19 +46,22 @@ export async function createRoom(body, ctx) {
     const room = {
         id: roomId, host: hostName, category: safeCategory,
         maxPlayers: clampedMaxPlayers, players, spectators: [],
-        status: 'waiting', currentRound: 0, totalRounds: 5,
+        status: 'waiting', currentRound: 0, totalRounds,
+        submissionTime, bettingTime,
         jokePrompt: '', submissions: [], bets: [], reactions: [],
         roundResults: [], usedPrompts: [],
         createdAt: Date.now(), updatedAt: Date.now(),
         phaseEndsAt: null, isSinglePlayer: singlePlayer,
+        isPrivate, isSpeedMode, botDifficulty,
         weeklyTheme: getCurrentTheme(), version: 0,
-        chainTxHashes: { create: null, rounds: [], finalize: null }
+        chainTxHashes: { create: null, rounds: [], finalize: null },
+        chat: []
     };
 
     // Register game on GenLayer before persisting (with 15s timeout for graceful degradation)
     try {
         const result = await Promise.race([
-            createGameOnChain(roomId, hostName, safeCategory, 5, players),
+            createGameOnChain(roomId, hostName, safeCategory, totalRounds, players),
             new Promise(resolve => setTimeout(() => resolve(null), 15000))
         ]);
         if (result?.txHash) {
@@ -145,12 +163,13 @@ export async function listRooms(body, ctx) {
     const rooms = [];
     for (const roomId of roomIds) {
         const room = await ctx.getRoomRaw(roomId);
-        if (!room || room.isSinglePlayer || room.status === 'finished') continue;
+        if (!room || room.isSinglePlayer || room.status === 'finished' || room.isPrivate) continue;
         rooms.push({
             id: room.id, host: room.host, category: room.category,
             players: room.players.length, maxPlayers: room.maxPlayers,
             status: room.status, spectators: (room.spectators || []).length,
-            currentRound: room.currentRound, totalRounds: room.totalRounds
+            currentRound: room.currentRound, totalRounds: room.totalRounds,
+            isSpeedMode: room.isSpeedMode || false
         });
     }
 

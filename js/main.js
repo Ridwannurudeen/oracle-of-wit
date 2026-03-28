@@ -8,7 +8,7 @@
 import { render, renderLeftWingContent, renderRightWingContent } from './render.js';
 import { bindRender, bindLeaveRoom, bindRenderLeftWingContent, bindRenderRightWingContent, bindHandlePhaseChange, bindSyncTimer } from './api.js';
 import { bindEffectsRender } from './effects.js';
-import { leaveRoom, handlePhaseChange, syncTimer, detectChallenge } from './app.js';
+import { leaveRoom, handlePhaseChange, syncTimer, detectChallenge, checkTutorial, detectReferral } from './app.js';
 
 // Side-effect import: registers all event listeners
 import './events.js';
@@ -24,4 +24,6 @@ bindSyncTimer(syncTimer);
 
 // Boot
 detectChallenge();
+detectReferral();
+checkTutorial();
 render();

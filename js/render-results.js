@@ -74,7 +74,7 @@ export function renderRevealing() {
             ${isShowingWinner ? `
                 <div class="glow-card glow-card-gold p-8 text-center animate-winnerScale animate-goldPulse">
                     <p class="text-[10px] font-mono text-consensus/60 tracking-[0.3em] mb-2">WINNER</p>
-                    <p class="text-consensus font-display font-bold text-xl mb-2 tracking-wider">THE ORACLE HAS SPOKEN</p>
+                    <p class="text-consensus font-display font-bold text-xl mb-2 tracking-wider" aria-live="assertive">THE ORACLE HAS SPOKEN</p>
                     <p class="text-2xl font-display font-bold my-3">"${esc(current.punchline)}"</p>
                     <p class="text-gray-400 text-sm font-mono">${esc(current.playerName)}</p>
                     ${commentary?.winnerComment ? `
@@ -178,7 +178,7 @@ export function renderRoundResults() {
 
     return `
         <div class="space-y-4">
-            <div class="glow-card glow-card-gold p-6 text-center">
+            <div class="glow-card glow-card-gold p-6 text-center" aria-live="assertive">
                 <p class="text-[10px] font-mono text-consensus/60 tracking-[0.3em] mb-2">ROUND ${result.round} WINNER</p>
                 <p class="text-xl font-display font-bold my-2">"${esc(result.winningPunchline)}"</p>
                 <p class="text-gray-400 text-sm font-mono">${esc(result.winnerName)}</p>
@@ -307,8 +307,22 @@ export function renderRoundResults() {
 
             <div class="flex gap-2">
                 <button id="challenge-btn" data-action="createChallengeLink" class="btn btn-ghost flex-1 py-2.5 rounded-xl text-xs text-oracle">CHALLENGE</button>
-                <button data-action="shareRoundResult" class="btn btn-primary flex-1 py-2.5 rounded-xl text-xs text-white">SHARE</button>
+                <button data-action="shareRoundResult" aria-label="Share round result" class="btn btn-primary flex-1 py-2.5 rounded-xl text-xs text-white">SHARE</button>
             </div>
+
+            ${(r.chat || []).length > 0 ? `
+                <div class="glow-card p-3">
+                    <p class="text-[10px] font-mono text-gray-600 tracking-widest mb-2">SPECTATOR CHAT</p>
+                    <div class="space-y-1 max-h-24 overflow-y-auto">
+                        ${(r.chat || []).slice(-10).map(msg => `
+                            <div class="text-xs font-mono">
+                                <span class="text-oracle">${esc(msg.playerName)}</span>
+                                <span class="text-gray-500">${esc(msg.text)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
 
             ${state.isHost ? `
                 <button data-action="nextRound" data-hover-sound="true" class="btn btn-play w-full py-4 rounded-xl font-bold text-sm">
@@ -360,6 +374,20 @@ export function renderFinalResults() {
                 <p class="text-3xl font-display font-bold mt-1">${esc(winner.name)}</p>
                 <p class="text-2xl text-consensus font-mono font-bold mt-1">${winner.score} XP</p>
                 ${winner.isBot ? '<p class="text-gray-500 text-[10px] font-mono tracking-wider uppercase mt-1">Autonomous Agent</p>' : ''}
+            </div>
+
+            <div class="glow-card glow-card-cyan p-5 text-center">
+                <p class="text-[10px] font-mono text-oracle/60 tracking-[0.3em] mb-2">SPREAD THE WIT</p>
+                <p class="text-sm text-gray-400 mb-4">Share your result and challenge friends</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <button data-action="tweetResult" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" aria-label="Tweet result" class="btn py-3 rounded-xl text-xs font-mono font-bold text-white" style="background:linear-gradient(135deg,#0284c7,#0369a1)">
+                        TWEET RESULT
+                    </button>
+                    <button data-action="copyShareText" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" aria-label="Copy share link" class="btn btn-ghost py-3 rounded-xl text-xs font-mono font-bold text-oracle">
+                        COPY LINK
+                    </button>
+                </div>
+                ${bestJoke ? `<p class="text-xs text-gray-500 mt-3 italic">"${esc(bestJoke)}"</p>` : ''}
             </div>
 
             <div class="glow-card p-4">
@@ -440,13 +468,13 @@ export function renderFinalResults() {
             ${isWinner && !winner.isBot ? '<p class="text-center font-display font-bold tracking-wider text-lg text-consensus">VICTORY</p>' : `<p class="text-center text-gray-500 font-mono text-xs tracking-wider uppercase">Finished #${playerRank}</p>`}
 
             <div class="grid grid-cols-3 gap-2">
-                <button id="copy-share-btn" data-action="copyShareText" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" class="btn btn-ghost py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider">Copy</button>
-                <button data-action="shareFinalResult" class="btn btn-primary py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white">Share</button>
-                <button data-action="tweetResult" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" class="btn py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white" style="background:linear-gradient(135deg,#0284c7,#0369a1);box-shadow:0 4px 15px rgba(2,132,199,0.3)">Tweet</button>
+                <button id="copy-share-btn" data-action="copyShareText" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" aria-label="Copy share link" class="btn btn-ghost py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider">Copy</button>
+                <button data-action="shareFinalResult" aria-label="Share final result" class="btn btn-primary py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white">Share</button>
+                <button data-action="tweetResult" data-player-score="${playerScore}" data-rounds-won="${roundsWon}" data-total-rounds="${r.totalRounds}" aria-label="Tweet result" class="btn py-3 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-white" style="background:linear-gradient(135deg,#0284c7,#0369a1);box-shadow:0 4px 15px rgba(2,132,199,0.3)">Tweet</button>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
-                <button data-action="createRoom" data-category="${esc(r.category)}" data-single-player="${!!r.isSinglePlayer}" class="btn btn-play py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Rematch</button>
+                <button data-action="rematch" class="btn btn-play py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">REMATCH</button>
                 <button data-action="leaveRoom" class="btn btn-primary py-4 rounded-xl font-display font-bold text-lg uppercase tracking-wider text-white">Play Again</button>
             </div>
         </div>

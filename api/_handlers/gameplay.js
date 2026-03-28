@@ -1,8 +1,8 @@
 // Core game action handlers: startGame, submitPunchline, placeBet, castVote, advancePhase, nextRound, sendReaction
 
-import { SUBMISSION_TIME } from '../_lib/constants.js';
+import { SUBMISSION_TIME, BETTING_TIME } from '../_lib/constants.js';
 import { transitionFromSubmitting, autoJudge, addBotBets, getNextPrompt } from '../_lib/game-logic.js';
-import { postGameToDiscord, finalizeGameOnChain } from '../_lib/genlayer.js';
+import { postGameToDiscord, finalizeGameOnChain, updatePlayerStatsOnChain } from '../_lib/genlayer.js';
 import { getProfile, saveProfile, checkAchievements } from '../_lib/profiles.js';
 
 /**
@@ -26,7 +26,7 @@ export async function startGame(body, ctx) {
     room.bets = [];
     room.reactions = [];
     room.jokePrompt = await getNextPrompt(room);
-    room.phaseEndsAt = now + SUBMISSION_TIME;
+    room.phaseEndsAt = now + (room.submissionTime || SUBMISSION_TIME);
     room.roundStartedAt = now;
     room.updatedAt = now;
     room.betBudgets = {};
@@ -233,6 +233,13 @@ export async function nextRound(body, ctx) {
                         comeback: hadComeback
                     });
                     await saveProfile(profile);
+
+                    // Update player stats on-chain (fire-and-forget, non-blocking)
+                    try {
+                        updatePlayerStatsOnChain(profile.name, playerData?.score || 0, isWinner)
+                            .catch(e => console.error('[GenLayer] updatePlayerStatsOnChain error:', e.message));
+                    } catch (e) { /* graceful degradation */ }
+
                     profileUpdate = { profile, newAchievements };
                 }
             } catch(e) { console.error('Profile update failed:', e); }
@@ -255,11 +262,81 @@ export async function nextRound(body, ctx) {
     room.curatedIds = null;
     room.audienceVotes = {};
     room.jokePrompt = await getNextPrompt(room);
-    room.phaseEndsAt = now + SUBMISSION_TIME;
+    room.phaseEndsAt = now + (room.submissionTime || SUBMISSION_TIME);
     room.roundStartedAt = now;
     room.updatedAt = now;
     await ctx.setRoom(roomId, room);
     return { status: 200, data: { success: true, room } };
+}
+
+/**
+ * Create a rematch room with same settings and auto-join connected players.
+ * @param {Object} body
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
+ */
+export async function rematch(body, ctx) {
+    const { roomId, hostName, playerId } = body;
+    let oldRoom = await ctx.getRoom(roomId);
+    if (!oldRoom) return { status: 404, data: { error: 'Original room not found' } };
+    if (oldRoom.host !== hostName) return { status: 403, data: { error: 'Only host can create rematch' } };
+    if (oldRoom.status !== 'finished') return { status: 400, data: { error: 'Game must be finished to rematch' } };
+
+    // Import createRoom handler and build rematch body
+    const rematchBody = {
+        hostName,
+        category: oldRoom.category,
+        maxPlayers: oldRoom.maxPlayers,
+        singlePlayer: oldRoom.isSinglePlayer,
+        totalRounds: oldRoom.totalRounds,
+        submissionTime: oldRoom.submissionTime,
+        bettingTime: oldRoom.bettingTime,
+        isPrivate: oldRoom.isPrivate || false,
+        isSpeedMode: oldRoom.isSpeedMode || false,
+        botDifficulty: oldRoom.botDifficulty || 'easy',
+        playerId,
+        rematchFrom: roomId
+    };
+
+    const { createRoom: createRoomHandler } = await import('./room.js');
+    return createRoomHandler(rematchBody, ctx);
+}
+
+/**
+ * Send a chat message in a room (spectators only during active phases).
+ * @param {Object} body
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
+ */
+export async function sendChat(body, ctx) {
+    const { roomId, playerName, message } = body;
+    if (!message || typeof message !== 'string') return { status: 400, data: { error: 'Message required' } };
+    const text = message.trim().slice(0, 50);
+    if (!text) return { status: 400, data: { error: 'Message cannot be empty' } };
+
+    const locked = await ctx.acquireRoomLock(roomId);
+    if (!locked) return { status: 409, data: { error: 'Room busy, try again' } };
+    try {
+        let room = await ctx.getRoomRaw(roomId);
+        if (!room) return { status: 404, data: { error: 'Room not found' } };
+
+        // Only spectators can chat during active game phases
+        const isSpectator = (room.spectators || []).find(s => s.name === playerName);
+        const isPlayer = room.players.find(p => p.name === playerName);
+        if (!isSpectator && !isPlayer) return { status: 403, data: { error: 'Not in this room' } };
+        if (isPlayer && ['submitting', 'betting', 'judging'].includes(room.status)) {
+            return { status: 400, data: { error: 'Players cannot chat during active phases' } };
+        }
+
+        if (!room.chat) room.chat = [];
+        room.chat.push({ playerName, text, at: Date.now(), isSpectator: !!isSpectator });
+        if (room.chat.length > 50) room.chat = room.chat.slice(-50);
+        room.updatedAt = Date.now();
+        await ctx.setRoom(roomId, room);
+        return { status: 200, data: { success: true } };
+    } finally {
+        await ctx.releaseRoomLock(roomId);
+    }
 }
 
 /**

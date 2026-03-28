@@ -7,7 +7,7 @@ import { mountOracleEye, oracleEye3D, playScreenTransition } from './effects.js'
 import { renderWelcome, renderLobby, renderWaiting } from './render-lobby.js';
 import { renderSubmitting, renderBetting, renderJudging } from './render-game.js';
 import { renderRevealing, renderRoundResults, renderFinalResults } from './render-results.js';
-import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderCommunityPrompts } from './render-screens.js';
+import { renderDailyChallenge, renderProfileScreen, renderHallOfFame, renderCommunityPrompts, renderTutorial } from './render-screens.js';
 import { syncFromLegacyState } from './signals.js';
 import { mountIslands } from './islands.js';
 
@@ -235,7 +235,7 @@ function buildHeader() {
                             <span class="text-[9px] font-mono text-green-400 tracking-wider">TESTNET</span>
                         </div>
                     </div>
-                    <button data-action="toggleSound" data-header-sound class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'}</button>
+                    <button data-action="toggleSound" data-header-sound aria-label="${soundEnabled ? 'Mute sound' : 'Unmute sound'}" class="btn btn-ghost p-1.5 rounded-lg text-sm">${soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'}</button>
                     <span data-header-profile class="px-2 py-1 neon-border-wit rounded-lg text-xs font-mono" style="background:rgba(168,85,247,0.08)${!state.profile && !state.playerName ? ';display:none' : ''}">${state.profile ? `Lv.${state.profile.level} <span class="text-wit">${esc(state.profile.title)}</span>` : state.playerName ? esc(state.playerName) : ''}</span>
                     ${state.roomId ? `<span data-header-room class="px-1.5 py-1 bg-obsidian border border-white/[0.06] rounded text-[10px] font-mono text-gray-400">${esc(state.roomId)}</span>` : ''}
                 </div>
@@ -253,6 +253,7 @@ function patchHeader() {
     const soundBtn = document.querySelector('[data-header-sound]');
     if (soundBtn) {
         soundBtn.innerHTML = soundEnabled ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+        soundBtn.setAttribute('aria-label', soundEnabled ? 'Mute sound' : 'Unmute sound');
     }
     // Update profile/player name badge
     const profileEl = document.querySelector('[data-header-profile]');
@@ -433,6 +434,16 @@ export function render(force = false) {
                 wrapper.className = isHighStakes ? 'high-stakes' : '';
             }
 
+            // Update tutorial overlay
+            let tutEl = document.getElementById('tutorial-overlay');
+            const tutHtml = renderTutorial();
+            if (tutHtml) {
+                if (!tutEl) { tutEl = document.createElement('div'); tutEl.id = 'tutorial-overlay'; document.body.appendChild(tutEl); }
+                tutEl.innerHTML = tutHtml;
+            } else if (tutEl) {
+                tutEl.remove();
+            }
+
             postRender(wasTextareaFocused, selectionStart, selectionEnd, false);
             return;
         }
@@ -472,6 +483,16 @@ export function render(force = false) {
         `}
         </div>
     `;
+
+    // Tutorial overlay (appended to body, outside #app)
+    let tutEl = document.getElementById('tutorial-overlay');
+    const tutHtml = renderTutorial();
+    if (tutHtml) {
+        if (!tutEl) { tutEl = document.createElement('div'); tutEl.id = 'tutorial-overlay'; document.body.appendChild(tutEl); }
+        tutEl.innerHTML = tutHtml;
+    } else if (tutEl) {
+        tutEl.remove();
+    }
 
     postRender(wasTextareaFocused, selectionStart, selectionEnd, true);
 }

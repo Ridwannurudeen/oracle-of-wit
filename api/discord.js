@@ -5,7 +5,8 @@
 import { createPublicKey, verify } from 'node:crypto';
 import { redisGet, redisSet, redisKeys } from './_lib/redis.js';
 import { getGenLayerClient } from './_lib/genlayer.js';
-import { CATEGORIZED_PROMPTS } from './_lib/constants.js';
+import { CATEGORIZED_PROMPTS, ACHIEVEMENTS } from './_lib/constants.js';
+import { getProfile, getDailyPrompt, getTodayKey } from './_lib/profiles.js';
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 const GENLAYER_CONTRACT_ADDRESS = process.env.GENLAYER_CONTRACT_ADDRESS;
@@ -16,10 +17,12 @@ const WIT_PURPLE = 0xA855F7;
 // Discord Interaction types
 const PING = 1;
 const APPLICATION_COMMAND = 2;
+const MODAL_SUBMIT = 5;
 
 // Discord Response types
 const PONG = 1;
 const CHANNEL_MESSAGE = 4;
+const MODAL = 9;
 
 // ---------------------------------------------------------------------------
 // Joke prompts — derived from canonical PROMPT_PUNCHLINES source
@@ -282,6 +285,189 @@ async function handleHistory(options) {
 }
 
 // ---------------------------------------------------------------------------
+// /daily — Open a text input modal for daily challenge submission
+// ---------------------------------------------------------------------------
+function handleDaily() {
+    const prompt = getDailyPrompt();
+    return {
+        type: MODAL,
+        data: {
+            custom_id: 'daily_submit',
+            title: 'Daily Challenge',
+            components: [
+                {
+                    type: 1, // ActionRow
+                    components: [{
+                        type: 4, // TextInput
+                        custom_id: 'punchline',
+                        label: prompt.length > 45 ? prompt.slice(0, 42) + '...' : prompt,
+                        style: 2, // Paragraph
+                        placeholder: 'Write your funniest punchline...',
+                        required: true,
+                        max_length: 280
+                    }]
+                }
+            ]
+        }
+    };
+}
+
+async function handleDailySubmit(body) {
+    const discordUser = body.member?.user?.username || body.user?.username || 'DiscordPlayer';
+    const playerId = `discord:${body.member?.user?.id || body.user?.id || 'unknown'}`;
+    const punchline = body.data?.components?.[0]?.components?.[0]?.value;
+
+    if (!punchline) {
+        return {
+            type: CHANNEL_MESSAGE,
+            data: {
+                embeds: [embed('Daily Challenge', 'No punchline provided. Try again!')],
+                flags: 64
+            }
+        };
+    }
+
+    const dateKey = getTodayKey();
+    const played = await redisGet(`daily:${dateKey}:played:${playerId}`);
+    if (played) {
+        return {
+            type: CHANNEL_MESSAGE,
+            data: {
+                embeds: [embed('Daily Challenge', 'You already played today! Come back tomorrow.')],
+                flags: 64
+            }
+        };
+    }
+
+    const prompt = getDailyPrompt();
+    const score = 50 + Math.floor(Math.random() * 50);
+    await redisSet(`daily:${dateKey}:played:${playerId}`, true, 86400 * 2);
+
+    const lb = await redisGet(`daily:${dateKey}:lb`) || [];
+    lb.push({ name: discordUser, score, won: score >= 75, time: 0 });
+    lb.sort((a, b) => b.score - a.score);
+    await redisSet(`daily:${dateKey}:lb`, lb.slice(0, 100), 86400 * 2);
+
+    return {
+        type: CHANNEL_MESSAGE,
+        data: {
+            embeds: [embed(
+                'Daily Challenge Result',
+                `**Prompt:** ${prompt}\n**Your Answer:** ${punchline}`,
+                [
+                    { name: 'Score', value: `${score} XP`, inline: true },
+                    { name: 'Rank', value: `#${lb.findIndex(e => e.name === discordUser) + 1} today`, inline: true },
+                ],
+                `Play the full game at ${APP_URL}`
+            )]
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// /challenge @user — Create a friend challenge link
+// ---------------------------------------------------------------------------
+async function handleChallenge(options, body) {
+    const userOpt = options?.find(o => o.name === 'user');
+    const targetUserId = userOpt?.value;
+
+    if (!targetUserId) {
+        return {
+            type: CHANNEL_MESSAGE,
+            data: {
+                embeds: [embed('Challenge', 'Please mention a user to challenge!')],
+                flags: 64
+            }
+        };
+    }
+
+    const challengeCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const challengeUrl = `${APP_URL}?challenge=${challengeCode}`;
+
+    await redisSet(`challenge:discord:${challengeCode}`, {
+        challenger: body.member?.user?.username || 'Unknown',
+        challengerId: body.member?.user?.id,
+        targetId: targetUserId,
+        createdAt: Date.now()
+    }, 86400);
+
+    return {
+        type: CHANNEL_MESSAGE,
+        data: {
+            content: `<@${targetUserId}>`,
+            embeds: [embed(
+                'You Have Been Challenged!',
+                `<@${body.member?.user?.id || body.user?.id}> challenges <@${targetUserId}> to a battle of wit!`,
+                [
+                    { name: 'Challenge Link', value: `[Accept Challenge](${challengeUrl})`, inline: true },
+                    { name: 'Code', value: `\`${challengeCode}\``, inline: true },
+                ],
+                'May the funniest oracle win!'
+            )]
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// /achievements [player] — Show achievement badges for a player
+// ---------------------------------------------------------------------------
+async function handleAchievements(options) {
+    const playerOpt = options?.find(o => o.name === 'player');
+    const playerName = playerOpt?.value;
+
+    if (!playerName) {
+        return {
+            type: CHANNEL_MESSAGE,
+            data: {
+                embeds: [embed('Achievements', 'Please provide a player name to look up.')],
+                flags: 64
+            }
+        };
+    }
+
+    // Try direct profile lookup by name-based ID patterns
+    let profile = await getProfile(playerName);
+    if (!profile) profile = await getProfile(`discord:${playerName}`);
+    if (!profile) profile = await getProfile(`wallet:${playerName}`);
+
+    if (!profile) {
+        return {
+            type: CHANNEL_MESSAGE,
+            data: {
+                embeds: [embed(
+                    `Achievements: ${playerName}`,
+                    'Player profile not found. They need to play at least one game first!',
+                    [],
+                    `Play at ${APP_URL}`
+                )]
+            }
+        };
+    }
+
+    const earned = profile.achievements || [];
+    const lines = ACHIEVEMENTS.map(a => {
+        const unlocked = earned.includes(a.id);
+        return `${a.icon} **${a.name}** ${unlocked ? '-- Unlocked' : '-- *Locked*'}`;
+    });
+
+    return {
+        type: CHANNEL_MESSAGE,
+        data: {
+            embeds: [embed(
+                `Achievements: ${profile.name || playerName}`,
+                lines.join('\n'),
+                [
+                    { name: 'Unlocked', value: `${earned.length}/${ACHIEVEMENTS.length}`, inline: true },
+                    { name: 'Level', value: `${profile.level} (${profile.title})`, inline: true },
+                    { name: 'Lifetime XP', value: `${profile.lifetimeXP}`, inline: true },
+                ],
+                'Powered by GenLayer Optimistic Democracy'
+            )]
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Ed25519 signature verification using Node.js built-in crypto (sync, no deps)
 // ---------------------------------------------------------------------------
 function verifyDiscordSignature(rawBody, signature, timestamp, publicKeyHex) {
@@ -349,6 +535,15 @@ export default async function handler(req, res) {
             case 'history':
                 response = await handleHistory(options);
                 break;
+            case 'daily':
+                response = handleDaily();
+                break;
+            case 'challenge':
+                response = await handleChallenge(options, body);
+                break;
+            case 'achievements':
+                response = await handleAchievements(options);
+                break;
             default:
                 response = {
                     type: CHANNEL_MESSAGE,
@@ -356,6 +551,12 @@ export default async function handler(req, res) {
                 };
         }
 
+        return res.status(200).json(response);
+    }
+
+    // Modal submissions (daily challenge punchline)
+    if (body.type === MODAL_SUBMIT) {
+        const response = await handleDailySubmit(body);
         return res.status(200).json(response);
     }
 

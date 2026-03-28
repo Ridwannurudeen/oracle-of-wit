@@ -75,6 +75,34 @@ const commands = [
             }
         ]
     },
+    {
+        name: 'daily',
+        description: 'Submit a punchline for today\'s daily challenge',
+    },
+    {
+        name: 'challenge',
+        description: 'Challenge a friend to a battle of wit',
+        options: [
+            {
+                name: 'user',
+                description: 'The user to challenge',
+                type: 6, // USER
+                required: true,
+            }
+        ]
+    },
+    {
+        name: 'achievements',
+        description: 'View achievement badges for a player',
+        options: [
+            {
+                name: 'player',
+                description: 'Player name or ID to look up',
+                type: 3, // STRING
+                required: true,
+            }
+        ]
+    },
 ];
 
 async function main() {

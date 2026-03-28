@@ -122,5 +122,5 @@ export function renderProfileCard() {
 export function renderTimer() {
     if (state.timeLeft <= 0) return '';
     const max = state.screen === 'submitting' ? 40 : state.screen === 'voting' ? 20 : 30;
-    return `<div data-island="timer" data-max-time="${max}" class="glow-card p-4 mb-4"></div>`;
+    return `<div data-island="timer" data-max-time="${max}" role="status" aria-label="Time remaining" class="glow-card p-4 mb-4"></div>`;
 }

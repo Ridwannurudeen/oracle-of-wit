@@ -150,7 +150,7 @@ const READ_ONLY_ACTIONS = new Set([
     'getRoom', 'listRooms', 'getLeaderboard', 'getWeeklyTheme', 'getProfile',
     'getDailyChallenge', 'getChallenge', 'ogPreview', 'getHallOfFame',
     'getSeasonalLeaderboard', 'getPlayerHistory', 'getSeasonArchive',
-    'getPromptSubmissions', 'requestNonce'
+    'getPromptSubmissions', 'requestNonce', 'trackReferral'
 ]);
 
 // Actions that create sessions (return tokens)
@@ -164,7 +164,7 @@ const PLAYER_SESSION_ACTIONS = new Set([
 // Actions that require session validation
 const SESSION_REQUIRED_ACTIONS = new Set([
     'startGame', 'submitPunchline', 'placeBet', 'castVote', 'advancePhase',
-    'nextRound', 'sendReaction', 'appealVerdict'
+    'nextRound', 'sendReaction', 'appealVerdict', 'rematch', 'sendChat'
 ]);
 
 /**

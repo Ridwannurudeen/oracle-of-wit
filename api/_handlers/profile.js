@@ -4,7 +4,7 @@ import { redisGet, redisSet } from '../_lib/redis.js';
 import { BOT_NAMES, PROMPT_PUNCHLINES, FALLBACK_PUNCHLINES, ACHIEVEMENTS } from '../_lib/constants.js';
 import { getGenLayerClient } from '../_lib/genlayer.js';
 import { pickWinnerRandom } from '../_lib/game-logic.js';
-import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey } from '../_lib/profiles.js';
+import { getProfile, saveProfile, createDefaultProfile, checkAchievements, getNextLevelXP, getTodayKey, getDailyPrompt, getCurrentSeasonKey, trackReferral } from '../_lib/profiles.js';
 import { generateToken, storePlayerSession } from '../_lib/auth.js';
 import { generateNonce, storeNonce, consumeNonce, verifySiweMessage, buildSiweMessage } from '../_lib/wallet-auth.js';
 
@@ -259,4 +259,17 @@ export async function verifyWallet(body, ctx) {
         achievements: ACHIEVEMENTS,
         playerSessionToken,
     }};
+}
+
+/**
+ * Track a referral between two players.
+ * @param {Object} body
+ * @param {import('../_lib/types.js').HandlerContext} ctx
+ * @returns {Promise<import('../_lib/types.js').HandlerResult>}
+ */
+export async function trackReferralHandler(body, ctx) {
+    const { referrerId, newPlayerId } = body;
+    if (!referrerId || !newPlayerId) return { status: 400, data: { error: 'referrerId and newPlayerId required' } };
+    const result = await trackReferral(referrerId, newPlayerId);
+    return { status: 200, data: { tracked: true, ...result } };
 }

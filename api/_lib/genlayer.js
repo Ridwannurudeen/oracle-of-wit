@@ -379,6 +379,165 @@ export async function readStats() {
 }
 
 /**
+ * Update player stats on-chain (fire-and-forget).
+ * @param {string} playerName
+ * @param {number} xpEarned
+ * @param {boolean} won
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function updatePlayerStatsOnChain(playerName, xpEarned, won) {
+    try {
+        const client = await getGenLayerClient();
+
+        logger.info('Submitting update_player_stats', { service: 'genlayer', playerName, xpEarned, won });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'update_player_stats',
+            args: [playerName, xpEarned, won],
+            value: 0n,
+        });
+
+        logger.info('update_player_stats submitted', { service: 'genlayer', txHash, playerName });
+        return { txHash };
+    } catch (error) {
+        logger.error('update_player_stats failed', { service: 'genlayer', error: error.message });
+        return null;
+    }
+}
+
+/**
+ * Finalize a weekly snapshot on-chain (fire-and-forget).
+ * @param {string} weekId
+ * @param {string} top10Json — JSON string of top 10 players
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function finalizeWeeklySnapshotOnChain(weekId, top10Json) {
+    try {
+        const client = await getGenLayerClient();
+
+        logger.info('Submitting finalize_weekly_snapshot', { service: 'genlayer', weekId });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'finalize_weekly_snapshot',
+            args: [weekId, top10Json],
+            value: 0n,
+        });
+
+        logger.info('finalize_weekly_snapshot submitted', { service: 'genlayer', txHash, weekId });
+        return { txHash };
+    } catch (error) {
+        logger.error('finalize_weekly_snapshot failed', { service: 'genlayer', error: error.message });
+        return null;
+    }
+}
+
+/**
+ * Read top players from GenLayer contract.
+ * @returns {Promise<Object|null>}
+ */
+export async function getTopPlayersOnChain() {
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_top_players',
+            args: [],
+        });
+        return result;
+    } catch (e) {
+        logger.warn('getTopPlayersOnChain failed', { service: 'genlayer', error: e.message });
+        return null;
+    }
+}
+
+/**
+ * Read game history from GenLayer contract.
+ * @returns {Promise<Object|null>}
+ */
+export async function getGameHistoryOnChain() {
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_game_history',
+            args: [],
+        });
+        return result;
+    } catch (e) {
+        logger.warn('getGameHistoryOnChain failed', { service: 'genlayer', error: e.message });
+        return null;
+    }
+}
+
+/**
+ * Read weekly snapshot from GenLayer contract.
+ * @returns {Promise<Object|null>}
+ */
+export async function getWeeklySnapshotOnChain() {
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_weekly_snapshot',
+            args: [],
+        });
+        return result;
+    } catch (e) {
+        logger.warn('getWeeklySnapshotOnChain failed', { service: 'genlayer', error: e.message });
+        return null;
+    }
+}
+
+/**
+ * Unlock an achievement on-chain (fire-and-forget).
+ * @param {string} playerName
+ * @param {number} achievementBit
+ * @returns {Promise<{txHash: string}|null>}
+ */
+export async function unlockAchievementOnChain(playerName, achievementBit) {
+    try {
+        const client = await getGenLayerClient();
+
+        logger.info('Submitting unlock_achievement', { service: 'genlayer', playerName, achievementBit });
+
+        const txHash = await client.writeContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'unlock_achievement',
+            args: [playerName, achievementBit],
+            value: 0n,
+        });
+
+        logger.info('unlock_achievement submitted', { service: 'genlayer', txHash, playerName });
+        return { txHash };
+    } catch (error) {
+        logger.error('unlock_achievement failed', { service: 'genlayer', error: error.message });
+        return null;
+    }
+}
+
+/**
+ * Read achievements for a player from GenLayer contract.
+ * @param {string} playerName
+ * @returns {Promise<Object|null>}
+ */
+export async function getAchievementsOnChain(playerName) {
+    try {
+        const client = await getGenLayerClient();
+        const result = await client.readContract({
+            address: GENLAYER_CONTRACT_ADDRESS,
+            functionName: 'get_achievements',
+            args: [playerName],
+        });
+        return result;
+    } catch (e) {
+        logger.warn('getAchievementsOnChain failed', { service: 'genlayer', error: e.message });
+        return null;
+    }
+}
+
+/**
  * Post game results to the Discord webhook.
  * @param {import('./types.js').Room} room
  * @returns {Promise<void>}

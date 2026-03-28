@@ -161,8 +161,16 @@ export function generateFinalValidatorVotes() {
 export async function createRoom(category, singlePlayer = false) {
     initAudio();
     playSound('click');
+    const rs = state.roomSettings || {};
+    const body = { hostName: state.playerName, category, singlePlayer };
+    if (rs.totalRounds) body.totalRounds = Number(rs.totalRounds);
+    if (rs.submissionTime) body.submissionTime = Number(rs.submissionTime);
+    if (rs.bettingTime) body.bettingTime = Number(rs.bettingTime);
+    if (rs.isPrivate) body.isPrivate = true;
+    if (rs.speedMode) body.speedMode = true;
+    if (singlePlayer && rs.botDifficulty) body.botDifficulty = rs.botDifficulty;
     try {
-        const result = await api('createRoom', { hostName: state.playerName, category, singlePlayer });
+        const result = await api('createRoom', body);
         state.roomId = result.roomId;
         setSessionToken(result.sessionToken || null);
         state.room = result.room;
@@ -1046,5 +1054,198 @@ window.addEventListener('online', () => {
     if (state.roomId) { fetchRoom(); startPolling(); }
     render();
 });
+
+// ─── Rematch ────────────────────────────────────────────────────
+
+/**
+ * Create a rematch room with same settings and players.
+ * @returns {Promise<void>}
+ */
+export async function rematchGame() {
+    if (!state.room || !state.roomId) return;
+    playSound('click');
+    try {
+        const result = await api('rematch', {
+            roomId: state.roomId,
+            hostName: state.playerName,
+            playerId: state.playerId,
+            sessionToken: sessionToken
+        });
+        state.roomId = result.roomId;
+        setSessionToken(result.sessionToken || null);
+        state.room = result.room;
+        state.isHost = true;
+        state.screen = 'waiting';
+        state._gameCounted = false;
+        startPolling();
+        render();
+    } catch (e) {
+        state.error = e.message || 'Failed to create rematch.';
+        render();
+    }
+}
+
+// ─── Room Settings ──────────────────────────────────────────────
+
+/**
+ * Update a room setting in the local state.
+ * @param {string} key - Setting key.
+ * @param {string} value - Setting value.
+ * @returns {void}
+ */
+export function setRoomSetting(key, value) {
+    if (!state.roomSettings) {
+        state.roomSettings = { totalRounds: null, submissionTime: null, bettingTime: null, isPrivate: false, botDifficulty: 'easy', showAdvanced: false, speedMode: false };
+    }
+    playSound('click');
+    if (key === 'isPrivate') {
+        state.roomSettings.isPrivate = !state.roomSettings.isPrivate;
+    } else if (key === 'speedMode') {
+        state.roomSettings.speedMode = !state.roomSettings.speedMode;
+    } else {
+        // Toggle: click same value to deselect
+        if (state.roomSettings[key] === value) {
+            state.roomSettings[key] = null;
+        } else {
+            state.roomSettings[key] = value;
+        }
+    }
+    render();
+}
+
+/**
+ * Toggle the advanced settings panel visibility.
+ * @returns {void}
+ */
+export function toggleAdvancedSettings() {
+    if (!state.roomSettings) {
+        state.roomSettings = { totalRounds: null, submissionTime: null, bettingTime: null, isPrivate: false, botDifficulty: 'easy', showAdvanced: false, speedMode: false };
+    }
+    state.roomSettings.showAdvanced = !state.roomSettings.showAdvanced;
+    playSound('click');
+    render();
+}
+
+// ─── Toast Notification System ──────────────────────────────────
+
+/**
+ * Show a toast notification.
+ * @param {string} message - Toast message.
+ * @param {'success'|'error'|'info'|'warning'} [type='info'] - Toast type.
+ * @param {number} [duration=4000] - Auto-dismiss duration in ms.
+ * @returns {void}
+ */
+export function showToast(message, type = 'info', duration = 4000) {
+    const colors = {
+        success: 'border-green-500/50 bg-green-500/10',
+        error: 'border-red-500/50 bg-red-500/10',
+        info: 'border-oracle/50 bg-oracle/10',
+        warning: 'border-amber-500/50 bg-amber-500/10'
+    };
+    const textColors = {
+        success: 'text-green-400',
+        error: 'text-red-400',
+        info: 'text-oracle',
+        warning: 'text-amber-400'
+    };
+    const icons = { success: 'OK', error: '!!', info: 'i', warning: '!!' };
+
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed top-16 right-4 z-[1000] flex flex-col gap-2 pointer-events-none';
+        container.style.maxWidth = '320px';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `pointer-events-auto glass rounded-xl px-4 py-3 border ${colors[type]} flex items-center gap-3 toast-in`;
+    toast.innerHTML = `
+        <div class="w-7 h-7 rounded-full ${colors[type]} flex items-center justify-center shrink-0">
+            <span class="text-xs font-mono font-bold ${textColors[type]}">${icons[type]}</span>
+        </div>
+        <p class="text-sm font-mono ${textColors[type]} flex-1">${message}</p>
+    `;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.remove('toast-in');
+        toast.classList.add('toast-out');
+        setTimeout(() => toast.remove(), 500);
+    }, duration);
+}
+
+// ─── Tutorial / Onboarding ──────────────────────────────────────
+
+/**
+ * Check if tutorial should show, and initialize tutorial state.
+ * @returns {void}
+ */
+export function checkTutorial() {
+    if (localStorage.getItem('tutorialComplete')) return;
+    state.tutorialStep = 0;
+    state.showTutorial = true;
+}
+
+/**
+ * Advance to the next tutorial step, or dismiss if at the end.
+ * @returns {void}
+ */
+export function advanceTutorial() {
+    if (state.tutorialStep >= 3) {
+        dismissTutorial();
+        return;
+    }
+    state.tutorialStep++;
+    render();
+}
+
+/**
+ * Dismiss the tutorial and mark as complete.
+ * @returns {void}
+ */
+export function dismissTutorial() {
+    state.showTutorial = false;
+    state.tutorialStep = -1;
+    localStorage.setItem('tutorialComplete', 'true');
+    render();
+}
+
+// ─── Referral Tracking ──────────────────────────────────────────
+
+/**
+ * Detect referral link in URL params and store it.
+ * @returns {void}
+ */
+export function detectReferral() {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref && ref !== state.playerId) {
+        state.referredBy = ref;
+        localStorage.setItem('referredBy', ref);
+    }
+}
+
+// ─── Spectator Chat ─────────────────────────────────────────────
+
+/**
+ * Send a chat message in the current room.
+ * @returns {Promise<void>}
+ */
+export async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    if (!input || !input.value.trim()) return;
+    const text = input.value.trim();
+    input.value = '';
+    try {
+        await api('sendChat', {
+            roomId: state.roomId,
+            playerName: state.playerName,
+            message: text,
+            sessionToken: sessionToken
+        });
+    } catch (_e) { /* silently ignore chat errors */ }
+}
 
 // Boot calls moved to main.js
